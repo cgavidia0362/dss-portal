@@ -31,7 +31,6 @@ const mockReps = [
 ];
 
 export default function AssignTab({
-  currentUserId,
   currentUserRole,
 }: AssignTabProps) {
   const [calls, setCalls] = useState<Call[]>(mockCalls);

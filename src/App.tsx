@@ -15,7 +15,7 @@ interface User {
 }
 
 function App() {
-  const [currentUser, setCurrentUser] = useState<User>({
+  const [currentUser] = useState<User>({
     id: '1',
     email: 'admin@dss.com',
     fullName: 'Admin User',
