@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Search, UserPlus, UserMinus, CheckSquare, Square } from 'lucide-react';
+import { UserPlus, CheckSquare, Square } from 'lucide-react';
 import { mockCalls } from '../lib/mockData';
 
-// Inline types (StackBlitz import workaround)
 interface Call {
   id: string;
   applicationId: string;
@@ -14,168 +13,184 @@ interface Call {
   submittedDate: string;
   assignedTo?: string;
   assignedToName?: string;
-  fuStatus?: 'Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
+  fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
 }
 
 interface AssignTabProps {
-  currentUserId: string;
   currentUserRole: 'admin' | 'rep';
 }
 
-// Mock reps for assignment dropdown
-const mockReps = [
-  { id: 'rep1', name: 'John Smith' },
-  { id: 'rep2', name: 'Sarah Johnson' },
-];
+type AssignMode = 'state' | 'dealer' | 'fiType' | 'date';
 
-export default function AssignTab({
-  currentUserRole,
-}: AssignTabProps) {
+export default function AssignTab({ currentUserRole }: AssignTabProps) {
   const [calls, setCalls] = useState<Call[]>(mockCalls);
-  const [selectedCallIds, setSelectedCallIds] = useState<string[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterState, setFilterState] = useState('');
-  const [selectedRep, setSelectedRep] = useState('');
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-
-  // Quick Assign states
-  const [quickAssignBy, setQuickAssignBy] = useState<'state' | 'dealer' | 'fiType'>('state');
+  const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
+  const [selectedRep, setSelectedRep] = useState<string>('');
+  
+  // Quick assign state
+  const [assignMode, setAssignMode] = useState<AssignMode>('state');
   const [quickAssignValue, setQuickAssignValue] = useState('');
   const [quickAssignRep, setQuickAssignRep] = useState('');
-
-  // Filter calls
-  const filteredCalls = calls.filter((call) => {
-    const matchesSearch =
-      !searchTerm ||
-      call.dealerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      call.applicationId.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesState = !filterState || call.state === filterState;
-
-    return matchesSearch && matchesState;
-  });
-
-  // Get unique values
-  const uniqueStates = Array.from(new Set(calls.map((c) => c.state))).sort();
-  const uniqueDealers = Array.from(new Set(calls.map((c) => c.dealerName))).sort();
-  const uniqueFiTypes = ['Independent', 'Franchise'];
-
-  // Handle select all
-  const handleSelectAll = () => {
-    if (selectedCallIds.length === filteredCalls.length) {
-      setSelectedCallIds([]);
-    } else {
-      setSelectedCallIds(filteredCalls.map((c) => c.id));
-    }
-  };
-
-  // Handle individual checkbox
-  const handleSelectCall = (callId: string) => {
-    setSelectedCallIds((prev) =>
-      prev.includes(callId)
-        ? prev.filter((id) => id !== callId)
-        : [...prev, callId]
-    );
-  };
-
-  // Assign calls to rep
-  const handleAssign = () => {
-    if (!selectedRep || selectedCallIds.length === 0) return;
-
-    const repName = mockReps.find((r) => r.id === selectedRep)?.name || '';
-
-    setCalls((prevCalls) =>
-      prevCalls.map((call) =>
-        selectedCallIds.includes(call.id)
-          ? { ...call, assignedTo: selectedRep, assignedToName: repName }
-          : call
-      )
-    );
-
-    setSuccessMessage(
-      `Successfully assigned ${selectedCallIds.length} call(s) to ${repName}`
-    );
-    setShowSuccess(true);
-    setSelectedCallIds([]);
-    setSelectedRep('');
-
-    setTimeout(() => setShowSuccess(false), 3000);
-  };
-
-  // Unassign calls
-  const handleUnassign = () => {
-    if (selectedCallIds.length === 0) return;
-
-    setCalls((prevCalls) =>
-      prevCalls.map((call) =>
-        selectedCallIds.includes(call.id)
-          ? { ...call, assignedTo: undefined, assignedToName: undefined }
-          : call
-      )
-    );
-
-    setSuccessMessage(
-      `Successfully unassigned ${selectedCallIds.length} call(s)`
-    );
-    setShowSuccess(true);
-    setSelectedCallIds([]);
-
-    setTimeout(() => setShowSuccess(false), 3000);
-  };
-
-  // Quick Assign
-  const handleQuickAssign = () => {
-    if (!quickAssignValue || !quickAssignRep) return;
-
-    const repName = mockReps.find((r) => r.id === quickAssignRep)?.name || '';
-    
-    let callsToAssign: Call[] = [];
-
-    if (quickAssignBy === 'state') {
-      callsToAssign = calls.filter((call) => call.state === quickAssignValue);
-    } else if (quickAssignBy === 'dealer') {
-      callsToAssign = calls.filter((call) => call.dealerName === quickAssignValue);
-    } else if (quickAssignBy === 'fiType') {
-      callsToAssign = calls.filter((call) => call.fiType === quickAssignValue);
-    }
-
-    setCalls((prevCalls) =>
-      prevCalls.map((call) => {
-        if (quickAssignBy === 'state' && call.state === quickAssignValue) {
-          return { ...call, assignedTo: quickAssignRep, assignedToName: repName };
-        } else if (quickAssignBy === 'dealer' && call.dealerName === quickAssignValue) {
-          return { ...call, assignedTo: quickAssignRep, assignedToName: repName };
-        } else if (quickAssignBy === 'fiType' && call.fiType === quickAssignValue) {
-          return { ...call, assignedTo: quickAssignRep, assignedToName: repName };
-        }
-        return call;
-      })
-    );
-
-    const assignByLabel = quickAssignBy === 'state' ? 'state' : quickAssignBy === 'dealer' ? 'dealer' : 'FI Type';
-    setSuccessMessage(
-      `Successfully assigned ${callsToAssign.length} call(s) from ${assignByLabel} "${quickAssignValue}" to ${repName}`
-    );
-    setShowSuccess(true);
-    setQuickAssignValue('');
-    setQuickAssignRep('');
-
-    setTimeout(() => setShowSuccess(false), 3000);
-  };
+  
+  // Mock reps data
+  const reps = [
+    { id: 'rep1', name: 'John Smith' },
+    { id: 'rep2', name: 'Sarah Johnson' },
+  ];
 
   // Only admins can see this tab
   if (currentUserRole !== 'admin') {
     return (
       <div className="p-8 text-center">
-        <p className="text-gray-400">
-          This tab is only accessible to administrators.
-        </p>
+        <p className="text-gray-400">This tab is only accessible to administrators.</p>
       </div>
     );
   }
+
+  // Get unassigned calls
+  const unassignedCalls = calls.filter((call) => !call.assignedTo);
+  const assignedCalls = calls.filter((call) => call.assignedTo);
+
+  // Get unique values for dropdowns
+  const uniqueStates = Array.from(new Set(unassignedCalls.map((c) => c.state))).sort();
+  const uniqueDealers = Array.from(new Set(unassignedCalls.map((c) => c.dealerName))).sort();
+  const uniqueFiTypes = Array.from(new Set(unassignedCalls.map((c) => c.fiType).filter(Boolean))).sort();
+  const uniqueDates = Array.from(new Set(unassignedCalls.map((c) => c.submittedDate))).sort();
+
+  // Toggle individual call selection
+  const toggleCallSelection = (callId: string) => {
+    const newSelected = new Set(selectedCalls);
+    if (newSelected.has(callId)) {
+      newSelected.delete(callId);
+    } else {
+      newSelected.add(callId);
+    }
+    setSelectedCalls(newSelected);
+  };
+
+  // Toggle select all
+  const toggleSelectAll = () => {
+    if (selectedCalls.size === unassignedCalls.length) {
+      setSelectedCalls(new Set());
+    } else {
+      setSelectedCalls(new Set(unassignedCalls.map((c) => c.id)));
+    }
+  };
+
+  // Assign selected calls to rep
+  const handleAssignSelected = () => {
+    if (!selectedRep) {
+      alert('Please select a rep to assign to');
+      return;
+    }
+    if (selectedCalls.size === 0) {
+      alert('Please select at least one call to assign');
+      return;
+    }
+
+    const repName = reps.find((r) => r.id === selectedRep)?.name || '';
+
+    setCalls((prevCalls) =>
+      prevCalls.map((call) =>
+        selectedCalls.has(call.id)
+          ? { ...call, assignedTo: selectedRep, assignedToName: repName }
+          : call
+      )
+    );
+
+    setSelectedCalls(new Set());
+    setSelectedRep('');
+    alert(`Successfully assigned ${selectedCalls.size} calls to ${repName}`);
+  };
+
+  // Quick assign handler
+  const handleQuickAssign = () => {
+    if (!quickAssignValue || !quickAssignRep) {
+      alert('Please select both criteria and rep');
+      return;
+    }
+
+    const repName = reps.find((r) => r.id === quickAssignRep)?.name || '';
+    
+    let callsToAssign: Call[] = [];
+    let criteriaLabel = '';
+
+    switch (assignMode) {
+      case 'state':
+        callsToAssign = unassignedCalls.filter((call) => call.state === quickAssignValue);
+        criteriaLabel = `from ${quickAssignValue}`;
+        break;
+      case 'dealer':
+        callsToAssign = unassignedCalls.filter((call) => call.dealerName === quickAssignValue);
+        criteriaLabel = `from dealer "${quickAssignValue}"`;
+        break;
+      case 'fiType':
+        callsToAssign = unassignedCalls.filter((call) => call.fiType === quickAssignValue);
+        criteriaLabel = `with FI Type "${quickAssignValue}"`;
+        break;
+      case 'date':
+        callsToAssign = unassignedCalls.filter((call) => call.submittedDate === quickAssignValue);
+        criteriaLabel = `from date ${quickAssignValue}`;
+        break;
+    }
+
+    if (callsToAssign.length === 0) {
+      alert('No unassigned calls found for this criteria');
+      return;
+    }
+
+    setCalls((prevCalls) =>
+      prevCalls.map((call) =>
+        callsToAssign.some((c) => c.id === call.id)
+          ? { ...call, assignedTo: quickAssignRep, assignedToName: repName }
+          : call
+      )
+    );
+
+    setQuickAssignValue('');
+    setQuickAssignRep('');
+    alert(`Assigned ${callsToAssign.length} calls ${criteriaLabel} to ${repName}`);
+  };
+
+  // Get options for current assign mode
+  const getAssignOptions = () => {
+    switch (assignMode) {
+      case 'state':
+        return uniqueStates.map((state) => ({
+          value: state,
+          label: `${state} (${unassignedCalls.filter((c) => c.state === state).length} calls)`,
+        }));
+      case 'dealer':
+        return uniqueDealers.map((dealer) => ({
+          value: dealer,
+          label: `${dealer} (${unassignedCalls.filter((c) => c.dealerName === dealer).length} calls)`,
+        }));
+      case 'fiType':
+        return uniqueFiTypes.map((fiType) => ({
+          value: fiType,
+          label: `${fiType} (${unassignedCalls.filter((c) => c.fiType === fiType).length} calls)`,
+        }));
+      case 'date':
+        return uniqueDates.map((date) => ({
+          value: date,
+          label: `${date} (${unassignedCalls.filter((c) => c.submittedDate === date).length} calls)`,
+        }));
+      default:
+        return [];
+    }
+  };
+
+  const getModeLabel = () => {
+    switch (assignMode) {
+      case 'state': return 'State';
+      case 'dealer': return 'Dealer';
+      case 'fiType': return 'FI Type';
+      case 'date': return 'Date';
+      default: return '';
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -183,321 +198,287 @@ export default function AssignTab({
       <div>
         <h2 className="text-2xl font-bold text-gray-100">Assign Calls</h2>
         <p className="text-gray-400 mt-1">
-          Assign calls to sales representatives
+          Assign unassigned calls to sales representatives
         </p>
       </div>
 
-      {/* Success Message */}
-      {showSuccess && (
-        <div className="bg-green-900 border border-green-700 text-green-100 px-4 py-3 rounded-lg">
-          {successMessage}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-400">Unassigned Calls</p>
+              <p className="text-3xl font-bold text-yellow-400 mt-2">
+                {unassignedCalls.length}
+              </p>
+            </div>
+            <UserPlus className="w-12 h-12 text-yellow-400" />
+          </div>
         </div>
-      )}
 
-      {/* Quick Assign - ALL IN ONE BOX */}
+        <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-400">Assigned Calls</p>
+              <p className="text-3xl font-bold text-green-400 mt-2">
+                {assignedCalls.length}
+              </p>
+            </div>
+            <CheckSquare className="w-12 h-12 text-green-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Assign */}
       <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
         <h3 className="text-lg font-semibold text-gray-100 mb-4">
           Quick Assign
         </h3>
-        
-        <div className="space-y-4">
-          {/* Assignment Type Selector */}
-          <div>
+
+        {/* Mode Selector */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => { setAssignMode('state'); setQuickAssignValue(''); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              assignMode === 'state'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            By State
+          </button>
+          <button
+            onClick={() => { setAssignMode('dealer'); setQuickAssignValue(''); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              assignMode === 'dealer'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            By Dealer
+          </button>
+          <button
+            onClick={() => { setAssignMode('fiType'); setQuickAssignValue(''); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              assignMode === 'fiType'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            By FI Type
+          </button>
+          <button
+            onClick={() => { setAssignMode('date'); setQuickAssignValue(''); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              assignMode === 'date'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            By Date
+          </button>
+        </div>
+
+        {/* Assignment Controls */}
+        <div className="flex gap-4 flex-wrap items-end">
+          <div className="flex-1 min-w-[200px]">
             <label className="block text-sm text-gray-400 mb-2">
-              Assign By
+              Select {getModeLabel()}
             </label>
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setQuickAssignBy('state');
-                  setQuickAssignValue('');
-                }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  quickAssignBy === 'state'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
-              >
-                State
-              </button>
-              <button
-                onClick={() => {
-                  setQuickAssignBy('dealer');
-                  setQuickAssignValue('');
-                }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  quickAssignBy === 'dealer'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
-              >
-                Dealer
-              </button>
-              <button
-                onClick={() => {
-                  setQuickAssignBy('fiType');
-                  setQuickAssignValue('');
-                }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  quickAssignBy === 'fiType'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
-              >
-                FI Type
-              </button>
-            </div>
+            <select
+              value={quickAssignValue}
+              onChange={(e) => setQuickAssignValue(e.target.value)}
+              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100"
+            >
+              <option value="">Choose {getModeLabel().toLowerCase()}...</option>
+              {getAssignOptions().map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Selection and Assignment */}
-          <div className="flex gap-4 items-end flex-wrap">
-            <div className="flex-1 min-w-[250px]">
-              <label className="block text-sm text-gray-400 mb-2">
-                {quickAssignBy === 'state' && 'Select State'}
-                {quickAssignBy === 'dealer' && 'Select Dealer'}
-                {quickAssignBy === 'fiType' && 'Select FI Type'}
-              </label>
-              <select
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100"
-                value={quickAssignValue}
-                onChange={(e) => setQuickAssignValue(e.target.value)}
-              >
-                <option value="">Choose...</option>
-                {quickAssignBy === 'state' &&
-                  uniqueStates.map((state) => (
-                    <option key={state} value={state}>
-                      {state} ({calls.filter((c) => c.state === state).length} calls)
-                    </option>
-                  ))}
-                {quickAssignBy === 'dealer' &&
-                  uniqueDealers.map((dealer) => (
-                    <option key={dealer} value={dealer}>
-                      {dealer} ({calls.filter((c) => c.dealerName === dealer).length} calls)
-                    </option>
-                  ))}
-                {quickAssignBy === 'fiType' &&
-                  uniqueFiTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type} ({calls.filter((c) => c.fiType === type).length} calls)
-                    </option>
-                  ))}
-              </select>
-            </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm text-gray-400 mb-2">
+              Assign To
+            </label>
+            <select
+              value={quickAssignRep}
+              onChange={(e) => setQuickAssignRep(e.target.value)}
+              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100"
+            >
+              <option value="">Choose rep...</option>
+              {reps.map((rep) => (
+                <option key={rep.id} value={rep.id}>
+                  {rep.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">
-                Assign To Rep
-              </label>
+          <button
+            onClick={handleQuickAssign}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+          >
+            Quick Assign
+          </button>
+        </div>
+      </div>
+
+      {/* Unassigned Calls Table */}
+      <div className="bg-gray-800 rounded-lg shadow border border-gray-700 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-100">
+            Unassigned Calls ({unassignedCalls.length})
+          </h3>
+
+          {selectedCalls.size > 0 && (
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-400">
+                {selectedCalls.size} selected
+              </span>
               <select
-                className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100"
-                value={quickAssignRep}
-                onChange={(e) => setQuickAssignRep(e.target.value)}
+                value={selectedRep}
+                onChange={(e) => setSelectedRep(e.target.value)}
+                className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm"
               >
-                <option value="">Choose rep...</option>
-                {mockReps.map((rep) => (
+                <option value="">Assign to...</option>
+                {reps.map((rep) => (
                   <option key={rep.id} value={rep.id}>
                     {rep.name}
                   </option>
                 ))}
               </select>
+              <button
+                onClick={handleAssignSelected}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition"
+              >
+                Assign Selected
+              </button>
             </div>
+          )}
+        </div>
 
-            <button
-              onClick={handleQuickAssign}
-              disabled={!quickAssignValue || !quickAssignRep}
-              className="flex items-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition"
-            >
-              <UserPlus className="w-4 h-4" />
-              Quick Assign
-            </button>
+        {unassignedCalls.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            <CheckSquare className="w-16 h-16 mx-auto mb-4 text-gray-600" />
+            <p className="text-lg font-medium">All calls have been assigned!</p>
+            <p className="text-sm mt-2">
+              Upload new calls to assign them to your team.
+            </p>
           </div>
-        </div>
-      </div>
-
-      {/* Filters & Manual Assignment */}
-      <div className="bg-gray-800 p-4 rounded-lg shadow border border-gray-700 space-y-4">
-        {/* Search & State Filter */}
-        <div className="flex gap-4 flex-wrap">
-          <div className="flex-1 min-w-[200px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search by dealer or app ID..."
-                className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-400"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <select
-            className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100"
-            value={filterState}
-            onChange={(e) => setFilterState(e.target.value)}
-          >
-            <option value="">All States</option>
-            {uniqueStates.map((state) => (
-              <option key={state} value={state}>
-                {state}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Manual Assignment Actions */}
-        <div className="flex gap-4 items-center flex-wrap">
-          <p className="text-sm text-gray-400">
-            {selectedCallIds.length} call(s) selected
-          </p>
-
-          <select
-            className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100"
-            value={selectedRep}
-            onChange={(e) => setSelectedRep(e.target.value)}
-            disabled={selectedCallIds.length === 0}
-          >
-            <option value="">Select Rep...</option>
-            {mockReps.map((rep) => (
-              <option key={rep.id} value={rep.id}>
-                {rep.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={handleAssign}
-            disabled={!selectedRep || selectedCallIds.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
-          >
-            <UserPlus className="w-4 h-4" />
-            Assign to Rep
-          </button>
-
-          <button
-            onClick={handleUnassign}
-            disabled={selectedCallIds.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 disabled:bg-gray-700 disabled:cursor-not-allowed"
-          >
-            <UserMinus className="w-4 h-4" />
-            Unassign
-          </button>
-        </div>
-      </div>
-
-      {/* Calls Table */}
-      <div className="bg-gray-800 rounded-lg shadow border border-gray-700 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-700 border-b border-gray-600">
-              <tr>
-                <th className="px-4 py-3 text-left">
-                  <button
-                    onClick={handleSelectAll}
-                    className="flex items-center gap-2 text-gray-300 hover:text-gray-100"
-                  >
-                    {selectedCallIds.length === filteredCalls.length &&
-                    filteredCalls.length > 0 ? (
-                      <CheckSquare className="w-5 h-5" />
-                    ) : (
-                      <Square className="w-5 h-5" />
-                    )}
-                  </button>
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                  App ID
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                  Dealer Name
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                  State
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                  FI Type
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                  Amount
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                  Submit Date
-                </th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                  Assigned To
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-700">
-              {filteredCalls.map((call) => (
-                <tr
-                  key={call.id}
-                  className={`hover:bg-gray-750 ${
-                    selectedCallIds.includes(call.id) ? 'bg-blue-900/30' : ''
-                  }`}
-                >
-                  <td className="px-4 py-3">
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-700">
+                <tr>
+                  <th className="px-4 py-3 w-12">
                     <button
-                      onClick={() => handleSelectCall(call.id)}
-                      className="text-gray-300 hover:text-gray-100"
+                      onClick={toggleSelectAll}
+                      className="text-gray-400 hover:text-gray-200"
                     >
-                      {selectedCallIds.includes(call.id) ? (
+                      {selectedCalls.size === unassignedCalls.length ? (
                         <CheckSquare className="w-5 h-5 text-blue-400" />
                       ) : (
                         <Square className="w-5 h-5" />
                       )}
                     </button>
-                  </td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-100">
-                    {call.applicationId}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-200">
-                    {call.dealerName}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-300">
-                    {call.state}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-300">
-                    {call.fiType || '-'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-200">
-                    ${call.buyerFinal.toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        call.statusLast === 'Approved'
-                          ? 'bg-green-900 text-green-200'
-                          : call.statusLast === 'Pending'
-                          ? 'bg-yellow-900 text-yellow-200'
-                          : 'bg-red-900 text-red-200'
-                      }`}
-                    >
-                      {call.statusLast}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-300">
-                    {call.submittedDate}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-300">
-                    {call.assignedToName || (
-                      <span className="text-gray-500 italic">Unassigned</span>
-                    )}
-                  </td>
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
+                    App ID
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
+                    Dealer Name
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
+                    State
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
+                    Amount
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
+                    Date
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
+                    FI Type
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredCalls.length === 0 && (
-          <div className="text-center py-12 text-gray-400">
-            No calls found matching your filters.
+              </thead>
+              <tbody className="divide-y divide-gray-700">
+                {unassignedCalls.map((call) => (
+                  <tr
+                    key={call.id}
+                    className="hover:bg-gray-750 cursor-pointer"
+                    onClick={() => toggleCallSelection(call.id)}
+                  >
+                    <td className="px-4 py-4">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleCallSelection(call.id);
+                        }}
+                        className="text-gray-400 hover:text-gray-200"
+                      >
+                        {selectedCalls.has(call.id) ? (
+                          <CheckSquare className="w-5 h-5 text-blue-400" />
+                        ) : (
+                          <Square className="w-5 h-5" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-4 text-sm font-medium text-gray-100">
+                      {call.applicationId}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-200">
+                      {call.dealerName}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-300">
+                      {call.state}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-200">
+                      ${call.buyerFinal.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-300">
+                      {call.submittedDate}
+                    </td>
+                    <td className="px-4 py-4 text-sm text-gray-300">
+                      {call.fiType || '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
+
+      {/* Assigned Calls Summary */}
+      {assignedCalls.length > 0 && (
+        <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-100 mb-4">
+            Assignment Summary
+          </h3>
+          <div className="space-y-3">
+            {reps.map((rep) => {
+              const repCalls = assignedCalls.filter(
+                (call) => call.assignedTo === rep.id
+              );
+              return (
+                <div
+                  key={rep.id}
+                  className="flex items-center justify-between bg-gray-700 p-4 rounded-lg"
+                >
+                  <span className="text-gray-200 font-medium">{rep.name}</span>
+                  <span className="px-3 py-1 bg-blue-900 text-blue-200 rounded-full text-sm font-bold">
+                    {repCalls.length} calls assigned
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

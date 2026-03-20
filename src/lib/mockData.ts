@@ -12,7 +12,7 @@ export const mockCalls = [
     assignedToName: 'John Smith',
     fuStatus: 'Deal' as const,
     fiType: 'Independent' as const,
-    updatedAt: new Date('2025-03-15T14:20:00'),
+    updatedAt: new Date(), // TODAY - will show in KPI
   },
   {
     id: 'c2',
@@ -57,7 +57,7 @@ export const mockCalls = [
     assignedToName: 'Sarah Johnson',
     fuStatus: 'Deal' as const,
     fiType: 'Franchise' as const,
-    updatedAt: new Date('2025-03-15T09:00:00'),
+    updatedAt: new Date(), // TODAY - will show in KPI
   },
   {
     id: 'c5',
@@ -117,7 +117,7 @@ export const mockCalls = [
     assignedToName: 'Sarah Johnson',
     fuStatus: 'Deal' as const,
     fiType: 'Franchise' as const,
-    updatedAt: new Date('2025-03-15T15:45:00'),
+    updatedAt: new Date('2025-03-15T15:45:00'), // OLD - won't show in today's KPI
   },
   {
     id: 'c9',

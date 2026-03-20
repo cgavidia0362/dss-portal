@@ -1,26 +1,29 @@
 import { useState } from 'react';
+import { Upload, CheckCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Upload, CheckCircle, XCircle, FileSpreadsheet } from 'lucide-react';
 
-interface UploadHistory {
-  id: string;
-  uploadedBy: string;
-  uploadedAt: Date;
-  filename: string;
-  rowCount: number;
-  insertedCount: number;
-  updatedCount: number;
-  errorCount: number;
-  status: 'success' | 'error';
+interface Dealer {
+  cifNumber: string;
+  name: string;
+  state: string;
+  createdAt: Date;
 }
 
-interface ParsedCall {
+interface Call {
+  id: string;
   applicationId: string;
+  dealerCifNumber: string;
   dealerName: string;
-  buyerFinal: number;
+  state: string;
+  buyerFinal: string;
   statusLast: string;
   timestampSubmit: Date;
-  state: string;
+  submittedDate: string;
+  assignedTo?: string;
+  assignedToName?: string;
+  fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
+  fiType?: 'Independent' | 'Franchise';
+  updatedAt: Date;
 }
 
 export default function UploadTab() {
@@ -28,224 +31,246 @@ export default function UploadTab() {
   const [uploadResult, setUploadResult] = useState<{
     success: boolean;
     message: string;
-    inserted: number;
-    updated: number;
-    errors: number;
+    callsCount?: number;
+    newDealersCount?: number;
+    dealers?: Dealer[];
   } | null>(null);
 
-  // Fake upload history data
-  const [uploadHistory] = useState<UploadHistory[]>([
-    {
-      id: '1',
-      uploadedBy: 'Admin User',
-      uploadedAt: new Date('2026-01-12T09:23:00'),
-      filename: 'calls_jan_2026.xlsx',
-      rowCount: 168,
-      insertedCount: 145,
-      updatedCount: 23,
-      errorCount: 0,
-      status: 'success',
-    },
-    {
-      id: '2',
-      uploadedBy: 'Admin User',
-      uploadedAt: new Date('2026-01-11T14:15:00'),
-      filename: 'calls_jan_week1.xlsx',
-      rowCount: 101,
-      insertedCount: 89,
-      updatedCount: 12,
-      errorCount: 0,
-      status: 'success',
-    },
-    {
-      id: '3',
-      uploadedBy: 'Admin User',
-      uploadedAt: new Date('2026-01-10T11:30:00'),
-      filename: 'calls_dec_2025.xlsx',
-      rowCount: 95,
-      insertedCount: 87,
-      updatedCount: 8,
-      errorCount: 0,
-      status: 'success',
-    },
-  ]);
+  // Master dealer list (in production, this would be in Supabase)
+  const [masterDealerList, setMasterDealerList] = useState<Dealer[]>([]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
     setUploading(true);
     setUploadResult(null);
 
     try {
-      // Read the Excel file
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
+      const workbook = XLSX.read(data, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
+      
+      // Parse to JSON
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-      // Validate required columns
       if (jsonData.length === 0) {
-        throw new Error('The Excel file is empty!');
+        setUploadResult({
+          success: false,
+          message: 'The uploaded file is empty or has no valid data.',
+        });
+        setUploading(false);
+        return;
       }
 
-      const firstRow = jsonData[0];
-      const requiredColumns = [
-        'Application Id',
-        'Dealer Name',
-        'Buyer Final',
-        'Status Last',
-        'Timestamp Submit',
-        'State',
-      ];
+      // Process data
+      const newCalls: Call[] = [];
+      const discoveredDealers = new Map<string, Dealer>();
 
-      const missingColumns = requiredColumns.filter(
-        (col) => !(col in firstRow)
-      );
+      jsonData.forEach((row: any) => {
+        // Extract dealer info
+        const cifNumber = String(row['Dealer Cifnumber'] || '').trim();
+        const dealerName = String(row['Dealer Name'] || '').trim();
+        const dealerState = String(row['Dealer State'] || '').trim();
 
-      if (missingColumns.length > 0) {
-        throw new Error(
-          `Missing required columns: ${missingColumns.join(', ')}`
-        );
+        // Skip if missing critical data
+        if (!cifNumber || !dealerName || !row['Application Id']) {
+          return;
+        }
+
+        // Add to discovered dealers (if not already in master list)
+        if (!masterDealerList.some((d) => d.cifNumber === cifNumber)) {
+          if (!discoveredDealers.has(cifNumber)) {
+            discoveredDealers.set(cifNumber, {
+              cifNumber,
+              name: dealerName,
+              state: dealerState,
+              createdAt: new Date(),
+            });
+          }
+        }
+
+        // Parse timestamp
+        let timestampSubmit = new Date();
+        const timestampStr = String(row['Timestamp Submit'] || '');
+        if (timestampStr) {
+          const parsed = new Date(timestampStr);
+          if (!isNaN(parsed.getTime())) {
+            timestampSubmit = parsed;
+          }
+        }
+
+        // Create call
+        const call: Call = {
+          id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          applicationId: String(row['Application Id'] || ''),
+          dealerCifNumber: cifNumber,
+          dealerName: dealerName,
+          state: dealerState,
+          buyerFinal: String(row['Buyer Final'] || ''),
+          statusLast: String(row['Status Last'] || ''),
+          timestampSubmit,
+          submittedDate: timestampSubmit.toISOString().split('T')[0],
+          assignedTo: undefined, // Unassigned by default
+          assignedToName: undefined,
+          fuStatus: 'Pending',
+          fiType: undefined, // To be set later by manager
+          updatedAt: new Date(),
+        };
+
+        newCalls.push(call);
+      });
+
+      // Update master dealer list
+      const newDealers = Array.from(discoveredDealers.values());
+      if (newDealers.length > 0) {
+        setMasterDealerList((prev) => [...prev, ...newDealers]);
       }
 
-      // Parse the data
-      const parsedCalls: ParsedCall[] = jsonData.map((row) => ({
-        applicationId: String(row['Application Id']),
-        dealerName: String(row['Dealer Name']),
-        buyerFinal: Number(row['Buyer Final']),
-        statusLast: String(row['Status Last']),
-        timestampSubmit: new Date(row['Timestamp Submit']),
-        state: String(row['State']),
-      }));
-
-      // Simulate upload (in real app, this would call Supabase)
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Fake result
-      const inserted = Math.floor(parsedCalls.length * 0.85);
-      const updated = parsedCalls.length - inserted;
+      // In production: Save to Supabase here
+      // - Save new dealers to 'dealers' table
+      // - Save new calls to 'calls' table
 
       setUploadResult({
         success: true,
-        message: `Successfully processed ${parsedCalls.length} rows!`,
-        inserted,
-        updated,
-        errors: 0,
+        message: `Successfully processed ${newCalls.length} calls`,
+        callsCount: newCalls.length,
+        newDealersCount: newDealers.length,
+        dealers: newDealers,
       });
-    } catch (error: any) {
+
+      // Log for now (remove in production)
+      console.log('New Calls:', newCalls);
+      console.log('New Dealers:', newDealers);
+      console.log('Master Dealer List:', [...masterDealerList, ...newDealers]);
+
+    } catch (error) {
+      console.error('Upload error:', error);
       setUploadResult({
         success: false,
-        message: error.message || 'Failed to upload file',
-        inserted: 0,
-        updated: 0,
-        errors: 1,
+        message: `Error processing file: ${error instanceof Error ? error.message : 'Unknown error'}`,
       });
     } finally {
       setUploading(false);
-      // Reset file input
-      e.target.value = '';
+      event.target.value = '';
     }
   };
 
-  const formatDateTime = (date: Date) => {
-    return date.toLocaleString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
-  };
-
   return (
-    <div>
-      {/* Page Header */}
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">Upload Call Data</h2>
-        <p className="text-gray-400 text-sm">
-          Upload an Excel file (.xlsx or .xls) with call information
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-100">Upload Calls</h2>
+        <p className="text-gray-400 mt-1">
+          Upload CSV file with call data to distribute to your team
         </p>
       </div>
 
-      {/* Upload Card */}
-      <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
-        <label className="block">
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleFileUpload}
-            disabled={uploading}
-            className="hidden"
-          />
-          <div className="border-2 border-dashed border-gray-600 rounded-lg p-12 text-center hover:border-blue-500 transition cursor-pointer">
-            {uploading ? (
-              <>
-                <div className="animate-spin h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p className="text-sm text-gray-300">Processing file...</p>
-              </>
-            ) : (
-              <>
-                <Upload className="mx-auto h-12 w-12 text-gray-500 mb-4" />
-                <p className="text-sm text-gray-300 mb-2">
-                  Click to upload or drag and drop
-                </p>
-                <p className="text-xs text-gray-500">
-                  Excel files (.xlsx, .xls) only
-                </p>
-              </>
-            )}
-          </div>
-        </label>
+      {/* Upload Section */}
+      <div className="bg-gray-800 p-8 rounded-lg shadow border border-gray-700">
+        <div className="flex flex-col items-center justify-center">
+          <Upload className="w-16 h-16 text-gray-400 mb-4" />
+          <h3 className="text-lg font-semibold text-gray-100 mb-2">
+            Upload CSV File
+          </h3>
+          <p className="text-sm text-gray-400 mb-6 text-center max-w-md">
+            Select a CSV file containing call data. New dealers will be automatically
+            added to the master dealer list.
+          </p>
+
+          <label className="cursor-pointer">
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={handleFileUpload}
+              disabled={uploading}
+              className="hidden"
+            />
+            <div
+              className={`px-6 py-3 rounded-lg font-medium transition ${
+                uploading
+                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {uploading ? 'Processing...' : 'Select CSV File'}
+            </div>
+          </label>
+
+          <p className="text-xs text-gray-500 mt-4">
+            Supported formats: CSV, XLSX, XLS
+          </p>
+        </div>
       </div>
 
       {/* Upload Result */}
       {uploadResult && (
         <div
-          className={`rounded-xl p-6 mb-6 border ${
+          className={`p-6 rounded-lg shadow border ${
             uploadResult.success
-              ? 'bg-green-900/20 border-green-700'
-              : 'bg-red-900/20 border-red-700'
+              ? 'bg-green-900 border-green-700'
+              : 'bg-red-900 border-red-700'
           }`}
         >
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-4">
             {uploadResult.success ? (
-              <CheckCircle className="w-6 h-6 text-green-500 flex-shrink-0" />
+              <CheckCircle className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
             ) : (
-              <XCircle className="w-6 h-6 text-red-500 flex-shrink-0" />
+              <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0 mt-1" />
             )}
             <div className="flex-1">
-              <h3
+              <h4
                 className={`font-semibold mb-2 ${
-                  uploadResult.success ? 'text-green-500' : 'text-red-500'
+                  uploadResult.success ? 'text-green-100' : 'text-red-100'
                 }`}
               >
                 {uploadResult.success ? 'Upload Successful!' : 'Upload Failed'}
-              </h3>
-              <p className="text-sm text-gray-300 mb-3">
+              </h4>
+              <p
+                className={`text-sm ${
+                  uploadResult.success ? 'text-green-200' : 'text-red-200'
+                }`}
+              >
                 {uploadResult.message}
               </p>
-              {uploadResult.success && (
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-400">Inserted:</span>
-                    <span className="ml-2 font-semibold text-green-400">
-                      {uploadResult.inserted}
+
+              {uploadResult.success && uploadResult.callsCount && (
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-green-200">
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>
+                      {uploadResult.callsCount} calls imported (all unassigned)
                     </span>
                   </div>
-                  <div>
-                    <span className="text-gray-400">Updated:</span>
-                    <span className="ml-2 font-semibold text-blue-400">
-                      {uploadResult.updated}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Errors:</span>
-                    <span className="ml-2 font-semibold text-gray-400">
-                      {uploadResult.errors}
-                    </span>
+                  {uploadResult.newDealersCount! > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-green-200">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>
+                        {uploadResult.newDealersCount} new dealers added to master list
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {uploadResult.success && uploadResult.dealers && uploadResult.dealers.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium text-green-200 mb-2">
+                    New Dealers Discovered:
+                  </p>
+                  <div className="bg-green-950 p-3 rounded border border-green-800 max-h-40 overflow-y-auto">
+                    {uploadResult.dealers.map((dealer) => (
+                      <div
+                        key={dealer.cifNumber}
+                        className="text-sm text-green-100 py-1"
+                      >
+                        <span className="font-mono text-green-300">
+                          {dealer.cifNumber}
+                        </span>{' '}
+                        - {dealer.name} ({dealer.state})
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -254,60 +279,49 @@ export default function UploadTab() {
         </div>
       )}
 
-      {/* Upload History Table */}
-      <div className="bg-gray-800 rounded-xl border border-gray-700">
-        <div className="px-6 py-4 border-b border-gray-700">
-          <h3 className="font-semibold flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5" />
-            Upload History
+      {/* Master Dealer List Summary */}
+      {masterDealerList.length > 0 && (
+        <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-100 mb-4">
+            Master Dealer List ({masterDealerList.length} dealers)
           </h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-750">
-              <tr className="text-left text-xs text-gray-400 uppercase tracking-wider">
-                <th className="px-6 py-3">Date & Time</th>
-                <th className="px-6 py-3">Uploaded By</th>
-                <th className="px-6 py-3">Filename</th>
-                <th className="px-6 py-3">Total Rows</th>
-                <th className="px-6 py-3">Inserted</th>
-                <th className="px-6 py-3">Updated</th>
-                <th className="px-6 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-700">
-              {uploadHistory.map((upload) => (
-                <tr key={upload.id} className="hover:bg-gray-750">
-                  <td className="px-6 py-4 text-sm">
-                    {formatDateTime(upload.uploadedAt)}
-                  </td>
-                  <td className="px-6 py-4 text-sm">{upload.uploadedBy}</td>
-                  <td className="px-6 py-4 text-sm font-mono">
-                    {upload.filename}
-                  </td>
-                  <td className="px-6 py-4 text-sm">{upload.rowCount}</td>
-                  <td className="px-6 py-4 text-sm text-green-400">
-                    {upload.insertedCount}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-blue-400">
-                    {upload.updatedCount}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`px-2 py-1 text-xs rounded-full ${
-                        upload.status === 'success'
-                          ? 'bg-green-600 text-white'
-                          : 'bg-red-600 text-white'
-                      }`}
-                    >
-                      {upload.status === 'success' ? 'Success' : 'Failed'}
+          <div className="bg-gray-750 p-4 rounded border border-gray-600 max-h-60 overflow-y-auto">
+            <div className="space-y-2">
+              {masterDealerList.map((dealer) => (
+                <div
+                  key={dealer.cifNumber}
+                  className="flex items-center justify-between text-sm py-2 border-b border-gray-700 last:border-0"
+                >
+                  <div>
+                    <span className="font-mono text-blue-400 font-medium">
+                      {dealer.cifNumber}
                     </span>
-                  </td>
-                </tr>
+                    <span className="text-gray-300 ml-3">{dealer.name}</span>
+                  </div>
+                  <span className="text-gray-400">{dealer.state}</span>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* Instructions */}
+      <div className="bg-blue-900 bg-opacity-20 border border-blue-700 p-6 rounded-lg">
+        <h4 className="text-blue-300 font-semibold mb-2 flex items-center gap-2">
+          <FileSpreadsheet className="w-5 h-5" />
+          Upload Instructions
+        </h4>
+        <ul className="text-sm text-blue-200 space-y-2 ml-7">
+          <li>• Upload your CSV file with call data</li>
+          <li>• New dealers will be automatically added to the master list</li>
+          <li>• All calls will be imported as unassigned</li>
+          <li>• Go to the "Assign" tab to distribute calls to your team</li>
+          <li>
+            • Expected columns: Application Id, Dealer Name, Dealer State, Dealer
+            Cifnumber, Status Last, Timestamp Submit
+          </li>
+        </ul>
       </div>
     </div>
   );
