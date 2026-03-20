@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Upload, CheckCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
-import * as XLSX from 'xlsx';
 
 interface Dealer {
   cifNumber: string;
@@ -42,11 +41,19 @@ export default function UploadTab() {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
+  
     setUploading(true);
     setUploadResult(null);
-
+  
     try {
+      // Dynamic import with default handling
+      const XLSXModule = await import('xlsx');
+      const XLSX = XLSXModule.default || XLSXModule;
+      
+      if (!XLSX || !XLSX.read || !XLSX.utils) {
+        throw new Error('XLSX library failed to load properly');
+      }
+      
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
@@ -54,7 +61,7 @@ export default function UploadTab() {
       
       // Parse to JSON
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
+  
       if (jsonData.length === 0) {
         setUploadResult({
           success: false,
@@ -63,22 +70,22 @@ export default function UploadTab() {
         setUploading(false);
         return;
       }
-
+  
       // Process data
       const newCalls: Call[] = [];
       const discoveredDealers = new Map<string, Dealer>();
-
+  
       jsonData.forEach((row: any) => {
         // Extract dealer info
         const cifNumber = String(row['Dealer Cifnumber'] || '').trim();
         const dealerName = String(row['Dealer Name'] || '').trim();
         const dealerState = String(row['Dealer State'] || '').trim();
-
+  
         // Skip if missing critical data
         if (!cifNumber || !dealerName || !row['Application Id']) {
           return;
         }
-
+  
         // Add to discovered dealers (if not already in master list)
         if (!masterDealerList.some((d) => d.cifNumber === cifNumber)) {
           if (!discoveredDealers.has(cifNumber)) {
@@ -90,7 +97,7 @@ export default function UploadTab() {
             });
           }
         }
-
+  
         // Parse timestamp
         let timestampSubmit = new Date();
         const timestampStr = String(row['Timestamp Submit'] || '');
@@ -100,7 +107,7 @@ export default function UploadTab() {
             timestampSubmit = parsed;
           }
         }
-
+  
         // Create call
         const call: Call = {
           id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -112,26 +119,22 @@ export default function UploadTab() {
           statusLast: String(row['Status Last'] || ''),
           timestampSubmit,
           submittedDate: timestampSubmit.toISOString().split('T')[0],
-          assignedTo: undefined, // Unassigned by default
+          assignedTo: undefined,
           assignedToName: undefined,
           fuStatus: 'Pending',
-          fiType: undefined, // To be set later by manager
+          fiType: undefined,
           updatedAt: new Date(),
         };
-
+  
         newCalls.push(call);
       });
-
+  
       // Update master dealer list
       const newDealers = Array.from(discoveredDealers.values());
       if (newDealers.length > 0) {
         setMasterDealerList((prev) => [...prev, ...newDealers]);
       }
-
-      // In production: Save to Supabase here
-      // - Save new dealers to 'dealers' table
-      // - Save new calls to 'calls' table
-
+  
       setUploadResult({
         success: true,
         message: `Successfully processed ${newCalls.length} calls`,
@@ -139,12 +142,11 @@ export default function UploadTab() {
         newDealersCount: newDealers.length,
         dealers: newDealers,
       });
-
-      // Log for now (remove in production)
+  
       console.log('New Calls:', newCalls);
       console.log('New Dealers:', newDealers);
       console.log('Master Dealer List:', [...masterDealerList, ...newDealers]);
-
+  
     } catch (error) {
       console.error('Upload error:', error);
       setUploadResult({
