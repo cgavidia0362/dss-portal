@@ -74,11 +74,6 @@ export default function ReportingTab({ currentUserId, currentUserRole, calls, go
     return sum + (isNaN(amount) ? 0 : amount);
   }, 0);
 
-  const confirmedDealAmount = confirmedDeals.reduce((sum, call) => {
-    const amount = parseFloat(call.buyerFinal.replace(/[^0-9.-]+/g, ''));
-    return sum + (isNaN(amount) ? 0 : amount);
-  }, 0);
-
   const dealsByState: { [key: string]: number } = {};
   filteredCalls.forEach((call) => {
     if (call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal') {
@@ -393,7 +388,7 @@ export default function ReportingTab({ currentUserId, currentUserRole, calls, go
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }) => `${name}: ${percent ? (percent * 100).toFixed(0) : 0}%`}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"
