@@ -92,12 +92,11 @@ function App() {
             currentUserRole={currentUser.role}
           />
         )}
-        {activeTab === 'assign' && (
-          <AssignTab
-            currentUserId={currentUser.id}
-            currentUserRole={currentUser.role}
-          />
-        )}
+{activeTab === 'assign' && (
+  <AssignTab
+    currentUserRole={currentUser.role}
+  />
+)}
         {activeTab === 'reporting' && (
           <ReportingTab
             currentUserId={currentUser.id}
