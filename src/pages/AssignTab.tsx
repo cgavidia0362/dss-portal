@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { UserPlus, CheckSquare, Square } from 'lucide-react';
-import { mockCalls } from '../lib/mockData';
 
 interface Call {
   id: string;
   applicationId: string;
+  dealerCifNumber: string;
   dealerName: string;
   state: string;
-  buyerFinal: number;
+  buyerFinal: string;
   statusLast: string;
   timestampSubmit: Date;
   submittedDate: string;
@@ -20,27 +20,25 @@ interface Call {
 
 interface AssignTabProps {
   currentUserRole: 'admin' | 'rep';
+  calls: Call[];
+  setCalls: React.Dispatch<React.SetStateAction<Call[]>>;
 }
 
 type AssignMode = 'state' | 'dealer' | 'fiType' | 'date';
 
-export default function AssignTab({ currentUserRole }: AssignTabProps) {
-  const [calls, setCalls] = useState<Call[]>(mockCalls);
+export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTabProps) {
   const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
   const [selectedRep, setSelectedRep] = useState<string>('');
   
-  // Quick assign state
   const [assignMode, setAssignMode] = useState<AssignMode>('state');
   const [quickAssignValue, setQuickAssignValue] = useState('');
   const [quickAssignRep, setQuickAssignRep] = useState('');
   
-  // Mock reps data
   const reps = [
     { id: 'rep1', name: 'John Smith' },
     { id: 'rep2', name: 'Sarah Johnson' },
   ];
 
-  // Only admins can see this tab
   if (currentUserRole !== 'admin') {
     return (
       <div className="p-8 text-center">
@@ -49,17 +47,14 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
     );
   }
 
-  // Get unassigned calls
   const unassignedCalls = calls.filter((call) => !call.assignedTo);
   const assignedCalls = calls.filter((call) => call.assignedTo);
 
-  // Get unique values for dropdowns
   const uniqueStates = Array.from(new Set(unassignedCalls.map((c) => c.state))).sort();
   const uniqueDealers = Array.from(new Set(unassignedCalls.map((c) => c.dealerName))).sort();
   const uniqueFiTypes = Array.from(new Set(unassignedCalls.map((c) => c.fiType).filter(Boolean))).sort();
   const uniqueDates = Array.from(new Set(unassignedCalls.map((c) => c.submittedDate))).sort();
 
-  // Toggle individual call selection
   const toggleCallSelection = (callId: string) => {
     const newSelected = new Set(selectedCalls);
     if (newSelected.has(callId)) {
@@ -70,7 +65,6 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
     setSelectedCalls(newSelected);
   };
 
-  // Toggle select all
   const toggleSelectAll = () => {
     if (selectedCalls.size === unassignedCalls.length) {
       setSelectedCalls(new Set());
@@ -79,7 +73,6 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
     }
   };
 
-  // Assign selected calls to rep
   const handleAssignSelected = () => {
     if (!selectedRep) {
       alert('Please select a rep to assign to');
@@ -105,7 +98,6 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
     alert(`Successfully assigned ${selectedCalls.size} calls to ${repName}`);
   };
 
-  // Quick assign handler
   const handleQuickAssign = () => {
     if (!quickAssignValue || !quickAssignRep) {
       alert('Please select both criteria and rep');
@@ -154,7 +146,6 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
     alert(`Assigned ${callsToAssign.length} calls ${criteriaLabel} to ${repName}`);
   };
 
-  // Get options for current assign mode
   const getAssignOptions = () => {
     switch (assignMode) {
       case 'state':
@@ -194,7 +185,6 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h2 className="text-2xl font-bold text-gray-100">Assign Calls</h2>
         <p className="text-gray-400 mt-1">
@@ -202,7 +192,6 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
         </p>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <div className="flex items-center justify-between">
@@ -229,13 +218,11 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
         </div>
       </div>
 
-      {/* Quick Assign */}
       <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
         <h3 className="text-lg font-semibold text-gray-100 mb-4">
           Quick Assign
         </h3>
 
-        {/* Mode Selector */}
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => { setAssignMode('state'); setQuickAssignValue(''); }}
@@ -279,7 +266,6 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
           </button>
         </div>
 
-        {/* Assignment Controls */}
         <div className="flex gap-4 flex-wrap items-end">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm text-gray-400 mb-2">
@@ -326,7 +312,6 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
         </div>
       </div>
 
-      {/* Unassigned Calls Table */}
       <div className="bg-gray-800 rounded-lg shadow border border-gray-700 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-100">
@@ -437,7 +422,7 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
                       {call.state}
                     </td>
                     <td className="px-4 py-4 text-sm text-gray-200">
-                      ${call.buyerFinal.toLocaleString()}
+                      {call.buyerFinal}
                     </td>
                     <td className="px-4 py-4 text-sm text-gray-300">
                       {call.submittedDate}
@@ -453,7 +438,6 @@ export default function AssignTab({ currentUserRole }: AssignTabProps) {
         )}
       </div>
 
-      {/* Assigned Calls Summary */}
       {assignedCalls.length > 0 && (
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <h3 className="text-lg font-semibold text-gray-100 mb-4">
