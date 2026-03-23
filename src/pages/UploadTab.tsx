@@ -144,7 +144,7 @@ export default function UploadTab({ calls, setCalls, dealers, setDealers }: Uplo
           dealerCifNumber: cifNumber,
           dealerName: dealerName,
           state: dealerState,
-          buyerFinal: String(row['App Request AF'] || row['App Requested AF'] || '0'),
+          buyerFinal: String(row['App Last AF'] || '0'),
           statusLast: statusLast,
           timestampSubmit,
           submittedDate: timestampSubmit.toISOString().split('T')[0],

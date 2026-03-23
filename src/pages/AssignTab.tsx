@@ -16,6 +16,7 @@ interface Call {
   fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
+  dealDate?: Date;
 }
 
 interface AssignTabProps {
@@ -24,7 +25,7 @@ interface AssignTabProps {
   setCalls: React.Dispatch<React.SetStateAction<Call[]>>;
 }
 
-type AssignMode = 'state' | 'dealer' | 'fiType' | 'date';
+type AssignMode = 'state' | 'dealer' | 'date';
 
 export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTabProps) {
   const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
@@ -52,7 +53,6 @@ export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTa
 
   const uniqueStates = Array.from(new Set(unassignedCalls.map((c) => c.state))).sort();
   const uniqueDealers = Array.from(new Set(unassignedCalls.map((c) => c.dealerName))).sort();
-  const uniqueFiTypes = Array.from(new Set(unassignedCalls.map((c) => c.fiType).filter(Boolean))).sort();
   const uniqueDates = Array.from(new Set(unassignedCalls.map((c) => c.submittedDate))).sort();
 
   const toggleCallSelection = (callId: string) => {
@@ -118,10 +118,6 @@ export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTa
         callsToAssign = unassignedCalls.filter((call) => call.dealerName === quickAssignValue);
         criteriaLabel = `from dealer "${quickAssignValue}"`;
         break;
-      case 'fiType':
-        callsToAssign = unassignedCalls.filter((call) => call.fiType === quickAssignValue);
-        criteriaLabel = `with FI Type "${quickAssignValue}"`;
-        break;
       case 'date':
         callsToAssign = unassignedCalls.filter((call) => call.submittedDate === quickAssignValue);
         criteriaLabel = `from date ${quickAssignValue}`;
@@ -158,11 +154,6 @@ export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTa
           value: dealer,
           label: `${dealer} (${unassignedCalls.filter((c) => c.dealerName === dealer).length} calls)`,
         }));
-      case 'fiType':
-        return uniqueFiTypes.map((fiType) => ({
-          value: fiType,
-          label: `${fiType} (${unassignedCalls.filter((c) => c.fiType === fiType).length} calls)`,
-        }));
       case 'date':
         return uniqueDates.map((date) => ({
           value: date,
@@ -177,7 +168,6 @@ export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTa
     switch (assignMode) {
       case 'state': return 'State';
       case 'dealer': return 'Dealer';
-      case 'fiType': return 'FI Type';
       case 'date': return 'Date';
       default: return '';
     }
@@ -243,16 +233,6 @@ export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTa
             }`}
           >
             By Dealer
-          </button>
-          <button
-            onClick={() => { setAssignMode('fiType'); setQuickAssignValue(''); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-              assignMode === 'fiType'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            By FI Type
           </button>
           <button
             onClick={() => { setAssignMode('date'); setQuickAssignValue(''); }}
@@ -386,7 +366,7 @@ export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTa
                     Date
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                    FI Type
+                    Status Last
                   </th>
                 </tr>
               </thead>
@@ -428,7 +408,7 @@ export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTa
                       {call.submittedDate}
                     </td>
                     <td className="px-4 py-4 text-sm text-gray-300">
-                      {call.fiType || '-'}
+                      {call.statusLast}
                     </td>
                   </tr>
                 ))}

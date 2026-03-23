@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Target } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Target, Edit2, Check, X } from 'lucide-react';
 
 interface Call {
   id: string;
@@ -56,6 +56,30 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
 
+  // Edit mode states
+  const [editingStatusLast, setEditingStatusLast] = useState<string | null>(null);
+  const [editingAmount, setEditingAmount] = useState<string | null>(null);
+  const [tempStatusLast, setTempStatusLast] = useState<string>('');
+  const [tempAmount, setTempAmount] = useState<string>('');
+
+  // All possible status last values
+  const allStatusLastOptions = [
+    'Accepted',
+    'Approved',
+    'Approval',
+    'Counter',
+    'Denial',
+    'Declined',
+    'Pending Approval',
+    'Document Received',
+    'Funded',
+    'Funding Pending',
+    'New Application',
+    'Incomplete',
+    'Withdrawn',
+    'Cancelled',
+  ];
+
   // Rule 1: Auto-revert "Accepted" deals after 7 days
   useEffect(() => {
     const checkAndRevertDeals = () => {
@@ -64,10 +88,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
 
       setCalls((prevCalls) =>
         prevCalls.map((call) => {
-          // Only revert if:
-          // 1. Still "Accepted"
-          // 2. Still "Deal" (not manually changed by rep)
-          // 3. dealDate is older than 7 days
           if (
             call.statusLast === 'Accepted' &&
             call.fuStatus === 'Deal' &&
@@ -85,9 +105,8 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
       );
     };
 
-    // Check every minute
     const interval = setInterval(checkAndRevertDeals, 60000);
-    checkAndRevertDeals(); // Run immediately on mount
+    checkAndRevertDeals();
 
     return () => clearInterval(interval);
   }, [setCalls]);
@@ -96,7 +115,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
   useEffect(() => {
     setCalls((prevCalls) =>
       prevCalls.map((call) => {
-        // If FU Status is "Deal" and Status Last becomes funded/document received/funding pending
         const confirmedStatuses = ['Document Received', 'Funded', 'Funding Pending'];
         if (
           call.fuStatus === 'Deal' &&
@@ -135,35 +153,46 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     }
   };
 
-  // Get color for Status Last badge (Rule 2)
+  // Get color for Status Last badge (Complete color coding)
   const getStatusLastColor = (status: string): string => {
-    switch (status.toLowerCase()) {
-      case 'approved':
-      case 'approval':
-        return 'bg-green-600 text-white';
-      case 'counter':
-        return 'bg-yellow-500 text-gray-900';
-      case 'denial':
-      case 'declined':
-        return 'bg-red-600 text-white';
-      case 'accepted':
-        return 'bg-blue-600 text-white';
-      case 'pending approval':
-        return 'bg-orange-500 text-white';
-      case 'document received':
-        return 'bg-purple-600 text-white';
-      case 'funded':
-      case 'funding pending':
-        return 'bg-emerald-600 text-white';
-      default:
-        return 'bg-gray-600 text-gray-200';
+    const statusLower = status.toLowerCase();
+    
+    if (statusLower.includes('approved') || statusLower.includes('approval')) {
+      return 'bg-green-600 text-white';
     }
+    if (statusLower.includes('counter')) {
+      return 'bg-yellow-500 text-gray-900';
+    }
+    if (statusLower.includes('denial') || statusLower.includes('declined')) {
+      return 'bg-red-600 text-white';
+    }
+    if (statusLower.includes('accepted')) {
+      return 'bg-blue-600 text-white';
+    }
+    if (statusLower.includes('pending')) {
+      return 'bg-orange-500 text-white';
+    }
+    if (statusLower.includes('document received')) {
+      return 'bg-purple-600 text-white';
+    }
+    if (statusLower.includes('funded') || statusLower.includes('funding')) {
+      return 'bg-emerald-600 text-white';
+    }
+    if (statusLower.includes('new application')) {
+      return 'bg-cyan-600 text-white';
+    }
+    if (statusLower.includes('incomplete')) {
+      return 'bg-amber-600 text-white';
+    }
+    if (statusLower.includes('withdrawn') || statusLower.includes('cancelled')) {
+      return 'bg-rose-600 text-white';
+    }
+    
+    return 'bg-gray-600 text-gray-200';
   };
 
-  // Get unique status last values
   const uniqueStatusLast = Array.from(new Set(calls.map((c) => c.statusLast).filter(Boolean))).sort();
 
-  // Toggle status last filter
   const toggleStatusLastFilter = (status: string) => {
     const newFilter = new Set(filterStatusLast);
     if (newFilter.has(status)) {
@@ -189,7 +218,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     const matchesState = !filterState || call.state === filterState;
     const matchesStatusLast = filterStatusLast.size === 0 || filterStatusLast.has(call.statusLast);
 
-    // Date range filter
     const callDate = new Date(call.submittedDate);
     const matchesDateFrom = !dateFrom || callDate >= new Date(dateFrom);
     const matchesDateTo = !dateTo || callDate <= new Date(dateTo);
@@ -225,18 +253,15 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     return 0;
   });
 
-  // Pagination
   const totalPages = Math.ceil(sortedCalls.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedCalls = sortedCalls.slice(startIndex, endIndex);
 
-  // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, filterFuStatus, filterState, filterStatusLast, dateFrom, dateTo, showCompleted]);
 
-  // Get unique states for filter
   const uniqueStates = Array.from(new Set(calls.map((c) => c.state))).sort();
 
   const dealsToday = filteredCalls.filter((c) => c.fuStatus === 'Deal' && isToday(c.updatedAt)).length;
@@ -263,13 +288,30 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     setCalls((prevCalls) =>
       prevCalls.map((call) => {
         if (call.id === callId) {
-          // If changing to "Deal", set dealDate
           const dealDate = newStatus === 'Deal' ? new Date() : call.dealDate;
           return { ...call, fuStatus: newStatus, updatedAt: new Date(), dealDate };
         }
         return call;
       })
     );
+  };
+
+  const handleSaveStatusLast = (callId: string) => {
+    setCalls((prevCalls) =>
+      prevCalls.map((call) =>
+        call.id === callId ? { ...call, statusLast: tempStatusLast } : call
+      )
+    );
+    setEditingStatusLast(null);
+  };
+
+  const handleSaveAmount = (callId: string) => {
+    setCalls((prevCalls) =>
+      prevCalls.map((call) =>
+        call.id === callId ? { ...call, buyerFinal: tempAmount } : call
+      )
+    );
+    setEditingAmount(null);
   };
 
   const toggleRowExpansion = (callId: string) => {
@@ -426,7 +468,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
         </div>
       </div>
 
-      {/* Status Last Multi-Select Filter */}
       <div className="bg-gray-800 p-4 rounded-lg shadow border border-gray-700">
         <div className="flex items-center gap-2 mb-3">
           <p className="text-sm font-semibold text-gray-300">Application Status:</p>
@@ -460,7 +501,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
       </div>
 
       <div className="bg-gray-800 rounded-lg shadow border border-gray-700 overflow-hidden">
-        {/* Pagination Info */}
         <div className="px-6 py-3 border-b border-gray-700 flex items-center justify-between bg-gray-750">
           <p className="text-sm text-gray-400">
             Showing {startIndex + 1} - {Math.min(endIndex, sortedCalls.length)} of {sortedCalls.length} calls
@@ -594,16 +634,99 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
                       <td className="px-4 py-4 text-sm text-gray-300">
                         {call.state}
                       </td>
-                      <td className="px-4 py-4 text-sm text-gray-300 font-medium">
-                        ${parseFloat(call.buyerFinal.replace(/[^0-9.-]+/g, '') || '0').toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      <td
+                        className="px-4 py-4"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {editingAmount === call.id ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={tempAmount}
+                              onChange={(e) => setTempAmount(e.target.value)}
+                              className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-24"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleSaveAmount(call.id)}
+                              className="text-green-400 hover:text-green-300"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setEditingAmount(null)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-300 font-medium">
+                              ${parseFloat(call.buyerFinal.replace(/[^0-9.-]+/g, '') || '0').toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setEditingAmount(call.id);
+                                setTempAmount(call.buyerFinal);
+                              }}
+                              className="text-gray-400 hover:text-gray-200"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-300">
                         {call.submittedDate}
                       </td>
-                      <td className="px-4 py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusLastColor(call.statusLast)}`}>
-                          {call.statusLast}
-                        </span>
+                      <td
+                        className="px-4 py-4"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {editingStatusLast === call.id ? (
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={tempStatusLast}
+                              onChange={(e) => setTempStatusLast(e.target.value)}
+                              className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100"
+                              autoFocus
+                            >
+                              {allStatusLastOptions.map((status) => (
+                                <option key={status} value={status}>
+                                  {status}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => handleSaveStatusLast(call.id)}
+                              className="text-green-400 hover:text-green-300"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setEditingStatusLast(null)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusLastColor(call.statusLast)}`}>
+                              {call.statusLast}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setEditingStatusLast(call.id);
+                                setTempStatusLast(call.statusLast);
+                              }}
+                              className="text-gray-400 hover:text-gray-200"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td
                         className="px-4 py-4"
@@ -706,7 +829,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
           </table>
         </div>
 
-        {/* Bottom Pagination */}
         <div className="px-6 py-3 border-t border-gray-700 flex items-center justify-between bg-gray-750">
           <p className="text-sm text-gray-400">
             Showing {startIndex + 1} - {Math.min(endIndex, sortedCalls.length)} of {sortedCalls.length} calls
