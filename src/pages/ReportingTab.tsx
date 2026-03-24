@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { Target, TrendingUp } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { TrendingUp, DollarSign, Target } from 'lucide-react';
 
 interface Call {
   id: string;
@@ -17,10 +17,12 @@ interface Call {
   fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
+  dealDate?: Date;
 }
 
 interface Goals {
-  daily: number;
+  daily: { [repId: string]: number };
+  team: number;
   weekly: number;
   monthly: number;
 }
@@ -33,119 +35,126 @@ interface ReportingTabProps {
   setGoals: React.Dispatch<React.SetStateAction<Goals>>;
 }
 
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+
 export default function ReportingTab({ currentUserId, currentUserRole, calls, goals, setGoals }: ReportingTabProps) {
   const [viewMode, setViewMode] = useState<'all' | 'my'>('all');
-  const [editingGoals, setEditingGoals] = useState(false);
-  const [tempGoals, setTempGoals] = useState<Goals>(goals);
+  const [editingWeeklyGoal, setEditingWeeklyGoal] = useState(false);
+  const [editingMonthlyGoal, setEditingMonthlyGoal] = useState(false);
+  const [tempWeeklyGoal, setTempWeeklyGoal] = useState(0);
+  const [tempMonthlyGoal, setTempMonthlyGoal] = useState(0);
 
-  const filteredCalls = calls.filter((call) => {
-    if (currentUserRole === 'rep') return call.assignedTo === currentUserId;
-    if (viewMode === 'my') return call.assignedTo === currentUserId;
-    return true;
-  });
-
-  // Get current week and month deals
-  const today = new Date();
-  const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - today.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
-
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-  const dealsThisWeek = filteredCalls.filter((c) => {
-    const dealDate = new Date(c.updatedAt);
-    return (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && dealDate >= startOfWeek;
-  }).length;
-
-  const dealsThisMonth = filteredCalls.filter((c) => {
-    const dealDate = new Date(c.updatedAt);
-    return (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && dealDate >= startOfMonth;
-  }).length;
+  const filteredCalls = viewMode === 'my' && currentUserRole === 'rep'
+    ? calls.filter((call) => call.assignedTo === currentUserId)
+    : calls;
 
   const totalCalls = filteredCalls.length;
-  const deals = filteredCalls.filter((c) => c.fuStatus === 'Deal');
-  const confirmedDeals = filteredCalls.filter((c) => c.fuStatus === 'Confirmed Deal');
-  const noDeal = filteredCalls.filter((c) => c.fuStatus === 'No Deal');
-  const pending = filteredCalls.filter((c) => c.fuStatus === 'Pending');
-  const noAnswer = filteredCalls.filter((c) => c.fuStatus === 'No Answer');
+  const deals = filteredCalls.filter((c) => c.fuStatus === 'Deal').length;
+  const confirmedDeals = filteredCalls.filter((c) => c.fuStatus === 'Confirmed Deal').length;
+  
+  const dealAmount = filteredCalls
+    .filter((c) => c.fuStatus === 'Deal')
+    .reduce((sum, call) => {
+      const amount = parseFloat(call.buyerFinal.replace(/[^0-9.-]+/g, ''));
+      return sum + (isNaN(amount) ? 0 : amount);
+    }, 0);
 
-  const dealAmount = deals.reduce((sum, call) => {
-    const amount = parseFloat(call.buyerFinal.replace(/[^0-9.-]+/g, ''));
-    return sum + (isNaN(amount) ? 0 : amount);
-  }, 0);
+  const noDeals = filteredCalls.filter((c) => c.fuStatus === 'No Deal').length;
+  const pending = filteredCalls.filter((c) => c.fuStatus === 'Pending').length;
+  const noAnswer = filteredCalls.filter((c) => c.fuStatus === 'No Answer').length;
 
-  const dealsByState: { [key: string]: number } = {};
-  filteredCalls.forEach((call) => {
-    if (call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal') {
-      dealsByState[call.state] = (dealsByState[call.state] || 0) + 1;
-    }
-  });
+  // Weekly goal progress
+  const weeklyGoalProgress = goals.weekly > 0 ? Math.min((deals / goals.weekly) * 100, 100) : 0;
 
-  const getWeekOfMonth = (date: Date): number => {
-    const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-    const dayOfMonth = date.getDate();
-    const firstWeekday = firstDayOfMonth.getDay();
-    return Math.ceil((dayOfMonth + firstWeekday) / 7);
-  };
+  // Monthly goal progress
+  const monthlyGoalProgress = goals.monthly > 0 ? Math.min((deals / goals.monthly) * 100, 100) : 0;
 
-  const dealsByWeek: { [key: string]: number } = {};
-  filteredCalls.forEach((call) => {
-    if (call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal') {
+  // Deals by State
+  const dealsByState = filteredCalls
+    .filter((c) => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal')
+    .reduce((acc, call) => {
+      acc[call.state] = (acc[call.state] || 0) + 1;
+      return acc;
+    }, {} as { [state: string]: number });
+
+  const stateData = Object.entries(dealsByState)
+    .map(([state, count]) => ({ state, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // Deals by Week (within each month)
+  const dealsByWeek = filteredCalls
+    .filter((c) => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal')
+    .reduce((acc, call) => {
       const date = new Date(call.submittedDate);
-      const monthYear = `${date.toLocaleString('default', { month: 'short' })} ${date.getFullYear()}`;
-      const week = getWeekOfMonth(date);
-      const key = `${monthYear} - Week ${week}`;
-      dealsByWeek[key] = (dealsByWeek[key] || 0) + 1;
-    }
-  });
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const dayOfMonth = date.getDate();
+      
+      // Calculate week number within the month (1-4)
+      const weekInMonth = Math.ceil(dayOfMonth / 7);
+      const monthName = date.toLocaleString('default', { month: 'short' });
+      
+      const key = `${monthName} ${year} - Week ${weekInMonth}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as { [week: string]: number });
 
-  const pieData = [
-    { name: 'Deal', value: deals.length, color: '#10b981' },
-    { name: 'Confirmed Deal', value: confirmedDeals.length, color: '#059669' },
-    { name: 'No Deal', value: noDeal.length, color: '#ef4444' },
-    { name: 'Pending', value: pending.length, color: '#f59e0b' },
-    { name: 'No Answer', value: noAnswer.length, color: '#f97316' },
+  const weekData = Object.entries(dealsByWeek)
+    .map(([week, count]) => ({ week, count }))
+    .sort((a, b) => a.week.localeCompare(b.week));
+
+  // FU Status Breakdown
+  const fuStatusData = [
+    { name: 'Deal', value: deals, color: COLORS[0] },
+    { name: 'Confirmed Deal', value: confirmedDeals, color: COLORS[1] },
+    { name: 'No Deal', value: noDeals, color: COLORS[3] },
+    { name: 'Pending', value: pending, color: COLORS[2] },
+    { name: 'No Answer', value: noAnswer, color: COLORS[4] },
   ].filter((item) => item.value > 0);
 
-  const repPerformance = [
-    { id: 'rep1', name: 'John Smith' },
-    { id: 'rep2', name: 'Sarah Johnson' },
-  ].map((rep) => {
-    const repCalls = filteredCalls.filter((c) => c.assignedTo === rep.id);
-    const repDeals = repCalls.filter((c) => c.fuStatus === 'Deal');
-    const repConfirmedDeals = repCalls.filter((c) => c.fuStatus === 'Confirmed Deal');
-    const closeRate = repCalls.length > 0 
-      ? (((repDeals.length + repConfirmedDeals.length) / repCalls.length) * 100).toFixed(1)
-      : '0.0';
+  // Performance by Rep
+  const repPerformance = calls.reduce((acc, call) => {
+    if (call.assignedTo && call.assignedToName) {
+      if (!acc[call.assignedTo]) {
+        acc[call.assignedTo] = {
+          name: call.assignedToName,
+          total: 0,
+          deals: 0,
+          confirmedDeals: 0,
+          noDeals: 0,
+          pending: 0,
+        };
+      }
+      acc[call.assignedTo].total += 1;
+      if (call.fuStatus === 'Deal') acc[call.assignedTo].deals += 1;
+      if (call.fuStatus === 'Confirmed Deal') acc[call.assignedTo].confirmedDeals += 1;
+      if (call.fuStatus === 'No Deal') acc[call.assignedTo].noDeals += 1;
+      if (call.fuStatus === 'Pending') acc[call.assignedTo].pending += 1;
+    }
+    return acc;
+  }, {} as { [repId: string]: { name: string; total: number; deals: number; confirmedDeals: number; noDeals: number; pending: number } });
 
-    return {
-      name: rep.name,
-      totalCalls: repCalls.length,
-      deals: repDeals.length,
-      confirmedDeals: repConfirmedDeals.length,
-      closeRate: `${closeRate}%`,
-    };
-  });
+  const repData = Object.values(repPerformance);
 
-  const handleSaveGoals = () => {
-    setGoals(tempGoals);
-    setEditingGoals(false);
+  const handleSaveWeeklyGoal = () => {
+    setGoals((prev) => ({ ...prev, weekly: tempWeeklyGoal }));
+    setEditingWeeklyGoal(false);
   };
 
-  const handleCancelGoals = () => {
-    setTempGoals(goals);
-    setEditingGoals(false);
+  const handleSaveMonthlyGoal = () => {
+    setGoals((prev) => ({ ...prev, monthly: tempMonthlyGoal }));
+    setEditingMonthlyGoal(false);
   };
-
-  const weeklyProgress = goals.weekly > 0 ? Math.min((dealsThisWeek / goals.weekly) * 100, 100) : 0;
-  const monthlyProgress = goals.monthly > 0 ? Math.min((dealsThisMonth / goals.monthly) * 100, 100) : 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-100">Reporting</h2>
-          <p className="text-gray-400 mt-1">Analytics and performance metrics</p>
+          <p className="text-gray-400 mt-1">
+            Analytics and performance metrics
+          </p>
         </div>
 
         {currentUserRole === 'admin' && (
@@ -174,283 +183,304 @@ export default function ReportingTab({ currentUserId, currentUserRole, calls, go
         )}
       </div>
 
-      {/* Goals Section - Admin Only */}
-      {currentUserRole === 'admin' && (
-        <div className="bg-gradient-to-r from-purple-900 to-indigo-900 p-6 rounded-lg shadow border border-purple-700">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <Target className="w-6 h-6 text-purple-300" />
-              <h3 className="text-lg font-semibold text-white">Deal Goals</h3>
+      {/* Long-term Goals Management (Weekly & Monthly) */}
+      <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+        <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
+          <Target className="w-5 h-5 text-purple-400" />
+          Long-term Goals
+        </h3>
+        <p className="text-sm text-gray-400 mb-4">
+          These goals are for reporting and analytics only. Daily goals are managed in the Assign tab.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Weekly Goal */}
+          <div className="bg-gray-750 p-4 rounded-lg border border-gray-600">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-gray-300 font-medium">Weekly Goal</span>
+              {editingWeeklyGoal ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={tempWeeklyGoal}
+                    onChange={(e) => setTempWeeklyGoal(parseInt(e.target.value) || 0)}
+                    className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-24"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveWeeklyGoal}
+                    className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditingWeeklyGoal(false)}
+                    className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-bold text-blue-400">{goals.weekly}</span>
+                  <button
+                    onClick={() => {
+                      setEditingWeeklyGoal(true);
+                      setTempWeeklyGoal(goals.weekly);
+                    }}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition"
+                  >
+                    Edit
+                  </button>
+                </div>
+              )}
             </div>
-            {!editingGoals && (
-              <button
-                onClick={() => setEditingGoals(true)}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition"
-              >
-                Edit Goals
-              </button>
-            )}
+            <div className="w-full bg-gray-700 rounded-full h-2">
+              <div
+                className="bg-blue-500 h-2 rounded-full transition-all"
+                style={{ width: `${weeklyGoalProgress}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              {deals} / {goals.weekly} ({weeklyGoalProgress.toFixed(0)}%)
+            </p>
           </div>
 
-          {editingGoals ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm text-purple-200 mb-2">Daily Goal</label>
+          {/* Monthly Goal */}
+          <div className="bg-gray-750 p-4 rounded-lg border border-gray-600">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-gray-300 font-medium">Monthly Goal</span>
+              {editingMonthlyGoal ? (
+                <div className="flex items-center gap-2">
                   <input
                     type="number"
-                    value={tempGoals.daily}
-                    onChange={(e) => setTempGoals({ ...tempGoals, daily: parseInt(e.target.value) || 0 })}
-                    className="w-full px-4 py-2 bg-purple-800 border border-purple-600 rounded-lg text-white"
-                    min="0"
+                    value={tempMonthlyGoal}
+                    onChange={(e) => setTempMonthlyGoal(parseInt(e.target.value) || 0)}
+                    className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-24"
+                    autoFocus
                   />
+                  <button
+                    onClick={handleSaveMonthlyGoal}
+                    className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditingMonthlyGoal(false)}
+                    className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm transition"
+                  >
+                    Cancel
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-sm text-purple-200 mb-2">Weekly Goal</label>
-                  <input
-                    type="number"
-                    value={tempGoals.weekly}
-                    onChange={(e) => setTempGoals({ ...tempGoals, weekly: parseInt(e.target.value) || 0 })}
-                    className="w-full px-4 py-2 bg-purple-800 border border-purple-600 rounded-lg text-white"
-                    min="0"
-                  />
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-bold text-purple-400">{goals.monthly}</span>
+                  <button
+                    onClick={() => {
+                      setEditingMonthlyGoal(true);
+                      setTempMonthlyGoal(goals.monthly);
+                    }}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition"
+                  >
+                    Edit
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-sm text-purple-200 mb-2">Monthly Goal</label>
-                  <input
-                    type="number"
-                    value={tempGoals.monthly}
-                    onChange={(e) => setTempGoals({ ...tempGoals, monthly: parseInt(e.target.value) || 0 })}
-                    className="w-full px-4 py-2 bg-purple-800 border border-purple-600 rounded-lg text-white"
-                    min="0"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleSaveGoals}
-                  className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition"
-                >
-                  Save Goals
-                </button>
-                <button
-                  onClick={handleCancelGoals}
-                  className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition"
-                >
-                  Cancel
-                </button>
-              </div>
+              )}
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-purple-800 bg-opacity-50 p-4 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm text-purple-200">Daily Goal</p>
-                  <TrendingUp className="w-4 h-4 text-purple-300" />
-                </div>
-                <p className="text-2xl font-bold text-white">{goals.daily}</p>
-                <p className="text-xs text-purple-300 mt-1">deals per day</p>
-              </div>
-              <div className="bg-purple-800 bg-opacity-50 p-4 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm text-purple-200">Weekly Goal</p>
-                  <TrendingUp className="w-4 h-4 text-purple-300" />
-                </div>
-                <p className="text-2xl font-bold text-white">{dealsThisWeek} / {goals.weekly}</p>
-                <div className="w-full bg-purple-950 rounded-full h-2 mt-2">
-                  <div
-                    className="bg-purple-400 h-2 rounded-full transition-all"
-                    style={{ width: `${weeklyProgress}%` }}
-                  />
-                </div>
-                <p className="text-xs text-purple-300 mt-1">{weeklyProgress.toFixed(0)}% complete</p>
-              </div>
-              <div className="bg-purple-800 bg-opacity-50 p-4 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm text-purple-200">Monthly Goal</p>
-                  <TrendingUp className="w-4 h-4 text-purple-300" />
-                </div>
-                <p className="text-2xl font-bold text-white">{dealsThisMonth} / {goals.monthly}</p>
-                <div className="w-full bg-purple-950 rounded-full h-2 mt-2">
-                  <div
-                    className="bg-purple-400 h-2 rounded-full transition-all"
-                    style={{ width: `${monthlyProgress}%` }}
-                  />
-                </div>
-                <p className="text-xs text-purple-300 mt-1">{monthlyProgress.toFixed(0)}% complete</p>
-              </div>
+            <div className="w-full bg-gray-700 rounded-full h-2">
+              <div
+                className="bg-purple-500 h-2 rounded-full transition-all"
+                style={{ width: `${monthlyGoalProgress}%` }}
+              />
             </div>
-          )}
+            <p className="text-xs text-gray-400 mt-2">
+              {deals} / {goals.monthly} ({monthlyGoalProgress.toFixed(0)}%)
+            </p>
+          </div>
         </div>
-      )}
+      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <p className="text-sm text-gray-400">Total Calls</p>
-          <p className="text-3xl font-bold text-blue-400 mt-2">{totalCalls}</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-400">Total Calls</p>
+              <p className="text-3xl font-bold text-blue-400 mt-2">{totalCalls}</p>
+            </div>
+            <TrendingUp className="w-10 h-10 text-blue-400" />
+          </div>
         </div>
+
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <p className="text-sm text-gray-400">Deals</p>
-          <p className="text-3xl font-bold text-green-400 mt-2">{deals.length}</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-400">Deals</p>
+              <p className="text-3xl font-bold text-green-400 mt-2">{deals}</p>
+            </div>
+            <TrendingUp className="w-10 h-10 text-green-400" />
+          </div>
         </div>
+
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <p className="text-sm text-gray-400">Confirmed Deals</p>
-          <p className="text-3xl font-bold text-emerald-500 mt-2">{confirmedDeals.length}</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-400">Confirmed Deals</p>
+              <p className="text-3xl font-bold text-emerald-400 mt-2">{confirmedDeals}</p>
+            </div>
+            <TrendingUp className="w-10 h-10 text-emerald-400" />
+          </div>
         </div>
+
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <p className="text-sm text-gray-400">Deal Amount</p>
-          <p className="text-2xl font-bold text-green-400 mt-2">
-            ${dealAmount.toLocaleString()}
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-400">Deal Amount</p>
+              <p className="text-2xl font-bold text-purple-400 mt-2">
+                ${dealAmount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </p>
+            </div>
+            <DollarSign className="w-10 h-10 text-purple-400" />
+          </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <p className="text-sm text-gray-400">No Deals</p>
-          <p className="text-3xl font-bold text-red-400 mt-2">{noDeal.length}</p>
+          <p className="text-3xl font-bold text-red-400 mt-2">{noDeals}</p>
         </div>
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <p className="text-sm text-gray-400">Pending</p>
-          <p className="text-3xl font-bold text-yellow-400 mt-2">{pending.length}</p>
+          <p className="text-3xl font-bold text-yellow-400 mt-2">{pending}</p>
         </div>
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <p className="text-sm text-gray-400">No Answer</p>
-          <p className="text-3xl font-bold text-orange-400 mt-2">{noAnswer.length}</p>
+          <p className="text-3xl font-bold text-orange-400 mt-2">{noAnswer}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4">Deals by State</h3>
-          {Object.keys(dealsByState).length === 0 ? (
-            <p className="text-gray-400 text-center py-8">No deals yet</p>
+          <h3 className="text-lg font-semibold text-gray-100 mb-4">
+            Deals by State
+          </h3>
+          {stateData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={stateData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis type="number" stroke="#9ca3af" />
+                <YAxis dataKey="state" type="category" width={50} stroke="#9ca3af" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1f2937',
+                    border: '1px solid #374151',
+                    borderRadius: '0.5rem',
+                  }}
+                />
+                <Bar dataKey="count" fill="#3b82f6" />
+              </BarChart>
+            </ResponsiveContainer>
           ) : (
-            <div className="space-y-3">
-              {Object.entries(dealsByState)
-                .sort(([, a], [, b]) => b - a)
-                .map(([state, count]) => (
-                  <div key={state} className="flex items-center justify-between">
-                    <span className="text-gray-300 font-medium">{state}</span>
-                    <div className="flex items-center gap-3">
-                      <div className="w-32 bg-gray-700 rounded-full h-2">
-                        <div
-                          className="bg-green-500 h-2 rounded-full"
-                          style={{
-                            width: `${(count / Math.max(...Object.values(dealsByState))) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="text-gray-200 font-bold w-8 text-right">{count}</span>
-                    </div>
-                  </div>
-                ))}
-            </div>
+            <p className="text-gray-400 text-center py-12">No deal data available</p>
           )}
         </div>
 
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4">Deals by Week</h3>
-          {Object.keys(dealsByWeek).length === 0 ? (
-            <p className="text-gray-400 text-center py-8">No deals yet</p>
+          <h3 className="text-lg font-semibold text-gray-100 mb-4">
+            Deals by Week
+          </h3>
+          {weekData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={weekData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="week" stroke="#9ca3af" angle={-45} textAnchor="end" height={100} />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1f2937',
+                    border: '1px solid #374151',
+                    borderRadius: '0.5rem',
+                  }}
+                />
+                <Bar dataKey="count" fill="#10b981" />
+              </BarChart>
+            </ResponsiveContainer>
           ) : (
-            <div className="space-y-3">
-              {Object.entries(dealsByWeek)
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([week, count]) => (
-                  <div key={week} className="flex items-center justify-between">
-                    <span className="text-gray-300 font-medium">{week}</span>
-                    <div className="flex items-center gap-3">
-                      <div className="w-32 bg-gray-700 rounded-full h-2">
-                        <div
-                          className="bg-blue-500 h-2 rounded-full"
-                          style={{
-                            width: `${(count / Math.max(...Object.values(dealsByWeek))) * 100}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="text-gray-200 font-bold w-8 text-right">{count}</span>
-                    </div>
-                  </div>
-                ))}
-            </div>
+            <p className="text-gray-400 text-center py-12">No deal data available</p>
           )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4">FU Status Breakdown</h3>
-          {pieData.length === 0 ? (
-            <p className="text-gray-400 text-center py-8">No data available</p>
-          ) : (
+          <h3 className="text-lg font-semibold text-gray-100 mb-4">
+            FU Status Breakdown
+          </h3>
+          {fuStatusData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={pieData}
+                  data={fuStatusData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
                   label={({ name, percent }) => `${name}: ${percent ? (percent * 100).toFixed(0) : 0}%`}
-                  outerRadius={80}
+                  outerRadius={100}
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {pieData.map((entry, index) => (
+                  {fuStatusData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip />
-                <Legend />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1f2937',
+                    border: '1px solid #374151',
+                    borderRadius: '0.5rem',
+                  }}
+                />
               </PieChart>
             </ResponsiveContainer>
+          ) : (
+            <p className="text-gray-400 text-center py-12">No status data available</p>
           )}
         </div>
 
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4">Performance by Rep</h3>
-          {repPerformance.every((rep) => rep.totalCalls === 0) ? (
-            <p className="text-gray-400 text-center py-8">No calls assigned yet</p>
-          ) : (
+          <h3 className="text-lg font-semibold text-gray-100 mb-4">
+            Performance by Rep
+          </h3>
+          {repData.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-700">
-                    <th className="text-left py-2 px-3 text-sm font-semibold text-gray-300">
-                      Rep
-                    </th>
-                    <th className="text-right py-2 px-3 text-sm font-semibold text-gray-300">
-                      Total
-                    </th>
-                    <th className="text-right py-2 px-3 text-sm font-semibold text-gray-300">
-                      Deals
-                    </th>
-                    <th className="text-right py-2 px-3 text-sm font-semibold text-gray-300">
-                      Confirmed
-                    </th>
-                    <th className="text-right py-2 px-3 text-sm font-semibold text-gray-300">
-                      Close Rate
-                    </th>
+              <table className="w-full text-sm">
+                <thead className="bg-gray-700">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-gray-300">Rep</th>
+                    <th className="px-3 py-2 text-center text-gray-300">Total</th>
+                    <th className="px-3 py-2 text-center text-gray-300">Deals</th>
+                    <th className="px-3 py-2 text-center text-gray-300">Confirmed</th>
+                    <th className="px-3 py-2 text-center text-gray-300">Close Rate</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {repPerformance.map((rep) => (
-                    <tr key={rep.name} className="border-b border-gray-700">
-                      <td className="py-3 px-3 text-sm text-gray-200">{rep.name}</td>
-                      <td className="py-3 px-3 text-sm text-gray-300 text-right">
-                        {rep.totalCalls}
-                      </td>
-                      <td className="py-3 px-3 text-sm text-green-400 text-right">
-                        {rep.deals}
-                      </td>
-                      <td className="py-3 px-3 text-sm text-emerald-500 text-right">
-                        {rep.confirmedDeals}
-                      </td>
-                      <td className="py-3 px-3 text-sm text-blue-400 text-right font-bold">
-                        {rep.closeRate}
-                      </td>
-                    </tr>
-                  ))}
+                <tbody className="divide-y divide-gray-700">
+                  {repData.map((rep, index) => {
+                    const closeRate = rep.total > 0 ? ((rep.deals / rep.total) * 100).toFixed(1) : '0.0';
+                    return (
+                      <tr key={index} className="hover:bg-gray-750">
+                        <td className="px-3 py-2 text-gray-200">{rep.name}</td>
+                        <td className="px-3 py-2 text-center text-gray-300">{rep.total}</td>
+                        <td className="px-3 py-2 text-center text-green-400 font-medium">{rep.deals}</td>
+                        <td className="px-3 py-2 text-center text-emerald-400 font-medium">{rep.confirmedDeals}</td>
+                        <td className="px-3 py-2 text-center text-blue-400 font-medium">{closeRate}%</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+          ) : (
+            <p className="text-gray-400 text-center py-12">No rep data available</p>
           )}
         </div>
       </div>

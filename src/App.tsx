@@ -1,18 +1,10 @@
 import { useState } from 'react';
-import UploadTab from './pages/UploadTab';
+import { BarChart3, Upload, Users, FileText, UserCog } from 'lucide-react';
 import CallsTab from './pages/CallsTab';
+import UploadTab from './pages/UploadTab';
 import AssignTab from './pages/AssignTab';
 import ReportingTab from './pages/ReportingTab';
 import UserManagementTab from './pages/UserManagementTab';
-
-type UserRole = 'admin' | 'rep';
-
-interface User {
-  id: string;
-  email: string;
-  fullName: string;
-  role: UserRole;
-}
 
 interface Dealer {
   cifNumber: string;
@@ -36,7 +28,7 @@ interface Call {
   fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
-  dealDate?: Date; // NEW: Track when it became a Deal
+  dealDate?: Date;
 }
 
 interface CallNote {
@@ -48,84 +40,117 @@ interface CallNote {
   createdAt: Date;
 }
 
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'rep';
+  active: boolean;
+  allowedStatuses: string[];
+}
+
 interface Goals {
-  daily: number;
+  daily: { [repId: string]: number };
+  team: number;
   weekly: number;
   monthly: number;
 }
 
-function App() {
-  const [currentUser] = useState<User>({
+const mockUsers: User[] = [
+  {
     id: '1',
-    email: 'admin@dss.com',
-    fullName: 'Admin User',
+    name: 'Admin User',
+    email: 'admin@company.com',
     role: 'admin',
-  });
+    active: true,
+    allowedStatuses: [],
+  },
+  {
+    id: 'rep1',
+    name: 'John Smith',
+    email: 'jsmith@company.com',
+    role: 'rep',
+    active: true,
+    allowedStatuses: ['Accepted', 'Approved', 'Counter', 'Pending Approval'],
+  },
+  {
+    id: 'rep2',
+    name: 'Sarah Johnson',
+    email: 'sjohnson@company.com',
+    role: 'rep',
+    active: true,
+    allowedStatuses: ['Accepted', 'Approved', 'Denial', 'Declined'],
+  },
+];
 
-  const [activeTab, setActiveTab] = useState<'upload' | 'calls' | 'assign' | 'reporting' | 'users'>('upload');
-
-  // Shared state across all tabs
+function App() {
+  const [activeTab, setActiveTab] = useState('calls');
   const [calls, setCalls] = useState<Call[]>([]);
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [notes, setNotes] = useState<CallNote[]>([]);
-  const [goals, setGoals] = useState<Goals>({ daily: 10, weekly: 50, monthly: 200 });
+  const [users, setUsers] = useState<User[]>(mockUsers);
+  const [currentUser] = useState({ id: '1', role: 'admin' as const });
+  
+  const [goals, setGoals] = useState<Goals>({
+    daily: {
+      'rep1': 10,
+      'rep2': 10,
+    },
+    team: 30,
+    weekly: 50,
+    monthly: 200,
+  });
 
   const tabs = [
-    { id: 'upload' as const, label: 'Upload', adminOnly: true },
-    { id: 'calls' as const, label: 'Calls', adminOnly: false },
-    { id: 'assign' as const, label: 'Assign', adminOnly: true },
-    { id: 'reporting' as const, label: 'Reporting', adminOnly: false },
-    { id: 'users' as const, label: 'User Management', adminOnly: true },
+    { id: 'calls', name: 'Calls', icon: FileText },
+    { id: 'upload', name: 'Upload', icon: Upload },
+    { id: 'assign', name: 'Assign', icon: Users },
+    { id: 'reporting', name: 'Reporting', icon: BarChart3 },
+    { id: 'users', name: 'Users', icon: UserCog },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
-      <div className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-white">📞 DSS Portal v1.0</h1>
-              <p className="text-sm text-gray-400 mt-1">Welcome back, {currentUser.fullName}</p>
+    <div className="min-h-screen bg-gray-900">
+      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-blue-400">DSS Portal</h1>
             </div>
             <div className="flex items-center gap-4">
-              <span className={`px-3 py-1 text-white text-xs rounded-full font-medium ${currentUser.role === 'admin' ? 'bg-blue-600' : 'bg-green-600'}`}>
-                {currentUser.role === 'admin' ? 'Admin' : 'Rep'}
+              <span className="text-sm text-gray-400">
+                {currentUser.role === 'admin' ? 'Admin User' : 'Rep User'}
               </span>
-              <button className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition">Logout</button>
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="bg-gray-800 border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-6">
-          <nav className="flex gap-8">
+      <nav className="bg-gray-800 border-b border-gray-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex space-x-4 overflow-x-auto">
             {tabs.map((tab) => {
-              if (tab.adminOnly && currentUser.role !== 'admin') return null;
+              const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-1 py-4 text-sm font-medium transition ${activeTab === tab.id ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-400 hover:text-white'}`}
+                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? 'border-blue-500 text-blue-400'
+                      : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
+                  }`}
                 >
-                  {tab.label}
+                  <Icon className="w-4 h-4" />
+                  {tab.name}
                 </button>
               );
             })}
-          </nav>
+          </div>
         </div>
-      </div>
+      </nav>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {activeTab === 'upload' && (
-          <UploadTab 
-            calls={calls}
-            setCalls={setCalls}
-            dealers={dealers}
-            setDealers={setDealers}
-          />
-        )}
-
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'calls' && (
           <CallsTab
             currentUserId={currentUser.id}
@@ -134,18 +159,29 @@ function App() {
             setCalls={setCalls}
             notes={notes}
             setNotes={setNotes}
-            dailyGoal={goals.daily}
+            dailyGoal={goals.daily[currentUser.id] || 0}
+            teamGoal={goals.team}
+            currentUser={users.find(u => u.id === currentUser.id)}
           />
         )}
-
+        {activeTab === 'upload' && (
+          <UploadTab
+            calls={calls}
+            setCalls={setCalls}
+            dealers={dealers}
+            setDealers={setDealers}
+          />
+        )}
         {activeTab === 'assign' && (
           <AssignTab
             currentUserRole={currentUser.role}
             calls={calls}
             setCalls={setCalls}
+            users={users}
+            goals={goals}
+            setGoals={setGoals}
           />
         )}
-
         {activeTab === 'reporting' && (
           <ReportingTab
             currentUserId={currentUser.id}
@@ -155,14 +191,14 @@ function App() {
             setGoals={setGoals}
           />
         )}
-
         {activeTab === 'users' && (
           <UserManagementTab
-            currentUserId={currentUser.id}
             currentUserRole={currentUser.role}
+            users={users}
+            setUsers={setUsers}
           />
         )}
-      </div>
+      </main>
     </div>
   );
 }

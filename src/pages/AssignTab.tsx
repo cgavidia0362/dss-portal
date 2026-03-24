@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UserPlus, CheckSquare, Square } from 'lucide-react';
+import { UserPlus, CheckSquare, Square, Target, Users } from 'lucide-react';
 
 interface Call {
   id: string;
@@ -19,26 +19,47 @@ interface Call {
   dealDate?: Date;
 }
 
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'rep';
+  active: boolean;
+  allowedStatuses: string[];
+}
+
+interface Goals {
+  daily: { [repId: string]: number };
+  team: number;
+  weekly: number;
+  monthly: number;
+}
+
 interface AssignTabProps {
   currentUserRole: 'admin' | 'rep';
   calls: Call[];
   setCalls: React.Dispatch<React.SetStateAction<Call[]>>;
+  users: User[];
+  goals: Goals;
+  setGoals: React.Dispatch<React.SetStateAction<Goals>>;
 }
 
 type AssignMode = 'state' | 'dealer' | 'date';
 
-export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTabProps) {
+export default function AssignTab({ currentUserRole, calls, setCalls, users, goals, setGoals }: AssignTabProps) {
   const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
   const [selectedRep, setSelectedRep] = useState<string>('');
   
   const [assignMode, setAssignMode] = useState<AssignMode>('state');
   const [quickAssignValue, setQuickAssignValue] = useState('');
   const [quickAssignRep, setQuickAssignRep] = useState('');
-  
-  const reps = [
-    { id: 'rep1', name: 'John Smith' },
-    { id: 'rep2', name: 'Sarah Johnson' },
-  ];
+
+  const [editingRepGoal, setEditingRepGoal] = useState<string | null>(null);
+  const [tempRepGoal, setTempRepGoal] = useState<number>(0);
+  const [editingTeamGoal, setEditingTeamGoal] = useState(false);
+  const [tempTeamGoal, setTempTeamGoal] = useState<number>(0);
+
+  const reps = users.filter(u => u.role === 'rep' && u.active);
 
   if (currentUserRole !== 'admin') {
     return (
@@ -173,6 +194,25 @@ export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTa
     }
   };
 
+  const handleSaveRepGoal = (repId: string) => {
+    setGoals((prev) => ({
+      ...prev,
+      daily: {
+        ...prev.daily,
+        [repId]: tempRepGoal,
+      },
+    }));
+    setEditingRepGoal(null);
+  };
+
+  const handleSaveTeamGoal = () => {
+    setGoals((prev) => ({
+      ...prev,
+      team: tempTeamGoal,
+    }));
+    setEditingTeamGoal(false);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -204,6 +244,113 @@ export default function AssignTab({ currentUserRole, calls, setCalls }: AssignTa
               </p>
             </div>
             <CheckSquare className="w-12 h-12 text-green-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Daily Goals Management */}
+      <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+        <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
+          <Target className="w-5 h-5 text-purple-400" />
+          Daily Goals
+        </h3>
+
+        <div className="space-y-4">
+          {/* Team Goal */}
+          <div className="bg-gray-750 p-4 rounded-lg border border-gray-600">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Users className="w-5 h-5 text-cyan-400" />
+                <span className="text-gray-200 font-medium">Team Goal (Daily)</span>
+              </div>
+              {editingTeamGoal ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={tempTeamGoal}
+                    onChange={(e) => setTempTeamGoal(parseInt(e.target.value) || 0)}
+                    className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-20"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveTeamGoal}
+                    className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setEditingTeamGoal(false)}
+                    className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-bold text-cyan-400">{goals.team}</span>
+                  <button
+                    onClick={() => {
+                      setEditingTeamGoal(true);
+                      setTempTeamGoal(goals.team);
+                    }}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition"
+                  >
+                    Edit
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Individual Rep Goals */}
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-gray-300">Individual Goals (Daily)</p>
+            {reps.map((rep) => (
+              <div
+                key={rep.id}
+                className="flex items-center justify-between bg-gray-750 p-4 rounded-lg border border-gray-600"
+              >
+                <span className="text-gray-200 font-medium">{rep.name}</span>
+                {editingRepGoal === rep.id ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={tempRepGoal}
+                      onChange={(e) => setTempRepGoal(parseInt(e.target.value) || 0)}
+                      className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-20"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => handleSaveRepGoal(rep.id)}
+                      className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingRepGoal(null)}
+                      className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl font-bold text-purple-400">
+                      {goals.daily[rep.id] || 0}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setEditingRepGoal(rep.id);
+                        setTempRepGoal(goals.daily[rep.id] || 0);
+                      }}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>

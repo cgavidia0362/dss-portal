@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Target, Edit2, Check, X } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Target, Users, Edit2, Check, X } from 'lucide-react';
 
 interface Call {
   id: string;
@@ -28,6 +28,15 @@ interface CallNote {
   createdAt: Date;
 }
 
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'rep';
+  active: boolean;
+  allowedStatuses: string[];
+}
+
 interface CallsTabProps {
   currentUserId: string;
   currentUserRole: 'admin' | 'rep';
@@ -36,12 +45,14 @@ interface CallsTabProps {
   notes: CallNote[];
   setNotes: React.Dispatch<React.SetStateAction<CallNote[]>>;
   dailyGoal: number;
+  teamGoal: number;
+  currentUser?: User;
 }
 
 type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | null;
 type SortOrder = 'asc' | 'desc' | null;
 
-export default function CallsTab({ currentUserId, currentUserRole, calls, setCalls, notes, setNotes, dailyGoal }: CallsTabProps) {
+export default function CallsTab({ currentUserId, currentUserRole, calls, setCalls, notes, setNotes, dailyGoal, teamGoal, currentUser }: CallsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFuStatus, setFilterFuStatus] = useState<string>('');
   const [filterState, setFilterState] = useState<string>('');
@@ -56,13 +67,11 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
 
-  // Edit mode states
   const [editingStatusLast, setEditingStatusLast] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState<string | null>(null);
   const [tempStatusLast, setTempStatusLast] = useState<string>('');
   const [tempAmount, setTempAmount] = useState<string>('');
 
-  // All possible status last values
   const allStatusLastOptions = [
     'Accepted',
     'Approved',
@@ -80,7 +89,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     'Cancelled',
   ];
 
-  // Rule 1: Auto-revert "Accepted" deals after 7 days
   useEffect(() => {
     const checkAndRevertDeals = () => {
       const now = new Date();
@@ -111,7 +119,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     return () => clearInterval(interval);
   }, [setCalls]);
 
-  // Rule 3: Auto-upgrade to "Confirmed Deal"
   useEffect(() => {
     setCalls((prevCalls) =>
       prevCalls.map((call) => {
@@ -153,7 +160,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     }
   };
 
-  // Get color for Status Last badge (Complete color coding)
   const getStatusLastColor = (status: string): string => {
     const statusLower = status.toLowerCase();
     
@@ -204,8 +210,16 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
   };
 
   const filteredCalls = calls.filter((call) => {
+    // Role-based access
     if (currentUserRole === 'rep' && call.assignedTo !== currentUserId) {
       return false;
+    }
+
+    // Rep status access filter
+    if (currentUserRole === 'rep' && currentUser?.allowedStatuses && currentUser.allowedStatuses.length > 0) {
+      if (!currentUser.allowedStatuses.includes(call.statusLast)) {
+        return false;
+      }
     }
 
     const matchesSearch =
@@ -265,7 +279,10 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
   const uniqueStates = Array.from(new Set(calls.map((c) => c.state))).sort();
 
   const dealsToday = filteredCalls.filter((c) => c.fuStatus === 'Deal' && isToday(c.updatedAt)).length;
+  const teamDealsToday = calls.filter((c) => c.fuStatus === 'Deal' && isToday(c.updatedAt)).length;
+  
   const goalProgress = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
+  const teamGoalProgress = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
 
   const kpis = {
     total: filteredCalls.length,
@@ -274,6 +291,9 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     noAnswer: filteredCalls.filter((c) => c.fuStatus === 'No Answer').length,
     dailyGoal: dailyGoal,
     goalProgress: goalProgress,
+    teamDealsToday: teamDealsToday,
+    teamGoal: teamGoal,
+    teamGoalProgress: teamGoalProgress,
   };
 
   const completedCount = calls.filter((c) => {
@@ -362,7 +382,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <p className="text-sm text-gray-400">Total Calls</p>
           <p className="text-3xl font-bold text-blue-400 mt-2">{kpis.total}</p>
@@ -384,6 +404,20 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
             />
           </div>
           <p className="text-xs text-gray-400 mt-1">{kpis.goalProgress.toFixed(0)}% complete</p>
+        </div>
+        <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-gray-400">Team Goal</p>
+            <Users className="w-5 h-5 text-cyan-400" />
+          </div>
+          <p className="text-2xl font-bold text-cyan-400">{kpis.teamDealsToday} / {kpis.teamGoal}</p>
+          <div className="w-full bg-gray-700 rounded-full h-2 mt-3">
+            <div
+              className="bg-cyan-500 h-2 rounded-full transition-all"
+              style={{ width: `${kpis.teamGoalProgress}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-400 mt-1">{kpis.teamGoalProgress.toFixed(0)}% complete</p>
         </div>
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <p className="text-sm text-gray-400">Pending</p>
@@ -741,7 +775,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
                         >
                           <option value="">Select...</option>
                           <option value="Deal">Deal</option>
-                          <option value="Confirmed Deal">Confirmed Deal</option>
                           <option value="No Deal">No Deal</option>
                           <option value="Pending">Pending</option>
                           <option value="No Answer">No Answer</option>
