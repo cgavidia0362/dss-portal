@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, DollarSign, Target } from 'lucide-react';
 
 interface Call {
@@ -88,7 +88,6 @@ export default function ReportingTab({ currentUserId, currentUserRole, calls, go
     .reduce((acc, call) => {
       const date = new Date(call.submittedDate);
       const year = date.getFullYear();
-      const month = date.getMonth();
       const dayOfMonth = date.getDate();
       
       // Calculate week number within the month (1-4)
