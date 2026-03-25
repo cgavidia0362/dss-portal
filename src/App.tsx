@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { BarChart3, Upload, Users, FileText, UserCog } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { BarChart3, Upload, Users, FileText, UserCog, LogOut } from 'lucide-react';
+import { supabase } from './lib/supabase';
+import LoginPage from './pages/LoginPage';
 import CallsTab from './pages/CallsTab';
 import UploadTab from './pages/UploadTab';
 import AssignTab from './pages/AssignTab';
@@ -56,50 +58,103 @@ interface Goals {
   monthly: number;
 }
 
-const mockUsers: User[] = [
-  {
-    id: '1',
-    name: 'Admin User',
-    email: 'admin@company.com',
-    role: 'admin',
-    active: true,
-    allowedStatuses: [],
-  },
-  {
-    id: 'rep1',
-    name: 'John Smith',
-    email: 'jsmith@company.com',
-    role: 'rep',
-    active: true,
-    allowedStatuses: ['Accepted', 'Approved', 'Counter', 'Pending Approval'],
-  },
-  {
-    id: 'rep2',
-    name: 'Sarah Johnson',
-    email: 'sjohnson@company.com',
-    role: 'rep',
-    active: true,
-    allowedStatuses: ['Accepted', 'Approved', 'Denial', 'Declined'],
-  },
-];
-
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
   const [activeTab, setActiveTab] = useState('calls');
   const [calls, setCalls] = useState<Call[]>([]);
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [notes, setNotes] = useState<CallNote[]>([]);
-  const [users, setUsers] = useState<User[]>(mockUsers);
-  const [currentUser] = useState({ id: '1', role: 'admin' as const });
+  const [users, setUsers] = useState<User[]>([]);
   
   const [goals, setGoals] = useState<Goals>({
-    daily: {
-      'rep1': 10,
-      'rep2': 10,
-    },
+    daily: {},
     team: 30,
     weekly: 50,
     monthly: 200,
   });
+
+  // Check authentication on mount
+  useEffect(() => {
+    checkAuth();
+
+    // Listen for auth changes
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        loadUserProfile(session.user.id);
+      } else {
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        await loadUserProfile(session.user.id);
+      } else {
+        setIsAuthenticated(false);
+        setIsLoading(false);
+      }
+    } catch (error) {
+      console.error('Auth check error:', error);
+      setIsAuthenticated(false);
+      setIsLoading(false);
+    }
+  };
+
+  const loadUserProfile = async (userId: string) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+
+      if (profile) {
+        setCurrentUser({
+          id: profile.id,
+          name: profile.name,
+          email: profile.email,
+          role: profile.role,
+          active: profile.active,
+          allowedStatuses: profile.allowed_statuses || [],
+        });
+        setIsAuthenticated(true);
+      }
+    } catch (error) {
+      console.error('Profile load error:', error);
+      setIsAuthenticated(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  const handleLoginSuccess = () => {
+    checkAuth();
+  };
 
   const tabs = [
     { id: 'calls', name: 'Calls', icon: FileText },
@@ -108,6 +163,23 @@ function App() {
     { id: 'reporting', name: 'Reporting', icon: BarChart3 },
     { id: 'users', name: 'Users', icon: UserCog },
   ];
+
+  // Show loading spinner while checking auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="text-gray-400 mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!isAuthenticated || !currentUser) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -119,8 +191,15 @@ function App() {
             </div>
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-400">
-                {currentUser.role === 'admin' ? 'Admin User' : 'Rep User'}
+                {currentUser.name} ({currentUser.role})
               </span>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition"
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
+              </button>
             </div>
           </div>
         </div>
@@ -161,7 +240,7 @@ function App() {
             setNotes={setNotes}
             dailyGoal={goals.daily[currentUser.id] || 0}
             teamGoal={goals.team}
-            currentUser={users.find(u => u.id === currentUser.id)}
+            currentUser={currentUser}
           />
         )}
         {activeTab === 'upload' && (
