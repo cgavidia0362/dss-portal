@@ -11,7 +11,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { TrendingUp, Target, Calendar, Settings } from 'lucide-react';
+import { TrendingUp, Target, Settings } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
