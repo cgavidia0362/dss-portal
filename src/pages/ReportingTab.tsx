@@ -11,7 +11,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { TrendingUp, Target, Settings } from 'lucide-react';
+import { TrendingUp, Target, Settings, Award, Users, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
@@ -21,6 +21,8 @@ interface Call {
   submittedDate: string;
   dealDate?: Date;
   updatedAt: Date;
+  assignedTo?: string;
+  assignedToName?: string;
 }
 
 interface StateGoal {
@@ -46,12 +48,19 @@ interface StateStats {
   daysRemaining: number;
 }
 
+interface Goals {
+  daily: { [repId: string]: number };
+  team: number;
+  weekly: number;
+  monthly: number;
+}
+
 interface ReportingTabProps {
   currentUserId: string;
   currentUserRole: 'admin' | 'rep';
   calls: Call[];
-  goals: any;
-  setGoals: (goals: any) => void;
+  goals: Goals;
+  setGoals: (goals: Goals) => void;
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
@@ -60,6 +69,8 @@ export default function ReportingTab({
   currentUserId,
   currentUserRole,
   calls,
+  goals,
+  setGoals,
 }: ReportingTabProps) {
   const [stateGoals, setStateGoals] = useState<StateGoal[]>([]);
   const [stateStats, setStateStats] = useState<StateStats[]>([]);
@@ -68,6 +79,12 @@ export default function ReportingTab({
   const [goalForm, setGoalForm] = useState({
     monthlyGoal: '',
     fundingDays: '',
+  });
+  const [showTeamGoals, setShowTeamGoals] = useState(false);
+  const [teamGoalInput, setTeamGoalInput] = useState({
+    daily: goals.team.toString(),
+    weekly: goals.weekly.toString(),
+    monthly: goals.monthly.toString(),
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -109,19 +126,16 @@ export default function ReportingTab({
       }
     } catch (err: any) {
       console.error('Error fetching goals:', err);
-      setError('Failed to load goals: ' + err.message);
     }
   };
 
   const calculateStateStats = () => {
-    // Get unique states from calls
     const states = [...new Set(calls.map((call) => call.state))].sort();
 
     const stats: StateStats[] = states.map((state) => {
       const stateCalls = calls.filter((call) => call.state === state);
       const totalApps = stateCalls.length;
 
-      // Count funded deals this month
       const fundedThisMonth = stateCalls.filter((call) => {
         if (!call.dealDate) return false;
         const dealDate = new Date(call.dealDate);
@@ -132,19 +146,13 @@ export default function ReportingTab({
         );
       }).length;
 
-      // Find goal for this state
       const stateGoal = stateGoals.find((g) => g.state === state);
       const monthlyGoal = stateGoal?.monthlyGoal || 0;
       const fundingDays = stateGoal?.fundingDays || 20;
 
-      // Calculate goals
       const dailyGoal = monthlyGoal > 0 ? Math.round(monthlyGoal / fundingDays) : 0;
       const weeklyGoal = dailyGoal * 5;
-
-      // Calculate progress
       const progress = monthlyGoal > 0 ? (fundedThisMonth / monthlyGoal) * 100 : 0;
-
-      // Calculate pacing (assuming today is a funding day)
       const daysElapsed = Math.min(currentDay, fundingDays);
       const daysRemaining = Math.max(fundingDays - daysElapsed, 1);
       const neededPerDay =
@@ -206,6 +214,16 @@ export default function ReportingTab({
     }
   };
 
+  const handleSaveTeamGoals = () => {
+    setGoals({
+      ...goals,
+      team: parseInt(teamGoalInput.daily) || 0,
+      weekly: parseInt(teamGoalInput.weekly) || 0,
+      monthly: parseInt(teamGoalInput.monthly) || 0,
+    });
+    setShowTeamGoals(false);
+  };
+
   const getProgressColor = (progress: number) => {
     if (progress >= 90) return 'bg-green-500';
     if (progress >= 70) return 'bg-blue-500';
@@ -220,7 +238,50 @@ export default function ReportingTab({
     return 'text-red-400';
   };
 
-  // Prepare data for charts
+  // Calculate team stats
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const dealsToday = calls.filter(
+    (call) =>
+      (call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal') &&
+      call.dealDate &&
+      new Date(call.dealDate) >= todayStart
+  ).length;
+
+  const totalDeals = calls.filter(
+    (call) => call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal'
+  ).length;
+
+  const conversionRate = calls.length > 0 ? ((totalDeals / calls.length) * 100).toFixed(1) : '0';
+
+  // Rep performance
+  const repPerformance = calls.reduce((acc: any[], call) => {
+    if (!call.assignedTo || !call.assignedToName) return acc;
+
+    const existing = acc.find((r) => r.repId === call.assignedTo);
+    const isDeal = call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal';
+
+    if (existing) {
+      existing.totalCalls += 1;
+      if (isDeal) existing.deals += 1;
+    } else {
+      acc.push({
+        repId: call.assignedTo,
+        repName: call.assignedToName,
+        totalCalls: 1,
+        deals: isDeal ? 1 : 0,
+      });
+    }
+    return acc;
+  }, []);
+
+  repPerformance.forEach((rep) => {
+    rep.conversionRate =
+      rep.totalCalls > 0 ? ((rep.deals / rep.totalCalls) * 100).toFixed(1) : '0';
+  });
+
+  // Charts data
   const dealsByWeek = calls.reduce((acc: any[], call) => {
     if (!call.dealDate) return acc;
     const date = new Date(call.dealDate);
@@ -250,123 +311,211 @@ export default function ReportingTab({
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {error && (
         <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded">
           {error}
         </div>
       )}
 
-      {/* Header with Set Goals Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-100">State Performance</h2>
-          <p className="text-gray-400 mt-1">
-            {new Date().toLocaleString('default', { month: 'long' })} {currentYear}
-          </p>
+      {/* State Performance Section */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-100">State Performance</h2>
+            <p className="text-gray-400 mt-1">
+              {new Date().toLocaleString('default', { month: 'long' })} {currentYear}
+            </p>
+          </div>
+          {currentUserRole === 'admin' && (
+            <button
+              onClick={() => setShowGoalModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+            >
+              <Settings className="w-5 h-5" />
+              Set State Goals
+            </button>
+          )}
         </div>
-        {currentUserRole === 'admin' && (
-          <button
-            onClick={() => setShowGoalModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-          >
-            <Settings className="w-5 h-5" />
-            Set State Goals
-          </button>
-        )}
-      </div>
 
-      {/* State Tiles */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {stateStats.map((stat) => (
-          <div
-            key={stat.state}
-            className="bg-gray-800 rounded-lg p-6 border border-gray-700"
-          >
-            {/* State Header */}
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-2xl font-bold text-gray-100">{stat.state}</h3>
-              {stat.monthlyGoal > 0 && (
-                <span
-                  className={`text-3xl font-bold ${getProgressTextColor(
-                    stat.progress
-                  )}`}
-                >
-                  {stat.funded}
-                </span>
-              )}
-            </div>
-
-            {/* Goal Badge */}
-            {stat.monthlyGoal > 0 ? (
-              <>
-                <div className="flex items-center gap-2 mb-3">
-                  <Target className="w-4 h-4 text-gray-400" />
-                  <span className="text-sm text-gray-400">
-                    Goal: {stat.monthlyGoal}
-                  </span>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="relative w-full h-2 bg-gray-700 rounded-full mb-4">
-                  <div
-                    className={`absolute top-0 left-0 h-full rounded-full ${getProgressColor(
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {stateStats.map((stat) => (
+            <div
+              key={stat.state}
+              className="bg-gray-800 rounded-lg p-6 border border-gray-700"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-2xl font-bold text-gray-100">{stat.state}</h3>
+                {stat.monthlyGoal > 0 && (
+                  <span
+                    className={`text-3xl font-bold ${getProgressTextColor(
                       stat.progress
                     )}`}
-                    style={{ width: `${Math.min(stat.progress, 100)}%` }}
-                  />
-                </div>
-
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-gray-400">Apps</p>
-                    <p className="text-lg font-semibold text-gray-200">
-                      {stat.totalApps}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400">Funded</p>
-                    <p className="text-lg font-semibold text-gray-200">
-                      {stat.funded} / {stat.monthlyGoal}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400">Progress</p>
-                    <p className={`text-lg font-semibold ${getProgressTextColor(stat.progress)}`}>
-                      {stat.progress.toFixed(0)}%
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400">Need/Day</p>
-                    <p className="text-lg font-semibold text-gray-200">
-                      {stat.neededPerDay}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Pacing Info */}
-                <div className="mt-4 pt-4 border-t border-gray-700 text-xs text-gray-400">
-                  <p>Daily: {stat.dailyGoal} | Weekly: {stat.weeklyGoal}</p>
-                  <p className="mt-1">
-                    {stat.daysRemaining} days remaining of {stat.fundingDays}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-4">
-                <p className="text-gray-400 text-sm mb-2">No goal set</p>
-                <p className="text-2xl font-bold text-gray-500">{stat.totalApps}</p>
-                <p className="text-sm text-gray-500">Total Apps</p>
+                  >
+                    {stat.funded}
+                  </span>
+                )}
               </div>
-            )}
-          </div>
-        ))}
+
+              {stat.monthlyGoal > 0 ? (
+                <>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Target className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-400">
+                      Goal: {stat.monthlyGoal}
+                    </span>
+                  </div>
+
+                  <div className="relative w-full h-2 bg-gray-700 rounded-full mb-4">
+                    <div
+                      className={`absolute top-0 left-0 h-full rounded-full ${getProgressColor(
+                        stat.progress
+                      )}`}
+                      style={{ width: `${Math.min(stat.progress, 100)}%` }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-gray-400">Apps</p>
+                      <p className="text-lg font-semibold text-gray-200">
+                        {stat.totalApps}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Funded</p>
+                      <p className="text-lg font-semibold text-gray-200">
+                        {stat.funded} / {stat.monthlyGoal}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Progress</p>
+                      <p className={`text-lg font-semibold ${getProgressTextColor(stat.progress)}`}>
+                        {stat.progress.toFixed(0)}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Need/Day</p>
+                      <p className="text-lg font-semibold text-gray-200">
+                        {stat.neededPerDay}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-gray-700 text-xs text-gray-400">
+                    <p>Daily: {stat.dailyGoal} | Weekly: {stat.weeklyGoal}</p>
+                    <p className="mt-1">
+                      {stat.daysRemaining} days remaining of {stat.fundingDays}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-gray-400 text-sm mb-2">No goal set</p>
+                  <p className="text-2xl font-bold text-gray-500">{stat.totalApps}</p>
+                  <p className="text-sm text-gray-500">Total Apps</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Charts */}
+      {/* Team Overview Section */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-gray-100">Team Overview</h2>
+          {currentUserRole === 'admin' && (
+            <button
+              onClick={() => setShowTeamGoals(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition text-sm"
+            >
+              <Target className="w-4 h-4" />
+              Set Team Goals
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-400 text-sm">Deals Today</p>
+                <p className="text-3xl font-bold text-green-400">{dealsToday}</p>
+              </div>
+              <CheckCircle2 className="w-12 h-12 text-green-400 opacity-20" />
+            </div>
+            <div className="mt-2 text-sm text-gray-500">Goal: {goals.team}/day</div>
+          </div>
+
+          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-400 text-sm">Total Deals</p>
+                <p className="text-3xl font-bold text-blue-400">{totalDeals}</p>
+              </div>
+              <Award className="w-12 h-12 text-blue-400 opacity-20" />
+            </div>
+            <div className="mt-2 text-sm text-gray-500">
+              Monthly Goal: {goals.monthly}
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-400 text-sm">Conversion Rate</p>
+                <p className="text-3xl font-bold text-purple-400">{conversionRate}%</p>
+              </div>
+              <TrendingUp className="w-12 h-12 text-purple-400 opacity-20" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Rep Performance Section */}
+      {currentUserRole === 'admin' && repPerformance.length > 0 && (
+        <div>
+          <h2 className="text-2xl font-bold text-gray-100 mb-4">Rep Performance</h2>
+          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-900">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                    Rep
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                    Total Calls
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                    Deals
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                    Conversion Rate
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700">
+                {repPerformance.map((rep) => (
+                  <tr key={rep.repId}>
+                    <td className="px-6 py-4 text-sm text-gray-300">{rep.repName}</td>
+                    <td className="px-6 py-4 text-sm text-gray-300">{rep.totalCalls}</td>
+                    <td className="px-6 py-4 text-sm text-green-400 font-semibold">
+                      {rep.deals}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-blue-400 font-semibold">
+                      {rep.conversionRate}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Deals by Week */}
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
           <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
             <TrendingUp className="w-5 h-5" />
@@ -389,7 +538,6 @@ export default function ReportingTab({
           </ResponsiveContainer>
         </div>
 
-        {/* Status Distribution */}
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
           <h3 className="text-lg font-semibold text-gray-100 mb-4">
             Status Distribution
@@ -422,7 +570,7 @@ export default function ReportingTab({
         </div>
       </div>
 
-      {/* Set Goal Modal */}
+      {/* Modals */}
       {showGoalModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
@@ -521,6 +669,73 @@ export default function ReportingTab({
                   setGoalForm({ monthlyGoal: '', fundingDays: '' });
                   setError('');
                 }}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTeamGoals && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
+            <h3 className="text-xl font-bold text-gray-100 mb-4">Set Team Goals</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Daily Team Goal
+                </label>
+                <input
+                  type="number"
+                  value={teamGoalInput.daily}
+                  onChange={(e) =>
+                    setTeamGoalInput({ ...teamGoalInput, daily: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Weekly Team Goal
+                </label>
+                <input
+                  type="number"
+                  value={teamGoalInput.weekly}
+                  onChange={(e) =>
+                    setTeamGoalInput({ ...teamGoalInput, weekly: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Monthly Team Goal
+                </label>
+                <input
+                  type="number"
+                  value={teamGoalInput.monthly}
+                  onChange={(e) =>
+                    setTeamGoalInput({ ...teamGoalInput, monthly: e.target.value })
+                  }
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleSaveTeamGoals}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+              >
+                Save Goals
+              </button>
+              <button
+                onClick={() => setShowTeamGoals(false)}
                 className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition"
               >
                 Cancel
