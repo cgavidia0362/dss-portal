@@ -11,7 +11,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { TrendingUp, Target, Settings, Award, Users, CheckCircle2 } from 'lucide-react';
+import { TrendingUp, Target, Settings, Award, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
