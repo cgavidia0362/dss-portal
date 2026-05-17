@@ -271,11 +271,10 @@ function App() {
           />
         )}
         {activeTab === 'users' && (
-          <UserManagementTab
-            currentUserRole={currentUser.role}
-            users={users}
-            setUsers={setUsers}
-          />
+  <UserManagementTab
+  currentUserId={session.user.id}
+  currentUserRole={currentUserRole}
+/>
         )}
       </main>
     </div>
