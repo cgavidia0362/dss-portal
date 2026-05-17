@@ -23,6 +23,7 @@ interface Call {
   updatedAt: Date;
   assignedTo?: string;
   assignedToName?: string;
+  amount?: number;
 }
 
 interface StateGoal {
@@ -63,6 +64,8 @@ interface ReportingTabProps {
   setGoals: (goals: Goals) => void;
 }
 
+type TimePeriod = 'daily' | 'weekly' | 'monthly';
+
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export default function ReportingTab({
@@ -86,6 +89,8 @@ export default function ReportingTab({
     weekly: goals.weekly.toString(),
     monthly: goals.monthly.toString(),
   });
+  const [revenuePeriod, setRevenuePeriod] = useState<TimePeriod>('monthly');
+  const [repPeriod, setRepPeriod] = useState<TimePeriod>('daily');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -238,6 +243,68 @@ export default function ReportingTab({
     return 'text-red-400';
   };
 
+  // Filter calls by time period
+  const getDateRange = (period: TimePeriod) => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    switch (period) {
+      case 'daily':
+        return startOfToday;
+      case 'weekly':
+        return startOfWeek;
+      case 'monthly':
+        return startOfMonth;
+    }
+  };
+
+  const filterCallsByPeriod = (period: TimePeriod) => {
+    const startDate = getDateRange(period);
+    return calls.filter((call) => {
+      const callDate = call.dealDate ? new Date(call.dealDate) : new Date(call.updatedAt);
+      return callDate >= startDate;
+    });
+  };
+
+  // Calculate revenue stats
+  const calculateRevenueStats = (period: TimePeriod) => {
+    const filteredCalls = filterCallsByPeriod(period);
+    const dealCalls = filteredCalls.filter(
+      (call) => call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal'
+    );
+
+    const totalDeals = dealCalls.length;
+    const totalRevenue = dealCalls.reduce((sum, call) => sum + (call.amount || 0), 0);
+    const avgDeal = totalDeals > 0 ? totalRevenue / totalDeals : 0;
+    const largestDeal = dealCalls.length > 0 
+      ? Math.max(...dealCalls.map((c) => c.amount || 0))
+      : 0;
+
+    // Group by state
+    const byState = dealCalls.reduce((acc: any[], call) => {
+      const existing = acc.find((item) => item.state === call.state);
+      if (existing) {
+        existing.deals += 1;
+        existing.revenue += call.amount || 0;
+      } else {
+        acc.push({
+          state: call.state,
+          deals: 1,
+          revenue: call.amount || 0,
+        });
+      }
+      return acc;
+    }, []);
+
+    return { totalDeals, totalRevenue, avgDeal, largestDeal, byState };
+  };
+
+  const revenueStats = calculateRevenueStats(revenuePeriod);
+
   // Calculate team stats
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -255,31 +322,46 @@ export default function ReportingTab({
 
   const conversionRate = calls.length > 0 ? ((totalDeals / calls.length) * 100).toFixed(1) : '0';
 
-  // Rep performance
-  const repPerformance = calls.reduce((acc: any[], call) => {
-    if (!call.assignedTo || !call.assignedToName) return acc;
+  // Rep performance by period
+  const calculateRepPerformance = (period: TimePeriod) => {
+    const filteredCalls = filterCallsByPeriod(period);
 
-    const existing = acc.find((r) => r.repId === call.assignedTo);
-    const isDeal = call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal';
+    const repData = filteredCalls.reduce((acc: any[], call) => {
+      if (!call.assignedTo || !call.assignedToName) return acc;
 
-    if (existing) {
-      existing.totalCalls += 1;
-      if (isDeal) existing.deals += 1;
-    } else {
-      acc.push({
-        repId: call.assignedTo,
-        repName: call.assignedToName,
-        totalCalls: 1,
-        deals: isDeal ? 1 : 0,
-      });
-    }
-    return acc;
-  }, []);
+      const existing = acc.find((r) => r.repId === call.assignedTo);
+      const isDeal = call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal';
+      const isConfirmed =
+        call.fuStatus === 'Document Received' ||
+        call.fuStatus === 'Funded' ||
+        call.fuStatus === 'Funding Pending' ||
+        call.fuStatus === 'Confirmed Deal';
 
-  repPerformance.forEach((rep) => {
-    rep.conversionRate =
-      rep.totalCalls > 0 ? ((rep.deals / rep.totalCalls) * 100).toFixed(1) : '0';
-  });
+      if (existing) {
+        existing.calls += 1;
+        if (isDeal) existing.dealsClaimed += 1;
+        if (isConfirmed) existing.confirmedDeals += 1;
+      } else {
+        acc.push({
+          repId: call.assignedTo,
+          repName: call.assignedToName,
+          calls: 1,
+          dealsClaimed: isDeal ? 1 : 0,
+          confirmedDeals: isConfirmed ? 1 : 0,
+        });
+      }
+      return acc;
+    }, []);
+
+    repData.forEach((rep) => {
+      rep.conversionRate =
+        rep.calls > 0 ? ((rep.confirmedDeals / rep.calls) * 100).toFixed(1) : '0';
+    });
+
+    return repData;
+  };
+
+  const repPerformance = calculateRepPerformance(repPeriod);
 
   // Charts data
   const dealsByWeek = calls.reduce((acc: any[], call) => {
@@ -310,118 +392,119 @@ export default function ReportingTab({
     return acc;
   }, []);
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded">
           {error}
         </div>
       )}
 
-      {/* State Performance Section */}
+      {/* SECTION 1: TOTAL DEALS (WITH TOGGLE) */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-100">State Performance</h2>
-            <p className="text-gray-400 mt-1">
-              {new Date().toLocaleString('default', { month: 'long' })} {currentYear}
-            </p>
-          </div>
-          {currentUserRole === 'admin' && (
+          <h2 className="text-2xl font-bold text-gray-100">💰 Total Deals</h2>
+          <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
             <button
-              onClick={() => setShowGoalModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+              onClick={() => setRevenuePeriod('daily')}
+              className={`px-4 py-2 text-sm font-medium transition ${
+                revenuePeriod === 'daily'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+              }`}
             >
-              <Settings className="w-5 h-5" />
-              Set State Goals
+              Daily
             </button>
-          )}
+            <button
+              onClick={() => setRevenuePeriod('weekly')}
+              className={`px-4 py-2 text-sm font-medium transition ${
+                revenuePeriod === 'weekly'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+              }`}
+            >
+              Weekly
+            </button>
+            <button
+              onClick={() => setRevenuePeriod('monthly')}
+              className={`px-4 py-2 text-sm font-medium transition ${
+                revenuePeriod === 'monthly'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+              }`}
+            >
+              Monthly
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {stateStats.map((stat) => (
-            <div
-              key={stat.state}
-              className="bg-gray-800 rounded-lg p-6 border border-gray-700"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-2xl font-bold text-gray-100">{stat.state}</h3>
-                {stat.monthlyGoal > 0 && (
-                  <span
-                    className={`text-3xl font-bold ${getProgressTextColor(
-                      stat.progress
-                    )}`}
+        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg p-6 border border-gray-700">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+              <p className="text-sm text-gray-400 mb-1">Total Deals</p>
+              <p className="text-3xl font-bold text-green-400">{revenueStats.totalDeals}</p>
+              <p className="text-xs text-gray-500 mt-1">All States</p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+              <p className="text-sm text-gray-400 mb-1">Total Revenue</p>
+              <p className="text-3xl font-bold text-green-400">
+                {formatCurrency(revenueStats.totalRevenue)}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                {revenuePeriod.charAt(0).toUpperCase() + revenuePeriod.slice(1)}
+              </p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+              <p className="text-sm text-gray-400 mb-1">Average Deal</p>
+              <p className="text-2xl font-bold text-green-400">
+                {formatCurrency(revenueStats.avgDeal)}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">Per Deal</p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+              <p className="text-sm text-gray-400 mb-1">Largest Deal</p>
+              <p className="text-2xl font-bold text-green-400">
+                {formatCurrency(revenueStats.largestDeal)}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">Single Deal</p>
+            </div>
+          </div>
+
+          {revenueStats.byState.length > 0 && (
+            <>
+              <div className="h-px bg-gray-700 my-6"></div>
+              <h3 className="text-lg font-semibold text-gray-200 mb-3">Revenue by State</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {revenueStats.byState.map((item) => (
+                  <div
+                    key={item.state}
+                    className="bg-gray-800 rounded-lg p-3 border border-gray-700 flex justify-between items-center"
                   >
-                    {stat.funded}
-                  </span>
-                )}
-              </div>
-
-              {stat.monthlyGoal > 0 ? (
-                <>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Target className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-400">
-                      Goal: {stat.monthlyGoal}
-                    </span>
-                  </div>
-
-                  <div className="relative w-full h-2 bg-gray-700 rounded-full mb-4">
-                    <div
-                      className={`absolute top-0 left-0 h-full rounded-full ${getProgressColor(
-                        stat.progress
-                      )}`}
-                      style={{ width: `${Math.min(stat.progress, 100)}%` }}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <p className="text-gray-400">Apps</p>
-                      <p className="text-lg font-semibold text-gray-200">
-                        {stat.totalApps}
-                      </p>
+                      <p className="font-semibold text-gray-200">{item.state}</p>
+                      <p className="text-sm text-gray-400">{item.deals} deals</p>
                     </div>
-                    <div>
-                      <p className="text-gray-400">Funded</p>
-                      <p className="text-lg font-semibold text-gray-200">
-                        {stat.funded} / {stat.monthlyGoal}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-400">Progress</p>
-                      <p className={`text-lg font-semibold ${getProgressTextColor(stat.progress)}`}>
-                        {stat.progress.toFixed(0)}%
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-400">Need/Day</p>
-                      <p className="text-lg font-semibold text-gray-200">
-                        {stat.neededPerDay}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-4 border-t border-gray-700 text-xs text-gray-400">
-                    <p>Daily: {stat.dailyGoal} | Weekly: {stat.weeklyGoal}</p>
-                    <p className="mt-1">
-                      {stat.daysRemaining} days remaining of {stat.fundingDays}
+                    <p className="text-lg font-bold text-green-400">
+                      {formatCurrency(item.revenue)}
                     </p>
                   </div>
-                </>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-gray-400 text-sm mb-2">No goal set</p>
-                  <p className="text-2xl font-bold text-gray-500">{stat.totalApps}</p>
-                  <p className="text-sm text-gray-500">Total Apps</p>
-                </div>
-              )}
-            </div>
-          ))}
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Team Overview Section */}
+      {/* SECTION 2: TEAM OVERVIEW */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-gray-100">Team Overview</h2>
@@ -473,104 +556,266 @@ export default function ReportingTab({
         </div>
       </div>
 
-      {/* Rep Performance Section */}
-      {currentUserRole === 'admin' && repPerformance.length > 0 && (
-        <div>
-          <h2 className="text-2xl font-bold text-gray-100 mb-4">Rep Performance</h2>
-          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-900">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    Rep
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    Total Calls
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    Deals
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    Conversion Rate
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700">
-                {repPerformance.map((rep) => (
-                  <tr key={rep.repId}>
-                    <td className="px-6 py-4 text-sm text-gray-300">{rep.repName}</td>
-                    <td className="px-6 py-4 text-sm text-gray-300">{rep.totalCalls}</td>
-                    <td className="px-6 py-4 text-sm text-green-400 font-semibold">
-                      {rep.deals}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-blue-400 font-semibold">
-                      {rep.conversionRate}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* SECTION 3: STATE PERFORMANCE (SMALLER CARDS) */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-100">State Performance</h2>
+            <p className="text-gray-400 mt-1">
+              {new Date().toLocaleString('default', { month: 'long' })} {currentYear}
+            </p>
           </div>
-        </div>
-      )}
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5" />
-            Deals by Week
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={dealsByWeek}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="week" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
-                  borderRadius: '0.5rem',
-                }}
-              />
-              <Bar dataKey="deals" fill="#3b82f6" />
-            </BarChart>
-          </ResponsiveContainer>
+          {currentUserRole === 'admin' && (
+            <button
+              onClick={() => setShowGoalModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+            >
+              <Settings className="w-5 h-5" />
+              Set State Goals
+            </button>
+          )}
         </div>
 
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4">
-            Status Distribution
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={statusDistribution}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={(entry) => entry.name}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {statusDistribution.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1f2937',
-                  border: '1px solid #374151',
-                  borderRadius: '0.5rem',
-                }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {stateStats.map((stat) => (
+            <div
+              key={stat.state}
+              className="bg-gray-800 rounded-lg p-4 border border-gray-700"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-bold text-gray-100">{stat.state}</h3>
+                {stat.monthlyGoal > 0 && (
+                  <span
+                    className={`text-2xl font-bold ${getProgressTextColor(
+                      stat.progress
+                    )}`}
+                  >
+                    {stat.funded}
+                  </span>
+                )}
+              </div>
+
+              {stat.monthlyGoal > 0 ? (
+                <>
+                  <div className="text-xs text-gray-400 mb-2">Goal: {stat.monthlyGoal}</div>
+
+                  <div className="relative w-full h-1.5 bg-gray-700 rounded-full mb-3">
+                    <div
+                      className={`absolute top-0 left-0 h-full rounded-full ${getProgressColor(
+                        stat.progress
+                      )}`}
+                      style={{ width: `${Math.min(stat.progress, 100)}%` }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <p className="text-gray-400">Apps</p>
+                      <p className="text-sm font-semibold text-gray-200">
+                        {stat.totalApps}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Progress</p>
+                      <p className={`text-sm font-semibold ${getProgressTextColor(stat.progress)}`}>
+                        {stat.progress.toFixed(0)}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Funded</p>
+                      <p className="text-sm font-semibold text-gray-200">
+                        {stat.funded}/{stat.monthlyGoal}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Need/Day</p>
+                      <p className="text-sm font-semibold text-gray-200">
+                        {stat.neededPerDay}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-400">
+                    {stat.daysRemaining} days left • Daily: {stat.dailyGoal}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-3">
+                  <p className="text-gray-400 text-xs mb-1">No goal set</p>
+                  <p className="text-xl font-bold text-gray-500">{stat.totalApps}</p>
+                  <p className="text-xs text-gray-500">Total Apps</p>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Modals */}
+      {/* SECTION 4: REP PERFORMANCE (WITH TOGGLE) */}
+      {currentUserRole === 'admin' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-gray-100">Rep Performance</h2>
+            <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              <button
+                onClick={() => setRepPeriod('daily')}
+                className={`px-4 py-2 text-sm font-medium transition ${
+                  repPeriod === 'daily'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                }`}
+              >
+                Daily
+              </button>
+              <button
+                onClick={() => setRepPeriod('weekly')}
+                className={`px-4 py-2 text-sm font-medium transition ${
+                  repPeriod === 'weekly'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                }`}
+              >
+                Weekly
+              </button>
+              <button
+                onClick={() => setRepPeriod('monthly')}
+                className={`px-4 py-2 text-sm font-medium transition ${
+                  repPeriod === 'monthly'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                }`}
+              >
+                Monthly
+              </button>
+            </div>
+          </div>
+
+          {repPerformance.length > 0 ? (
+            <>
+              <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-900">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                        Rep
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                        Calls
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                        Deals Claimed
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                        Confirmed Deals
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                        Conversion Rate
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-700">
+                    {repPerformance.map((rep) => (
+                      <tr key={rep.repId} className="hover:bg-gray-750">
+                        <td className="px-6 py-4 text-sm font-medium text-gray-200">
+                          {rep.repName}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-300">{rep.calls}</td>
+                        <td className="px-6 py-4 text-sm text-gray-300">
+                          {rep.dealsClaimed}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-green-400 font-semibold">
+                          {rep.confirmedDeals}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-blue-400 font-semibold">
+                          {rep.conversionRate}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-3 bg-gray-800 rounded-lg p-4 border border-gray-700 text-sm text-gray-400">
+                <strong className="text-gray-200">
+                  Currently Showing: {repPeriod.charAt(0).toUpperCase() + repPeriod.slice(1)} View
+                </strong>
+                <br />
+                • <strong>Calls:</strong> Apps touched in this period
+                <br />
+                • <strong>Deals Claimed:</strong> Marked as "Deal"
+                <br />
+                • <strong>Confirmed Deals:</strong> Deal → Document Received/Funded/Funding
+                Pending
+                <br />• <strong>Conversion Rate:</strong> (Confirmed Deals ÷ Total Calls) × 100
+              </div>
+            </>
+          ) : (
+            <div className="bg-gray-800 rounded-lg p-8 border border-gray-700 text-center text-gray-400">
+              No rep activity for this period
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SECTION 5: CHARTS */}
+      <div>
+        <h2 className="text-2xl font-bold text-gray-100 mb-4">Trends & Analytics</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5" />
+              Deals by Week
+            </h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={dealsByWeek}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="week" stroke="#9ca3af" />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1f2937',
+                    border: '1px solid #374151',
+                    borderRadius: '0.5rem',
+                  }}
+                />
+                <Bar dataKey="deals" fill="#3b82f6" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-100 mb-4">
+              Status Distribution
+            </h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={statusDistribution}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={(entry) => entry.name}
+                  outerRadius={100}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {statusDistribution.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#1f2937',
+                    border: '1px solid #374151',
+                    borderRadius: '0.5rem',
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* MODALS */}
       {showGoalModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
