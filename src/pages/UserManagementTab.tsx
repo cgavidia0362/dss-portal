@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { UserPlus, Edit2, Trash2, Mail } from 'lucide-react';
+import { UserPlus, Edit2, Trash2, X } from 'lucide-react';
 
 interface Profile {
   id: string;
@@ -23,8 +23,16 @@ export default function UserManagementTab({
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
-  const [showInstructions, setShowInstructions] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newUserForm, setNewUserForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'rep' as 'admin' | 'rep',
+    allowedStatuses: '',
+  });
 
   useEffect(() => {
     fetchUsers();
@@ -59,6 +67,70 @@ export default function UserManagementTab({
     }
   };
 
+  const handleCreateUser = async () => {
+    if (!newUserForm.name || !newUserForm.email || !newUserForm.password) {
+      setError('Name, email, and password are required');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      const allowedStatuses =
+        newUserForm.role === 'rep'
+          ? newUserForm.allowedStatuses
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [];
+
+      // Call the Edge Function
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(
+        'https://byyaaqbtcfoaeonisdy.supabase.co/functions/v1/create-user',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            name: newUserForm.name,
+            email: newUserForm.email,
+            password: newUserForm.password,
+            role: newUserForm.role,
+            allowedStatuses,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create user');
+      }
+
+      setSuccess(`User ${newUserForm.name} created successfully!`);
+      setShowAddForm(false);
+      setNewUserForm({
+        name: '',
+        email: '',
+        password: '',
+        role: 'rep',
+        allowedStatuses: '',
+      });
+      await fetchUsers();
+    } catch (err: any) {
+      console.error('Error creating user:', err);
+      setError('Failed to create user: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleUpdateUser = async (userId: string, updates: Partial<Profile>) => {
     try {
       setLoading(true);
@@ -75,6 +147,7 @@ export default function UserManagementTab({
 
       if (updateError) throw updateError;
 
+      setSuccess('User updated successfully!');
       await fetchUsers();
       setEditingUser(null);
     } catch (err: any) {
@@ -99,6 +172,7 @@ export default function UserManagementTab({
 
       if (deleteError) throw deleteError;
 
+      setSuccess('User deleted successfully!');
       await fetchUsers();
     } catch (err: any) {
       console.error('Error deleting user:', err);
@@ -124,6 +198,12 @@ export default function UserManagementTab({
         </div>
       )}
 
+      {success && (
+        <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded">
+          {success}
+        </div>
+      )}
+
       <div>
         <div className="flex items-center justify-between mb-2">
           <div>
@@ -131,7 +211,7 @@ export default function UserManagementTab({
             <p className="text-gray-400 text-sm mt-1">Manage user accounts and permissions</p>
           </div>
           <button
-            onClick={() => setShowInstructions(!showInstructions)}
+            onClick={() => setShowAddForm(!showAddForm)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
           >
             <UserPlus className="w-5 h-5" />
@@ -140,103 +220,120 @@ export default function UserManagementTab({
         </div>
       </div>
 
-      {showInstructions && (
+      {showAddForm && (
         <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
-          <div className="flex items-start gap-3 mb-4">
-            <Mail className="w-6 h-6 text-blue-400 mt-1" />
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-gray-100">Create New User</h3>
+            <button
+              onClick={() => setShowAddForm(false)}
+              className="text-gray-400 hover:text-gray-200"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <h3 className="text-lg font-bold text-gray-100 mb-2">
-                How to Add a New User
-              </h3>
-              <p className="text-sm text-gray-400 mb-4">
-                For security reasons, new users must be created directly in Supabase.
-              </p>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Name *
+              </label>
+              <input
+                type="text"
+                value={newUserForm.name}
+                onChange={(e) =>
+                  setNewUserForm({ ...newUserForm, name: e.target.value })
+                }
+                placeholder="John Doe"
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Email *
+              </label>
+              <input
+                type="email"
+                value={newUserForm.email}
+                onChange={(e) =>
+                  setNewUserForm({ ...newUserForm, email: e.target.value })
+                }
+                placeholder="john@example.com"
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Temporary Password *
+              </label>
+              <input
+                type="password"
+                value={newUserForm.password}
+                onChange={(e) =>
+                  setNewUserForm({ ...newUserForm, password: e.target.value })
+                }
+                placeholder="Minimum 6 characters"
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Role</label>
+              <select
+                value={newUserForm.role}
+                onChange={(e) =>
+                  setNewUserForm({
+                    ...newUserForm,
+                    role: e.target.value as 'admin' | 'rep',
+                  })
+                }
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="rep">Sales Rep</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            {newUserForm.role === 'rep' && (
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Allowed Statuses (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={newUserForm.allowedStatuses}
+                  onChange={(e) =>
+                    setNewUserForm({
+                      ...newUserForm,
+                      allowedStatuses: e.target.value,
+                    })
+                  }
+                  placeholder="Deal, No Deal, Pending"
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Leave empty to use defaults: Deal, No Deal, Pending
+                </p>
+              </div>
+            )}
           </div>
 
-          <div className="space-y-4 text-sm text-gray-300">
-            <div className="flex gap-3">
-              <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                1
-              </span>
-              <div>
-                <p className="font-semibold text-gray-200">Go to Supabase Dashboard</p>
-                <p className="text-gray-400 mt-1">
-                  Open supabase.com/dashboard, select your project, then go to Authentication and Users
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                2
-              </span>
-              <div>
-                <p className="font-semibold text-gray-200">Create User in Auth</p>
-                <p className="text-gray-400 mt-1">
-                  Click Add user and Create new user
-                </p>
-                <ul className="mt-2 space-y-1 text-gray-400 ml-4 list-disc">
-                  <li>Email: their work email</li>
-                  <li>Password: temporary password</li>
-                  <li className="text-yellow-400 font-semibold">Check Auto Confirm User</li>
-                </ul>
-                <p className="text-gray-400 mt-2">
-                  Click Create user and copy the User ID (UUID)
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                3
-              </span>
-              <div>
-                <p className="font-semibold text-gray-200">Add to Profiles Table</p>
-                <p className="text-gray-400 mt-1">
-                  Go to Table Editor, profiles table, click Insert and Insert row
-                </p>
-                <ul className="mt-2 space-y-1 text-gray-400 ml-4 list-disc">
-                  <li>id: paste the UUID from step 2</li>
-                  <li>name: their full name</li>
-                  <li>email: same email as step 2</li>
-                  <li>role: admin or rep</li>
-                  <li>active: true</li>
-                  <li>allowed_statuses: leave empty for admin</li>
-                </ul>
-                <p className="text-gray-400 mt-2">Click Save</p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                4
-              </span>
-              <div>
-                <p className="font-semibold text-gray-200">Send Password Reset Link</p>
-                <p className="text-gray-400 mt-1">
-                  Back in Authentication, Users, click on the user and Send password recovery
-                </p>
-                <p className="text-gray-400 mt-1">
-                  They will receive an email to set their own password
-                </p>
-              </div>
-            </div>
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={handleCreateUser}
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition"
+            >
+              {loading ? 'Creating...' : 'Create User'}
+            </button>
+            <button
+              onClick={() => setShowAddForm(false)}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition"
+            >
+              Cancel
+            </button>
           </div>
-
-          <div className="mt-6 pt-6 border-t border-gray-700">
-            <p className="text-sm text-gray-400">
-              <strong className="text-gray-300">Why manual creation?</strong> User creation
-              requires admin-level permissions that cannot be safely exposed in the browser.
-            </p>
-          </div>
-
-          <button
-            onClick={() => setShowInstructions(false)}
-            className="mt-4 w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition"
-          >
-            Got it, close instructions
-          </button>
         </div>
       )}
 
