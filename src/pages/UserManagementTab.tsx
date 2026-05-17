@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, Edit2, Trash2, Shield, Copy, Check, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { UserPlus, Edit2, Trash2, Mail } from 'lucide-react';
 
-interface User {
+interface Profile {
   id: string;
   name: string;
   email: string;
@@ -12,36 +12,27 @@ interface User {
 }
 
 interface UserManagementTabProps {
+  currentUserId: string;
   currentUserRole: 'admin' | 'rep';
-  users: User[];
-  setUsers: (users: User[]) => void;
 }
 
 export default function UserManagementTab({
+  currentUserId,
   currentUserRole,
-  users,
-  setUsers,
 }: UserManagementTabProps) {
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newUser, setNewUser] = useState({
-    name: '',
-    email: '',
-    role: 'rep' as 'admin' | 'rep',
-  });
-  const [inviteLink, setInviteLink] = useState('');
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [editingUser, setEditingUser] = useState<Profile | null>(null);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
-    if (currentUserRole === 'admin') {
-      fetchUsers();
-    }
-  }, [currentUserRole]);
+    fetchUsers();
+  }, []);
 
   const fetchUsers = async () => {
     try {
+      setLoading(true);
       const { data, error: fetchError } = await supabase
         .from('profiles')
         .select('*')
@@ -50,7 +41,7 @@ export default function UserManagementTab({
       if (fetchError) throw fetchError;
 
       if (data) {
-        const formattedUsers: User[] = data.map((user: any) => ({
+        const formatted: Profile[] = data.map((user: any) => ({
           id: user.id,
           name: user.name,
           email: user.email,
@@ -58,118 +49,69 @@ export default function UserManagementTab({
           active: user.active,
           allowedStatuses: user.allowed_statuses || [],
         }));
-
-        setUsers(formattedUsers);
+        setUsers(formatted);
       }
     } catch (err: any) {
       console.error('Error fetching users:', err);
       setError('Failed to load users: ' + err.message);
-    }
-  };
-
-  const handleAddUser = async () => {
-    if (!newUser.name || !newUser.email) {
-      setError('Name and email are required');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError('');
-
-      // Create user in Supabase Auth with a random temporary password
-      const tempPassword = Math.random().toString(36).slice(-12) + 'Aa1!';
-      
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: newUser.email,
-        password: tempPassword,
-        email_confirm: true,
-      });
-
-      if (authError) throw authError;
-
-      if (!authData.user) throw new Error('Failed to create user');
-
-      // Create profile in database
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            id: authData.user.id,
-            name: newUser.name,
-            email: newUser.email,
-            role: newUser.role,
-            active: true,
-            allowed_statuses: newUser.role === 'admin' ? [] : ['Deal', 'No Deal', 'Pending'],
-          },
-        ]);
-
-      if (profileError) throw profileError;
-
-      // Generate password reset link
-      const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
-        type: 'recovery',
-        email: newUser.email,
-      });
-
-      if (linkError) throw linkError;
-
-      // Show the invite link
-      setInviteLink(linkData.properties.action_link);
-      setShowInviteModal(true);
-
-      // Refresh users list
-      await fetchUsers();
-
-      // Reset form
-      setNewUser({ name: '', email: '', role: 'rep' });
-      setShowAddForm(false);
-    } catch (err: any) {
-      console.error('Error adding user:', err);
-      setError('Failed to add user: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(inviteLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleUpdateUser = async (userId: string, updates: Partial<Profile>) => {
+    try {
+      setLoading(true);
+      setError('');
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          role: updates.role,
+          active: updates.active,
+          allowed_statuses: updates.allowedStatuses,
+        })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      await fetchUsers();
+      setEditingUser(null);
+    } catch (err: any) {
+      console.error('Error updating user:', err);
+      setError('Failed to update user: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
 
     try {
-      // Delete from profiles table
-      const { error: profileError } = await supabase
+      setLoading(true);
+      setError('');
+
+      const { error: deleteError } = await supabase
         .from('profiles')
         .delete()
         .eq('id', userId);
 
-      if (profileError) throw profileError;
+      if (deleteError) throw deleteError;
 
-      // Delete from auth
-      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
-
-      if (authError) throw authError;
-
-      // Refresh users list
       await fetchUsers();
     } catch (err: any) {
       console.error('Error deleting user:', err);
       setError('Failed to delete user: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   if (currentUserRole !== 'admin') {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Shield className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <p className="text-gray-400 text-lg">Admin access required</p>
-        </div>
+      <div className="flex items-center justify-center h-96">
+        <p className="text-gray-400">You do not have permission to access this page.</p>
       </div>
     );
   }
@@ -182,144 +124,122 @@ export default function UserManagementTab({
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-100">User Management</h2>
-          <p className="text-gray-400 mt-1">Manage user accounts and permissions</p>
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-100">User Management</h2>
+            <p className="text-gray-400 text-sm mt-1">Manage user accounts and permissions</p>
+          </div>
+          <button
+            onClick={() => setShowInstructions(!showInstructions)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+          >
+            <UserPlus className="w-5 h-5" />
+            Add New User
+          </button>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-        >
-          <UserPlus className="w-5 h-5" />
-          Add User
-        </button>
       </div>
 
-      {/* Add User Form */}
-      {showAddForm && (
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4">Add New User</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      {showInstructions && (
+        <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
+          <div className="flex items-start gap-3 mb-4">
+            <Mail className="w-6 h-6 text-blue-400 mt-1" />
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Name
-              </label>
-              <input
-                type="text"
-                value={newUser.name}
-                onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                placeholder="John Doe"
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                value={newUser.email}
-                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                placeholder="john@example.com"
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Role
-              </label>
-              <select
-                value={newUser.role}
-                onChange={(e) =>
-                  setNewUser({ ...newUser, role: e.target.value as 'admin' | 'rep' })
-                }
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="rep">Sales Rep</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleAddUser}
-              disabled={loading}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition"
-            >
-              {loading ? 'Adding...' : 'Add User'}
-            </button>
-            <button
-              onClick={() => {
-                setShowAddForm(false);
-                setNewUser({ name: '', email: '', role: 'rep' });
-                setError('');
-              }}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Invite Link Modal */}
-      {showInviteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 rounded-lg max-w-2xl w-full p-6 border border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-100">User Created Successfully!</h3>
-              <button
-                onClick={() => {
-                  setShowInviteModal(false);
-                  setInviteLink('');
-                  setCopied(false);
-                }}
-                className="text-gray-400 hover:text-gray-200"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <p className="text-gray-300 mb-4">
-              Copy this invite link and send it to the user. They'll use it to set their password.
-            </p>
-
-            <div className="bg-gray-900 rounded-lg p-4 mb-4 border border-gray-700">
-              <div className="flex items-center gap-3">
-                <code className="flex-1 text-sm text-gray-300 break-all">
-                  {inviteLink}
-                </code>
-                <button
-                  onClick={handleCopyLink}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex-shrink-0"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-5 h-5" />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-5 h-5" />
-                      Copy
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-blue-900 border border-blue-700 rounded-lg p-4">
-              <p className="text-blue-200 text-sm">
-                <strong>Important:</strong> This link expires in 1 hour. Send it to the user
-                immediately via Slack, Teams, text, or in person.
+              <h3 className="text-lg font-bold text-gray-100 mb-2">
+                How to Add a New User
+              </h3>
+              <p className="text-sm text-gray-400 mb-4">
+                For security reasons, new users must be created directly in Supabase.
               </p>
             </div>
           </div>
+
+          <div className="space-y-4 text-sm text-gray-300">
+            <div className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                1
+              </span>
+              <div>
+                <p className="font-semibold text-gray-200">Go to Supabase Dashboard</p>
+                <p className="text-gray-400 mt-1">
+                  Open supabase.com/dashboard, select your project, then go to Authentication and Users
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                2
+              </span>
+              <div>
+                <p className="font-semibold text-gray-200">Create User in Auth</p>
+                <p className="text-gray-400 mt-1">
+                  Click Add user and Create new user
+                </p>
+                <ul className="mt-2 space-y-1 text-gray-400 ml-4 list-disc">
+                  <li>Email: their work email</li>
+                  <li>Password: temporary password</li>
+                  <li className="text-yellow-400 font-semibold">Check Auto Confirm User</li>
+                </ul>
+                <p className="text-gray-400 mt-2">
+                  Click Create user and copy the User ID (UUID)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                3
+              </span>
+              <div>
+                <p className="font-semibold text-gray-200">Add to Profiles Table</p>
+                <p className="text-gray-400 mt-1">
+                  Go to Table Editor, profiles table, click Insert and Insert row
+                </p>
+                <ul className="mt-2 space-y-1 text-gray-400 ml-4 list-disc">
+                  <li>id: paste the UUID from step 2</li>
+                  <li>name: their full name</li>
+                  <li>email: same email as step 2</li>
+                  <li>role: admin or rep</li>
+                  <li>active: true</li>
+                  <li>allowed_statuses: leave empty for admin</li>
+                </ul>
+                <p className="text-gray-400 mt-2">Click Save</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                4
+              </span>
+              <div>
+                <p className="font-semibold text-gray-200">Send Password Reset Link</p>
+                <p className="text-gray-400 mt-1">
+                  Back in Authentication, Users, click on the user and Send password recovery
+                </p>
+                <p className="text-gray-400 mt-1">
+                  They will receive an email to set their own password
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-gray-700">
+            <p className="text-sm text-gray-400">
+              <strong className="text-gray-300">Why manual creation?</strong> User creation
+              requires admin-level permissions that cannot be safely exposed in the browser.
+            </p>
+          </div>
+
+          <button
+            onClick={() => setShowInstructions(false)}
+            className="mt-4 w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition"
+          >
+            Got it, close instructions
+          </button>
         </div>
       )}
 
-      {/* Users Table */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
         <table className="w-full">
           <thead className="bg-gray-900">
@@ -349,7 +269,7 @@ export default function UserManagementTab({
               <tr key={user.id} className="hover:bg-gray-750">
                 <td className="px-6 py-4 text-sm text-gray-300">{user.name}</td>
                 <td className="px-6 py-4 text-sm text-gray-300">{user.email}</td>
-                <td className="px-6 py-4 text-sm">
+                <td className="px-6 py-4">
                   <span
                     className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       user.role === 'admin'
@@ -360,7 +280,7 @@ export default function UserManagementTab({
                     {user.role === 'admin' ? '👑 Admin' : 'Sales Rep'}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-sm">
+                <td className="px-6 py-4">
                   <span
                     className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       user.active
@@ -374,21 +294,30 @@ export default function UserManagementTab({
                 <td className="px-6 py-4 text-sm text-gray-400">
                   {user.role === 'admin' ? (
                     <span className="italic">All statuses (Admin)</span>
+                  ) : user.allowedStatuses.length > 0 ? (
+                    user.allowedStatuses.join(', ')
                   ) : (
-                    <span>{user.allowedStatuses.length} statuses</span>
+                    <span className="text-gray-600">None set</span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <button className="p-2 text-blue-400 hover:bg-gray-700 rounded transition">
+                <td className="px-6 py-4">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingUser(user)}
+                      className="p-2 text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition"
+                      title="Edit user"
+                    >
                       <Edit2 className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={() => handleDeleteUser(user.id)}
-                      className="p-2 text-red-400 hover:bg-gray-700 rounded transition"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {user.id !== currentUserId && (
+                      <button
+                        onClick={() => handleDeleteUser(user.id)}
+                        className="p-2 text-red-400 hover:text-red-300 hover:bg-gray-700 rounded transition"
+                        title="Delete user"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -397,19 +326,117 @@ export default function UserManagementTab({
         </table>
       </div>
 
-      {/* About Status Access Control */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-100 mb-3">
+      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <h3 className="text-lg font-bold text-gray-100 mb-3">
           About Status Access Control
         </h3>
-        <ul className="space-y-2 text-gray-300 text-sm">
+        <ul className="space-y-2 text-sm text-gray-400">
           <li>• Admins have access to all statuses automatically</li>
           <li>• Sales reps are restricted to specific statuses you assign</li>
-          <li>
-            • Default rep statuses: Deal, No Deal, Pending (you can customize this)
-          </li>
+          <li>• Default rep statuses: Deal, No Deal, Pending (you can customize this)</li>
         </ul>
       </div>
+
+      {editingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
+            <h3 className="text-xl font-bold text-gray-100 mb-4">Edit User</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={editingUser.name}
+                  disabled
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-400 cursor-not-allowed"
+                />
+                <p className="text-xs text-gray-500 mt-1">Name cannot be changed here</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Role</label>
+                <select
+                  value={editingUser.role}
+                  onChange={(e) =>
+                    setEditingUser({
+                      ...editingUser,
+                      role: e.target.value as 'admin' | 'rep',
+                    })
+                  }
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="admin">Admin</option>
+                  <option value="rep">Sales Rep</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Status
+                </label>
+                <select
+                  value={editingUser.active ? 'active' : 'inactive'}
+                  onChange={(e) =>
+                    setEditingUser({
+                      ...editingUser,
+                      active: e.target.value === 'active',
+                    })
+                  }
+                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+
+              {editingUser.role === 'rep' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Allowed Statuses (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingUser.allowedStatuses.join(', ')}
+                    onChange={(e) =>
+                      setEditingUser({
+                        ...editingUser,
+                        allowedStatuses: e.target.value
+                          .split(',')
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                    placeholder="Deal, No Deal, Pending"
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Leave empty to use default: Deal, No Deal, Pending
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => handleUpdateUser(editingUser.id, editingUser)}
+                disabled={loading}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition"
+              >
+                {loading ? 'Saving...' : 'Save Changes'}
+              </button>
+              <button
+                onClick={() => setEditingUser(null)}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
