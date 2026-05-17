@@ -61,7 +61,7 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
 
   const reps = users.filter(u => u.role === 'rep' && u.active);
 
-  if (currentUserRole !== 'admin') {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') {
     return (
       <div className="p-8 text-center">
         <p className="text-gray-400">This tab is only accessible to administrators.</p>

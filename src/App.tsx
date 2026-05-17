@@ -46,9 +46,10 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'rep';
+  role: 'admin' | 'manager' | 'rep';
   active: boolean;
   allowedStatuses: string[];
+  state?: string;
 }
 
 interface Goals {
@@ -62,13 +63,13 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  
+
   const [activeTab, setActiveTab] = useState('calls');
   const [calls, setCalls] = useState<Call[]>([]);
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [notes, setNotes] = useState<CallNote[]>([]);
   const [users] = useState<User[]>([]);
-  
+
   const [goals, setGoals] = useState<Goals>({
     daily: {},
     team: 30,
@@ -76,11 +77,8 @@ function App() {
     monthly: 200,
   });
 
-  // Check authentication on mount
   useEffect(() => {
     checkAuth();
-
-    // Listen for auth changes
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         loadUserProfile(session.user.id);
@@ -90,16 +88,19 @@ function App() {
         setIsLoading(false);
       }
     });
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
+    return () => { authListener.subscription.unsubscribe(); };
   }, []);
+
+  // Reset to calls tab if current tab is not allowed for this role
+  useEffect(() => {
+    if (!currentUser) return;
+    const allowed = getVisibleTabs(currentUser.role).map(t => t.id);
+    if (!allowed.includes(activeTab)) setActiveTab('calls');
+  }, [currentUser?.role]);
 
   const checkAuth = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
       if (session?.user) {
         await loadUserProfile(session.user.id);
       } else {
@@ -131,6 +132,7 @@ function App() {
           role: profile.role,
           active: profile.active,
           allowedStatuses: profile.allowed_statuses || [],
+          state: profile.state || undefined,
         });
         setIsAuthenticated(true);
       }
@@ -152,19 +154,22 @@ function App() {
     }
   };
 
-  const handleLoginSuccess = () => {
-    checkAuth();
+  const handleLoginSuccess = () => { checkAuth(); };
+
+  const getVisibleTabs = (role: string) => {
+    const allTabs = [
+      { id: 'calls', label: 'Calls', icon: FileText },
+      { id: 'upload', label: 'Upload', icon: Upload },
+      { id: 'assign', label: 'Assign', icon: Users },
+      { id: 'reporting', label: 'Reporting', icon: BarChart3 },
+      { id: 'users', label: 'Users', icon: UserCog },
+    ];
+    if (role === 'admin') return allTabs;
+    if (role === 'manager') return allTabs.filter(t => t.id !== 'users');
+    // rep
+    return allTabs.filter(t => t.id === 'calls');
   };
 
-  const tabs = [
-    { id: 'calls', name: 'Calls', icon: FileText },
-    { id: 'upload', name: 'Upload', icon: Upload },
-    { id: 'assign', name: 'Assign', icon: Users },
-    { id: 'reporting', name: 'Reporting', icon: BarChart3 },
-    { id: 'users', name: 'Users', icon: UserCog },
-  ];
-
-  // Show loading spinner while checking auth
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -176,19 +181,18 @@ function App() {
     );
   }
 
-  // Show login page if not authenticated
   if (!isAuthenticated || !currentUser) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
+
+  const tabs = getVisibleTabs(currentUser.role);
 
   return (
     <div className="min-h-screen bg-gray-900">
       <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-blue-400">DSS Portal</h1>
-            </div>
+            <h1 className="text-2xl font-bold text-blue-400">DSS Portal</h1>
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-400">
                 {currentUser.name} ({currentUser.role})
@@ -221,7 +225,7 @@ function App() {
                   }`}
                 >
                   <Icon className="w-4 h-4" />
-                  {tab.name}
+                  {tab.label}
                 </button>
               );
             })}
@@ -270,12 +274,12 @@ function App() {
             setGoals={setGoals}
           />
         )}
-{activeTab === 'users' && (
-  <UserManagementTab
-    currentUserId={currentUser.id}
-    currentUserRole={currentUser.role}
-  />
-)}
+        {activeTab === 'users' && (
+          <UserManagementTab
+            currentUserId={currentUser.id}
+            currentUserRole={currentUser.role}
+          />
+        )}
       </main>
     </div>
   );

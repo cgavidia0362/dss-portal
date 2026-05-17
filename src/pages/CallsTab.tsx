@@ -32,14 +32,14 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'rep';
+  role: 'admin' | 'manager' | 'rep';
   active: boolean;
   allowedStatuses: string[];
 }
 
 interface CallsTabProps {
   currentUserId: string;
-  currentUserRole: 'admin' | 'rep';
+  currentUserRole:'admin' | 'manager' | 'rep';
   calls: Call[];
   setCalls: React.Dispatch<React.SetStateAction<Call[]>>;
   notes: CallNote[];
@@ -213,13 +213,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     // Role-based access
     if (currentUserRole === 'rep' && call.assignedTo !== currentUserId) {
       return false;
-    }
-
-    // Rep status access filter
-    if (currentUserRole === 'rep' && currentUser?.allowedStatuses && currentUser.allowedStatuses.length > 0) {
-      if (!currentUser.allowedStatuses.includes(call.statusLast)) {
-        return false;
-      }
     }
 
     const matchesSearch =

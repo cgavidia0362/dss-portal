@@ -58,7 +58,7 @@ interface Goals {
 
 interface ReportingTabProps {
   currentUserId: string;
-  currentUserRole: 'admin' | 'rep';
+  currentUserRole: 'admin' | 'manager' | 'rep';
   calls: Call[];
   goals: Goals;
   setGoals: (goals: Goals) => void;
@@ -243,7 +243,6 @@ export default function ReportingTab({
     return 'text-red-400';
   };
 
-  // Filter calls by time period
   const getDateRange = (period: TimePeriod) => {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -253,12 +252,9 @@ export default function ReportingTab({
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
     switch (period) {
-      case 'daily':
-        return startOfToday;
-      case 'weekly':
-        return startOfWeek;
-      case 'monthly':
-        return startOfMonth;
+      case 'daily': return startOfToday;
+      case 'weekly': return startOfWeek;
+      case 'monthly': return startOfMonth;
     }
   };
 
@@ -270,7 +266,6 @@ export default function ReportingTab({
     });
   };
 
-  // Calculate revenue stats
   const calculateRevenueStats = (period: TimePeriod) => {
     const filteredCalls = filterCallsByPeriod(period);
     const dealCalls = filteredCalls.filter(
@@ -280,22 +275,17 @@ export default function ReportingTab({
     const totalDeals = dealCalls.length;
     const totalRevenue = dealCalls.reduce((sum, call) => sum + (call.amount || 0), 0);
     const avgDeal = totalDeals > 0 ? totalRevenue / totalDeals : 0;
-    const largestDeal = dealCalls.length > 0 
+    const largestDeal = dealCalls.length > 0
       ? Math.max(...dealCalls.map((c) => c.amount || 0))
       : 0;
 
-    // Group by state
     const byState = dealCalls.reduce((acc: any[], call) => {
       const existing = acc.find((item) => item.state === call.state);
       if (existing) {
         existing.deals += 1;
         existing.revenue += call.amount || 0;
       } else {
-        acc.push({
-          state: call.state,
-          deals: 1,
-          revenue: call.amount || 0,
-        });
+        acc.push({ state: call.state, deals: 1, revenue: call.amount || 0 });
       }
       return acc;
     }, []);
@@ -305,7 +295,6 @@ export default function ReportingTab({
 
   const revenueStats = calculateRevenueStats(revenuePeriod);
 
-  // Calculate team stats
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -322,7 +311,6 @@ export default function ReportingTab({
 
   const conversionRate = calls.length > 0 ? ((totalDeals / calls.length) * 100).toFixed(1) : '0';
 
-  // Rep performance by period
   const calculateRepPerformance = (period: TimePeriod) => {
     const filteredCalls = filterCallsByPeriod(period);
 
@@ -363,7 +351,6 @@ export default function ReportingTab({
 
   const repPerformance = calculateRepPerformance(repPeriod);
 
-  // Charts data
   const dealsByWeek = calls.reduce((acc: any[], call) => {
     if (!call.dealDate) return acc;
     const date = new Date(call.dealDate);
@@ -371,7 +358,6 @@ export default function ReportingTab({
     const dayOfMonth = date.getDate();
     const weekNum = Math.ceil(dayOfMonth / 7);
     const key = `${year}-W${weekNum}`;
-
     const existing = acc.find((item) => item.week === key);
     if (existing) {
       existing.deals += 1;
@@ -508,7 +494,7 @@ export default function ReportingTab({
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-gray-100">Team Overview</h2>
-          {currentUserRole === 'admin' && (
+          {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
             <button
               onClick={() => setShowTeamGoals(true)}
               className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition text-sm"
@@ -539,9 +525,7 @@ export default function ReportingTab({
               </div>
               <Award className="w-12 h-12 text-blue-400 opacity-20" />
             </div>
-            <div className="mt-2 text-sm text-gray-500">
-              Monthly Goal: {goals.monthly}
-            </div>
+            <div className="mt-2 text-sm text-gray-500">Monthly Goal: {goals.monthly}</div>
           </div>
 
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
@@ -556,7 +540,7 @@ export default function ReportingTab({
         </div>
       </div>
 
-      {/* SECTION 3: STATE PERFORMANCE (SMALLER CARDS) */}
+      {/* SECTION 3: STATE PERFORMANCE */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -565,7 +549,7 @@ export default function ReportingTab({
               {new Date().toLocaleString('default', { month: 'long' })} {currentYear}
             </p>
           </div>
-          {currentUserRole === 'admin' && (
+          {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
             <button
               onClick={() => setShowGoalModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
@@ -578,18 +562,11 @@ export default function ReportingTab({
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {stateStats.map((stat) => (
-            <div
-              key={stat.state}
-              className="bg-gray-800 rounded-lg p-4 border border-gray-700"
-            >
+            <div key={stat.state} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-bold text-gray-100">{stat.state}</h3>
                 {stat.monthlyGoal > 0 && (
-                  <span
-                    className={`text-2xl font-bold ${getProgressTextColor(
-                      stat.progress
-                    )}`}
-                  >
+                  <span className={`text-2xl font-bold ${getProgressTextColor(stat.progress)}`}>
                     {stat.funded}
                   </span>
                 )}
@@ -598,22 +575,16 @@ export default function ReportingTab({
               {stat.monthlyGoal > 0 ? (
                 <>
                   <div className="text-xs text-gray-400 mb-2">Goal: {stat.monthlyGoal}</div>
-
                   <div className="relative w-full h-1.5 bg-gray-700 rounded-full mb-3">
                     <div
-                      className={`absolute top-0 left-0 h-full rounded-full ${getProgressColor(
-                        stat.progress
-                      )}`}
+                      className={`absolute top-0 left-0 h-full rounded-full ${getProgressColor(stat.progress)}`}
                       style={{ width: `${Math.min(stat.progress, 100)}%` }}
                     />
                   </div>
-
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <p className="text-gray-400">Apps</p>
-                      <p className="text-sm font-semibold text-gray-200">
-                        {stat.totalApps}
-                      </p>
+                      <p className="text-sm font-semibold text-gray-200">{stat.totalApps}</p>
                     </div>
                     <div>
                       <p className="text-gray-400">Progress</p>
@@ -629,12 +600,9 @@ export default function ReportingTab({
                     </div>
                     <div>
                       <p className="text-gray-400">Need/Day</p>
-                      <p className="text-sm font-semibold text-gray-200">
-                        {stat.neededPerDay}
-                      </p>
+                      <p className="text-sm font-semibold text-gray-200">{stat.neededPerDay}</p>
                     </div>
                   </div>
-
                   <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-400">
                     {stat.daysRemaining} days left • Daily: {stat.dailyGoal}
                   </div>
@@ -652,7 +620,7 @@ export default function ReportingTab({
       </div>
 
       {/* SECTION 4: REP PERFORMANCE (WITH TOGGLE) */}
-      {currentUserRole === 'admin' && (
+      {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-bold text-gray-100">Rep Performance</h2>
@@ -696,39 +664,21 @@ export default function ReportingTab({
                 <table className="w-full">
                   <thead className="bg-gray-900">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                        Rep
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                        Calls
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                        Deals Claimed
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                        Confirmed Deals
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                        Conversion Rate
-                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Rep</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Calls</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Deals Claimed</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Confirmed Deals</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Conversion Rate</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
                     {repPerformance.map((rep) => (
                       <tr key={rep.repId} className="hover:bg-gray-750">
-                        <td className="px-6 py-4 text-sm font-medium text-gray-200">
-                          {rep.repName}
-                        </td>
+                        <td className="px-6 py-4 text-sm font-medium text-gray-200">{rep.repName}</td>
                         <td className="px-6 py-4 text-sm text-gray-300">{rep.calls}</td>
-                        <td className="px-6 py-4 text-sm text-gray-300">
-                          {rep.dealsClaimed}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-green-400 font-semibold">
-                          {rep.confirmedDeals}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-blue-400 font-semibold">
-                          {rep.conversionRate}%
-                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-300">{rep.dealsClaimed}</td>
+                        <td className="px-6 py-4 text-sm text-green-400 font-semibold">{rep.confirmedDeals}</td>
+                        <td className="px-6 py-4 text-sm text-blue-400 font-semibold">{rep.conversionRate}%</td>
                       </tr>
                     ))}
                   </tbody>
@@ -739,13 +689,10 @@ export default function ReportingTab({
                   Currently Showing: {repPeriod.charAt(0).toUpperCase() + repPeriod.slice(1)} View
                 </strong>
                 <br />
-                • <strong>Calls:</strong> Apps touched in this period
-                <br />
-                • <strong>Deals Claimed:</strong> Marked as "Deal"
-                <br />
-                • <strong>Confirmed Deals:</strong> Deal → Document Received/Funded/Funding
-                Pending
-                <br />• <strong>Conversion Rate:</strong> (Confirmed Deals ÷ Total Calls) × 100
+                • <strong>Calls:</strong> Apps touched in this period<br />
+                • <strong>Deals Claimed:</strong> Marked as "Deal"<br />
+                • <strong>Confirmed Deals:</strong> Deal → Document Received/Funded/Funding Pending<br />
+                • <strong>Conversion Rate:</strong> (Confirmed Deals ÷ Total Calls) × 100
               </div>
             </>
           ) : (
@@ -783,9 +730,7 @@ export default function ReportingTab({
           </div>
 
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-            <h3 className="text-lg font-semibold text-gray-100 mb-4">
-              Status Distribution
-            </h3>
+            <h3 className="text-lg font-semibold text-gray-100 mb-4">Status Distribution</h3>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -820,77 +765,50 @@ export default function ReportingTab({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
             <h3 className="text-xl font-bold text-gray-100 mb-4">Set State Goal</h3>
-
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  State
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">State</label>
                 <select
                   value={selectedState}
                   onChange={(e) => setSelectedState(e.target.value)}
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select State</option>
-                  {[...new Set(calls.map((call) => call.state))]
-                    .sort()
-                    .map((state) => (
-                      <option key={state} value={state}>
-                        {state}
-                      </option>
-                    ))}
+                  {[...new Set(calls.map((call) => call.state))].sort().map((state) => (
+                    <option key={state} value={state}>{state}</option>
+                  ))}
                 </select>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Monthly Funded Goal
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Monthly Funded Goal</label>
                 <input
                   type="number"
                   value={goalForm.monthlyGoal}
-                  onChange={(e) =>
-                    setGoalForm({ ...goalForm, monthlyGoal: e.target.value })
-                  }
+                  onChange={(e) => setGoalForm({ ...goalForm, monthlyGoal: e.target.value })}
                   placeholder="e.g., 200"
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Funding Days in Month
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Funding Days in Month</label>
                 <input
                   type="number"
                   value={goalForm.fundingDays}
-                  onChange={(e) =>
-                    setGoalForm({ ...goalForm, fundingDays: e.target.value })
-                  }
+                  onChange={(e) => setGoalForm({ ...goalForm, fundingDays: e.target.value })}
                   placeholder="e.g., 20"
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">
-                  Number of working days in this month
-                </p>
+                <p className="text-xs text-gray-400 mt-1">Number of working days in this month</p>
               </div>
-
               <div className="bg-gray-700 rounded-lg p-4">
                 <p className="text-sm text-gray-300">
                   {goalForm.monthlyGoal && goalForm.fundingDays ? (
                     <>
                       <strong>Daily Goal:</strong>{' '}
-                      {Math.round(
-                        parseInt(goalForm.monthlyGoal) / parseInt(goalForm.fundingDays)
-                      )}{' '}
-                      deals/day
+                      {Math.round(parseInt(goalForm.monthlyGoal) / parseInt(goalForm.fundingDays))} deals/day
                       <br />
                       <strong>Weekly Goal:</strong>{' '}
-                      {Math.round(
-                        (parseInt(goalForm.monthlyGoal) / parseInt(goalForm.fundingDays)) *
-                          5
-                      )}{' '}
-                      deals/week
+                      {Math.round((parseInt(goalForm.monthlyGoal) / parseInt(goalForm.fundingDays)) * 5)} deals/week
                     </>
                   ) : (
                     'Enter values to see calculated goals'
@@ -898,7 +816,6 @@ export default function ReportingTab({
                 </p>
               </div>
             </div>
-
             <div className="flex gap-3 mt-6">
               <button
                 onClick={handleSetGoal}
@@ -927,51 +844,35 @@ export default function ReportingTab({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
             <h3 className="text-xl font-bold text-gray-100 mb-4">Set Team Goals</h3>
-
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Daily Team Goal
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Daily Team Goal</label>
                 <input
                   type="number"
                   value={teamGoalInput.daily}
-                  onChange={(e) =>
-                    setTeamGoalInput({ ...teamGoalInput, daily: e.target.value })
-                  }
+                  onChange={(e) => setTeamGoalInput({ ...teamGoalInput, daily: e.target.value })}
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Weekly Team Goal
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Weekly Team Goal</label>
                 <input
                   type="number"
                   value={teamGoalInput.weekly}
-                  onChange={(e) =>
-                    setTeamGoalInput({ ...teamGoalInput, weekly: e.target.value })
-                  }
+                  onChange={(e) => setTeamGoalInput({ ...teamGoalInput, weekly: e.target.value })}
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Monthly Team Goal
-                </label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Monthly Team Goal</label>
                 <input
                   type="number"
                   value={teamGoalInput.monthly}
-                  onChange={(e) =>
-                    setTeamGoalInput({ ...teamGoalInput, monthly: e.target.value })
-                  }
+                  onChange={(e) => setTeamGoalInput({ ...teamGoalInput, monthly: e.target.value })}
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
-
             <div className="flex gap-3 mt-6">
               <button
                 onClick={handleSaveTeamGoals}
