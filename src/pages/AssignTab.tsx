@@ -23,7 +23,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'rep';
+  role: 'admin' | 'manager' | 'rep';
   active: boolean;
   allowedStatuses: string[];
 }
@@ -36,7 +36,7 @@ interface Goals {
 }
 
 interface AssignTabProps {
-  currentUserRole: 'admin' | 'rep';
+  currentUserRole: 'admin' | 'manager' | 'rep';
   calls: Call[];
   setCalls: React.Dispatch<React.SetStateAction<Call[]>>;
   users: User[];

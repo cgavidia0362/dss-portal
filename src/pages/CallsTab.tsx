@@ -52,7 +52,7 @@ interface CallsTabProps {
 type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | null;
 type SortOrder = 'asc' | 'desc' | null;
 
-export default function CallsTab({ currentUserId, currentUserRole, calls, setCalls, notes, setNotes, dailyGoal, teamGoal, currentUser }: CallsTabProps) {
+export default function CallsTab({ currentUserId, currentUserRole, calls, setCalls, notes, setNotes, dailyGoal, teamGoal }: CallsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFuStatus, setFilterFuStatus] = useState<string>('');
   const [filterState, setFilterState] = useState<string>('');
