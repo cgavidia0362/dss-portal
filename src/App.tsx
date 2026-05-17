@@ -68,7 +68,7 @@ function App() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [notes, setNotes] = useState<CallNote[]>([]);
-  const [users] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
 
   const [goals, setGoals] = useState<Goals>({
     daily: {},
@@ -97,6 +97,13 @@ function App() {
     const allowed = getVisibleTabs(currentUser.role).map(t => t.id);
     if (!allowed.includes(activeTab)) setActiveTab('calls');
   }, [currentUser?.role]);
+
+  // Fetch all users when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchUsers();
+    }
+  }, [isAuthenticated]);
 
   const checkAuth = async () => {
     try {
@@ -144,6 +151,32 @@ function App() {
     }
   };
 
+  const fetchUsers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('active', true)
+        .order('name');
+
+      if (error) throw error;
+
+      if (data) {
+        setUsers(data.map((user: any) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          active: user.active,
+          allowedStatuses: user.allowed_statuses || [],
+          state: user.state || undefined,
+        })));
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -166,7 +199,6 @@ function App() {
     ];
     if (role === 'admin') return allTabs;
     if (role === 'manager') return allTabs.filter(t => t.id !== 'users');
-    // rep
     return allTabs.filter(t => t.id === 'calls');
   };
 
