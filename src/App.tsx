@@ -67,7 +67,7 @@ function App() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [notes, setNotes] = useState<CallNote[]>([]);
-  const [users] = useState<User[]>([]);
+// Users are now managed in UserManagementTab
   
   const [goals, setGoals] = useState<Goals>({
     daily: {},
@@ -270,12 +270,12 @@ function App() {
             setGoals={setGoals}
           />
         )}
-        {activeTab === 'users' && (
+{activeTab === 'users' && (
   <UserManagementTab
-  currentUserId={session.user.id}
-  currentUserRole={currentUserRole}
-/>
-        )}
+    currentUserId={currentUser.id}
+    currentUserRole={currentUser.role}
+  />
+)}
       </main>
     </div>
   );
