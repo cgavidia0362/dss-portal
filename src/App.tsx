@@ -67,7 +67,7 @@ function App() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [notes, setNotes] = useState<CallNote[]>([]);
-// Users are now managed in UserManagementTab
+  const [users, setUsers] = useState<User[]>([]);
   
   const [goals, setGoals] = useState<Goals>({
     daily: {},
