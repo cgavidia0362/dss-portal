@@ -87,31 +87,17 @@ export default function UserManagementTab({
           : [];
 
       // Call the Edge Function
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: result, error: fnError } = await supabase.functions.invoke('create-user', {
+        body: {
+          name: newUserForm.name,
+          email: newUserForm.email,
+          password: newUserForm.password,
+          role: newUserForm.role,
+          allowedStatuses,
+        },
+      });
       
-      const response = await fetch(
-        'https://byyaaqbtcfoaeonisdy.supabase.co/functions/v1/create-user',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({
-            name: newUserForm.name,
-            email: newUserForm.email,
-            password: newUserForm.password,
-            role: newUserForm.role,
-            allowedStatuses,
-          }),
-        }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to create user');
-      }
+      if (fnError) throw fnError;
 
       setSuccess(`User ${newUserForm.name} created successfully!`);
       setShowAddForm(false);
