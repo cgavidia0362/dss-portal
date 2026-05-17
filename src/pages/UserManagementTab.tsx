@@ -87,7 +87,7 @@ export default function UserManagementTab({
           : [];
 
       // Call the Edge Function
-      const { data: result, error: fnError } = await supabase.functions.invoke('create-user', {
+      const { error: fnError } = await supabase.functions.invoke('create-user', {
         body: {
           name: newUserForm.name,
           email: newUserForm.email,
