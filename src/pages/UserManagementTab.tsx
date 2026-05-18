@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { UserPlus, Edit2, Trash2, X } from 'lucide-react';
+import { UserPlus, Edit2, Trash2, X, Link } from 'lucide-react';
 
 interface Profile {
   id: string;
@@ -30,26 +30,26 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
     role: 'rep' as 'admin' | 'manager' | 'rep',
   });
 
+  const [setupLinkModal, setSetupLinkModal] = useState<{ email: string; link: string } | null>(null);
+  const [generatingLink, setGeneratingLink] = useState<string | null>(null);
+
   useEffect(() => { fetchUsers(); }, []);
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
       const { data, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('name');
+        .from('profiles').select('*').order('name');
       if (fetchError) throw fetchError;
       if (data) {
-        const formatted: Profile[] = data.map((user: any) => ({
+        setUsers(data.map((user: any) => ({
           id: user.id,
           name: user.name,
           email: user.email,
           role: user.role,
           active: user.active,
           state: user.state || undefined,
-        }));
-        setUsers(formatted);
+        })));
       }
     } catch (err: any) {
       setError('Failed to load users: ' + err.message);
@@ -97,11 +97,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
       setError('');
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({
-          role: updates.role,
-          active: updates.active,
-          state: updates.state || null,
-        })
+        .update({ role: updates.role, active: updates.active, state: updates.state || null })
         .eq('id', userId);
       if (updateError) throw updateError;
       setSuccess('User updated successfully!');
@@ -127,6 +123,22 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
       setError('Failed to delete user: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateSetupLink = async (email: string) => {
+    try {
+      setGeneratingLink(email);
+      setError('');
+      const { data, error: fnError } = await supabase.functions.invoke('generate-reset-link', {
+        body: { email },
+      });
+      if (fnError) throw fnError;
+      setSetupLinkModal({ email, link: data.link });
+    } catch (err: any) {
+      setError('Failed to generate link: ' + err.message);
+    } finally {
+      setGeneratingLink(null);
     }
   };
 
@@ -187,7 +199,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               <input
                 type="text"
                 value={newUserForm.name}
-                onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })}
+                onChange={e => setNewUserForm({ ...newUserForm, name: e.target.value })}
                 placeholder="John Doe"
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -197,7 +209,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               <input
                 type="email"
                 value={newUserForm.email}
-                onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })}
+                onChange={e => setNewUserForm({ ...newUserForm, email: e.target.value })}
                 placeholder="john@example.com"
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -207,7 +219,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               <input
                 type="password"
                 value={newUserForm.password}
-                onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
+                onChange={e => setNewUserForm({ ...newUserForm, password: e.target.value })}
                 placeholder="Minimum 6 characters"
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -216,7 +228,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               <label className="block text-sm font-medium text-gray-300 mb-2">Role</label>
               <select
                 value={newUserForm.role}
-                onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value as 'admin' | 'manager' | 'rep' })}
+                onChange={e => setNewUserForm({ ...newUserForm, role: e.target.value as 'admin' | 'manager' | 'rep' })}
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="rep">Sales Rep</option>
@@ -225,7 +237,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               </select>
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-3">* After creating a rep, edit them to assign their state.</p>
+          <p className="text-xs text-gray-400 mt-3">* After creating, use the 🔗 link button to send them a setup link.</p>
           <div className="flex gap-3 mt-4">
             <button
               onClick={handleCreateUser}
@@ -257,7 +269,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
-            {users.map((user) => (
+            {users.map(user => (
               <tr key={user.id} className="hover:bg-gray-750">
                 <td className="px-6 py-4 text-sm text-gray-300">{user.name}</td>
                 <td className="px-6 py-4 text-sm text-gray-300">{user.email}</td>
@@ -267,7 +279,9 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                   </span>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-300">
-                  {user.role === 'rep' ? (user.state || <span className="text-gray-600 italic">Not set</span>) : <span className="text-gray-500 italic">All states</span>}
+                  {user.role === 'rep'
+                    ? (user.state || <span className="text-gray-600 italic">Not set</span>)
+                    : <span className="text-gray-500 italic">All states</span>}
                 </td>
                 <td className="px-6 py-4">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.active ? 'bg-green-900 text-green-200' : 'bg-red-900 text-red-200'}`}>
@@ -279,13 +293,23 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                     <button
                       onClick={() => setEditingUser(user)}
                       className="p-2 text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition"
+                      title="Edit user"
                     >
                       <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleGenerateSetupLink(user.email)}
+                      disabled={generatingLink === user.email}
+                      className="p-2 text-green-400 hover:text-green-300 hover:bg-gray-700 rounded transition disabled:opacity-50"
+                      title="Generate setup link"
+                    >
+                      <Link className="w-4 h-4" />
                     </button>
                     {user.id !== currentUserId && (
                       <button
                         onClick={() => handleDeleteUser(user.id)}
                         className="p-2 text-red-400 hover:text-red-300 hover:bg-gray-700 rounded transition"
+                        title="Delete user"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -298,6 +322,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
         </table>
       </div>
 
+      {/* Edit User Modal */}
       {editingUser && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
@@ -317,7 +342,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                 <label className="block text-sm font-medium text-gray-300 mb-2">Role</label>
                 <select
                   value={editingUser.role}
-                  onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as 'admin' | 'manager' | 'rep' })}
+                  onChange={e => setEditingUser({ ...editingUser, role: e.target.value as 'admin' | 'manager' | 'rep' })}
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="rep">Sales Rep</option>
@@ -329,7 +354,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                 <label className="block text-sm font-medium text-gray-300 mb-2">Status</label>
                 <select
                   value={editingUser.active ? 'active' : 'inactive'}
-                  onChange={(e) => setEditingUser({ ...editingUser, active: e.target.value === 'active' })}
+                  onChange={e => setEditingUser({ ...editingUser, active: e.target.value === 'active' })}
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="active">Active</option>
@@ -342,12 +367,12 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                   <input
                     type="text"
                     value={editingUser.state || ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, state: e.target.value.toUpperCase() })}
+                    onChange={e => setEditingUser({ ...editingUser, state: e.target.value.toUpperCase() })}
                     placeholder="e.g. CA, TX, FL"
                     maxLength={2}
                     className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <p className="text-xs text-gray-400 mt-1">Two-letter state abbreviation. Goals from this state will show on their Calls tab.</p>
+                  <p className="text-xs text-gray-400 mt-1">Two-letter state abbreviation.</p>
                 </div>
               )}
             </div>
@@ -366,6 +391,46 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Setup Link Modal */}
+      {setupLinkModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-800 rounded-lg max-w-lg w-full p-6 border border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-100">Setup Link</h3>
+              <button onClick={() => setSetupLinkModal(null)} className="text-gray-400 hover:text-gray-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-400 mb-4">
+              Share this link with <span className="text-white font-semibold">{setupLinkModal.email}</span>. They will be prompted to set their password when they click it.
+            </p>
+            <div className="bg-gray-700 rounded-lg p-3 mb-4 break-all">
+              <p className="text-xs text-blue-300 font-mono">{setupLinkModal.link}</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(setupLinkModal.link);
+                  alert('Link copied to clipboard!');
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition font-medium"
+              >
+                Copy Link
+              </button>
+              <button
+                onClick={() => setSetupLinkModal(null)}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition"
+              >
+                Close
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-3 text-center">
+              This link expires after 24 hours.
+            </p>
           </div>
         </div>
       )}

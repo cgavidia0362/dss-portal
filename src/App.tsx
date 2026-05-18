@@ -8,6 +8,7 @@ import AssignTab from './pages/AssignTab';
 import ReportingTab from './pages/ReportingTab';
 import UserManagementTab from './pages/UserManagementTab';
 import AnalyticsTab from './pages/AnalyticsTab';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 interface Dealer {
   cifNumber: string;
@@ -66,9 +67,11 @@ interface FundingData {
     totalAmount: number;
   };
 }
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const [activeTab, setActiveTab] = useState('calls');
@@ -83,11 +86,16 @@ function App() {
     weekly: 50,
     monthly: 200,
   });
+
   const [fundingData, setFundingData] = useState<FundingData>({});
+
   useEffect(() => {
     checkAuth();
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowPasswordReset(true);
+        setIsLoading(false);
+      } else if (session?.user) {
         loadUserProfile(session.user.id);
       } else {
         setIsAuthenticated(false);
@@ -98,14 +106,12 @@ function App() {
     return () => { authListener.subscription.unsubscribe(); };
   }, []);
 
-  // Reset to calls tab if current tab is not allowed for this role
   useEffect(() => {
     if (!currentUser) return;
     const allowed = getVisibleTabs(currentUser.role).map(t => t.id);
     if (!allowed.includes(activeTab)) setActiveTab('calls');
   }, [currentUser?.role]);
 
-  // Fetch all users when authenticated
   useEffect(() => {
     if (isAuthenticated) {
       fetchUsers();
@@ -131,13 +137,8 @@ function App() {
   const loadUserProfile = async (userId: string) => {
     try {
       const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
+        .from('profiles').select('*').eq('id', userId).single();
       if (error) throw error;
-
       if (profile) {
         setCurrentUser({
           id: profile.id,
@@ -161,13 +162,8 @@ function App() {
   const fetchUsers = async () => {
     try {
       const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('active', true)
-        .order('name');
-
+        .from('profiles').select('*').eq('active', true).order('name');
       if (error) throw error;
-
       if (data) {
         setUsers(data.map((user: any) => ({
           id: user.id,
@@ -219,6 +215,10 @@ function App() {
         </div>
       </div>
     );
+  }
+
+  if (showPasswordReset) {
+    return <ResetPasswordPage onSuccess={() => { setShowPasswordReset(false); checkAuth(); }} />;
   }
 
   if (!isAuthenticated || !currentUser) {
@@ -287,16 +287,16 @@ function App() {
             currentUser={currentUser}
           />
         )}
-{activeTab === 'upload' && (
-  <UploadTab
-    calls={calls}
-    setCalls={setCalls}
-    dealers={dealers}
-    setDealers={setDealers}
-    fundingData={fundingData}
-    setFundingData={setFundingData}
-  />
-)}
+        {activeTab === 'upload' && (
+          <UploadTab
+            calls={calls}
+            setCalls={setCalls}
+            dealers={dealers}
+            setDealers={setDealers}
+            fundingData={fundingData}
+            setFundingData={setFundingData}
+          />
+        )}
         {activeTab === 'assign' && (
           <AssignTab
             currentUserRole={currentUser.role}
@@ -307,29 +307,29 @@ function App() {
             setGoals={setGoals}
           />
         )}
-{activeTab === 'reporting' && (
-  <ReportingTab
-    currentUserId={currentUser.id}
-    currentUserRole={currentUser.role}
-    calls={calls}
-    goals={goals}
-    setGoals={setGoals}
-    fundingData={fundingData}
-  />
-)}
-       {activeTab === 'users' && (
+        {activeTab === 'reporting' && (
+          <ReportingTab
+            currentUserId={currentUser.id}
+            currentUserRole={currentUser.role}
+            calls={calls}
+            goals={goals}
+            setGoals={setGoals}
+            fundingData={fundingData}
+          />
+        )}
+        {activeTab === 'users' && (
           <UserManagementTab
             currentUserId={currentUser.id}
             currentUserRole={currentUser.role}
           />
         )}
-{activeTab === 'analytics' && currentUser && (
-  <AnalyticsTab
-    currentUser={currentUser}
-    calls={calls}
-    fundingData={fundingData}
-  />
-)}
+        {activeTab === 'analytics' && currentUser && (
+          <AnalyticsTab
+            currentUser={currentUser}
+            calls={calls}
+            fundingData={fundingData}
+          />
+        )}
       </main>
     </div>
   );
