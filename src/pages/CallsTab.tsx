@@ -189,7 +189,10 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     return 'bg-gray-600 text-gray-200';
   };
 
-  const uniqueStatusLast = Array.from(new Set(calls.map((c) => c.statusLast).filter(Boolean))).sort();
+  const roleFilteredCalls = calls.filter(call =>
+    currentUserRole === 'rep' ? call.assignedTo === currentUserId : true
+  );
+  const uniqueStatusLast = Array.from(new Set(roleFilteredCalls.map((c) => c.statusLast).filter(Boolean))).sort();
 
   const toggleStatusLastFilter = (status: string) => {
     const newFilter = new Set(filterStatusLast);
@@ -245,7 +248,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     setCurrentPage(1);
   }, [searchQuery, filterFuStatus, filterState, filterStatusLast, dateFrom, dateTo, showCompleted]);
 
-  const uniqueStates = Array.from(new Set(calls.map((c) => c.state))).sort();
+  const uniqueStates = Array.from(new Set(roleFilteredCalls.map((c) => c.state))).sort();
 
   // Deals today: rep's own deals using dealDate
   const dealsToday = filteredCalls.filter((c) =>
