@@ -323,12 +323,13 @@ function App() {
             currentUserRole={currentUser.role}
           />
         )}
-        {activeTab === 'analytics' && currentUser && (
-          <AnalyticsTab
-            currentUser={currentUser}
-            calls={calls}
-          />
-        )}
+{activeTab === 'analytics' && currentUser && (
+  <AnalyticsTab
+    currentUser={currentUser}
+    calls={calls}
+    fundingData={fundingData}
+  />
+)}
       </main>
     </div>
   );

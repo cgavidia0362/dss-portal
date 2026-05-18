@@ -15,6 +15,7 @@ interface Call {
   assignedTo?: string;
   assignedToName?: string;
   amount?: number;
+  buyerFinal?: string;
 }
 
 interface StateGoal {
@@ -198,14 +199,16 @@ export default function ReportingTab({
   const calculateRevenueStats = (period: TimePeriod) => {
     const filtered = filterCallsByPeriod(period);
     const dealCalls = filtered.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal');
+    const getAmount = (call: Call) =>
+      parseFloat((call.buyerFinal || call.amount?.toString() || '0').replace(/[^0-9.-]+/g, '')) || 0;
     const totalDeals = dealCalls.length;
-    const totalRevenue = dealCalls.reduce((sum, c) => sum + (c.amount || 0), 0);
+    const totalRevenue = dealCalls.reduce((sum, c) => sum + getAmount(c), 0);
     const avgDeal = totalDeals > 0 ? totalRevenue / totalDeals : 0;
-    const largestDeal = dealCalls.length > 0 ? Math.max(...dealCalls.map(c => c.amount || 0)) : 0;
+    const largestDeal = dealCalls.length > 0 ? Math.max(...dealCalls.map(c => getAmount(c))) : 0;
     const byState = dealCalls.reduce((acc: any[], call) => {
       const ex = acc.find(i => i.state === call.state);
-      if (ex) { ex.deals++; ex.revenue += call.amount || 0; }
-      else acc.push({ state: call.state, deals: 1, revenue: call.amount || 0 });
+      if (ex) { ex.deals++; ex.revenue += getAmount(call); }
+      else acc.push({ state: call.state, deals: 1, revenue: getAmount(call) });
       return acc;
     }, []);
     return { totalDeals, totalRevenue, avgDeal, largestDeal, byState };
