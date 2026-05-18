@@ -60,6 +60,12 @@ interface Goals {
   monthly: number;
 }
 
+interface FundingData {
+  [state: string]: {
+    count: number;
+    totalAmount: number;
+  };
+}
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,7 +83,7 @@ function App() {
     weekly: 50,
     monthly: 200,
   });
-
+  const [fundingData, setFundingData] = useState<FundingData>({});
   useEffect(() => {
     checkAuth();
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -281,14 +287,16 @@ function App() {
             currentUser={currentUser}
           />
         )}
-        {activeTab === 'upload' && (
-          <UploadTab
-            calls={calls}
-            setCalls={setCalls}
-            dealers={dealers}
-            setDealers={setDealers}
-          />
-        )}
+{activeTab === 'upload' && (
+  <UploadTab
+    calls={calls}
+    setCalls={setCalls}
+    dealers={dealers}
+    setDealers={setDealers}
+    fundingData={fundingData}
+    setFundingData={setFundingData}
+  />
+)}
         {activeTab === 'assign' && (
           <AssignTab
             currentUserRole={currentUser.role}
@@ -299,15 +307,16 @@ function App() {
             setGoals={setGoals}
           />
         )}
-        {activeTab === 'reporting' && (
-          <ReportingTab
-            currentUserId={currentUser.id}
-            currentUserRole={currentUser.role}
-            calls={calls}
-            goals={goals}
-            setGoals={setGoals}
-          />
-        )}
+{activeTab === 'reporting' && (
+  <ReportingTab
+    currentUserId={currentUser.id}
+    currentUserRole={currentUser.role}
+    calls={calls}
+    goals={goals}
+    setGoals={setGoals}
+    fundingData={fundingData}
+  />
+)}
        {activeTab === 'users' && (
           <UserManagementTab
             currentUserId={currentUser.id}
