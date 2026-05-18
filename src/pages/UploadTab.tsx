@@ -125,7 +125,10 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
         const statusLast = String(row['Status Last'] || '').trim();
         let initialFuStatus: Call['fuStatus'] = 'Pending';
         let initialDealDate: Date | undefined = undefined;
-        if (statusLast === 'Accepted') { initialFuStatus = 'Deal'; initialDealDate = new Date(); }
+        if (statusLast === 'Accepted') {
+          initialFuStatus = 'Deal';
+          initialDealDate = timestampSubmit;
+        }
 
         newCalls.push({
           id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
