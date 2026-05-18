@@ -75,6 +75,27 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
     return () => { document.body.removeChild(script); };
   }, []);
 
+  // Helper: parse a raw value from XLSX into a JS Date
+  const parseXlsxDate = (rawValue: any): Date | null => {
+    if (!rawValue && rawValue !== 0) return null;
+
+    // Already a Date object (cellDates: true worked)
+    if (rawValue instanceof Date) {
+      return isNaN(rawValue.getTime()) ? null : rawValue;
+    }
+
+    // Excel serial number (e.g. 46122)
+    if (typeof rawValue === 'number') {
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+      const result = new Date(excelEpoch.getTime() + rawValue * 86400000);
+      return isNaN(result.getTime()) ? null : result;
+    }
+
+    // String date
+    const parsed = new Date(String(rawValue));
+    return isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   // ── CALLS UPLOAD ──────────────────────────────────────────────
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -89,9 +110,10 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
 
     try {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
+      // cellDates: true must be on XLSX.read(), not sheet_to_json()
+      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { cellDates: true });
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
       if (jsonData.length === 0) {
         setUploadResult({ success: false, message: 'The uploaded file is empty or has no valid data.' });
@@ -115,26 +137,17 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
           }
         }
 
-        // Handle Excel date serials, Date objects, and date strings
-        let timestampSubmit = new Date();
-        const rawTimestamp = row['Timestamp Submit'];
-        if (rawTimestamp) {
-          if (rawTimestamp instanceof Date) {
-            timestampSubmit = rawTimestamp;
-          } else {
-            const parsed = new Date(String(rawTimestamp));
-            if (!isNaN(parsed.getTime())) {
-              timestampSubmit = parsed;
-            }
-          }
-        }
+        // Parse timestamp using the robust helper
+        const parsedDate = parseXlsxDate(row['Timestamp Submit']);
+        const timestampSubmit = parsedDate ?? new Date();
 
         const statusLast = String(row['Status Last'] || '').trim();
         let initialFuStatus: Call['fuStatus'] = 'Pending';
         let initialDealDate: Date | undefined = undefined;
+
         if (statusLast === 'Accepted') {
           initialFuStatus = 'Deal';
-          initialDealDate = timestampSubmit;
+          initialDealDate = timestampSubmit; // Use CSV date, not today
         }
 
         newCalls.push({
