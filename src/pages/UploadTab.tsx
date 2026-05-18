@@ -44,7 +44,7 @@ interface UploadTabProps {
   setFundingData: React.Dispatch<React.SetStateAction<FundingData>>;
 }
 
-export default function UploadTab({ calls, setCalls, dealers, setDealers, fundingData, setFundingData }: UploadTabProps) {
+export default function UploadTab({ setCalls, dealers, setDealers, fundingData, setFundingData }: UploadTabProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadingFunding, setUploadingFunding] = useState(false);
   const [xlsxLoaded, setXlsxLoaded] = useState(false);
