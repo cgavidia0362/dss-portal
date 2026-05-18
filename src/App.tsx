@@ -9,6 +9,7 @@ import ReportingTab from './pages/ReportingTab';
 import UserManagementTab from './pages/UserManagementTab';
 import AnalyticsTab from './pages/AnalyticsTab';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import DailyDealsTab from './pages/DailyDealsTab';
 
 interface Dealer {
   cifNumber: string;
@@ -208,10 +209,11 @@ function App() {
       { id: 'reporting', label: 'Reporting', icon: BarChart3 },
       { id: 'users', label: 'Users', icon: UserCog },
       { id: 'analytics', label: 'Analytics', icon: TrendingUp },
+      { id: 'daily-deals', label: 'Daily Deals', icon: TrendingUp },
     ];
     if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
     if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
-    return allTabs.filter(t => t.id === 'calls' || t.id === 'analytics');
+    return allTabs.filter(t => t.id === 'calls' || t.id === 'analytics' || t.id === 'daily-deals');
   };
 
   if (isLoading) {
@@ -337,6 +339,9 @@ function App() {
             calls={calls}
             fundingData={fundingData}
           />
+        )}
+         {activeTab === 'daily-deals' && currentUser && (
+          <DailyDealsTab currentUser={currentUser} />
         )}
       </main>
     </div>
