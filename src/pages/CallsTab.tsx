@@ -39,6 +39,13 @@ interface User {
   state?: string;
 }
 
+interface DailyDealSummary {
+  id: string;
+  addedBy: string;
+  fuStatus: string;
+  dealDate: string;
+}
+
 interface CallsTabProps {
   currentUserId: string;
   currentUserRole: 'admin' | 'manager' | 'rep';
@@ -49,12 +56,13 @@ interface CallsTabProps {
   dailyGoal: number;
   teamGoal: number;
   currentUser?: User;
+  todayDailyDeals?: DailyDealSummary[];
 }
 
 type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | null;
 type SortOrder = 'asc' | 'desc' | null;
 
-export default function CallsTab({ currentUserId, currentUserRole, calls, setCalls, notes, setNotes, dailyGoal, teamGoal, currentUser }: CallsTabProps) {
+export default function CallsTab({ currentUserId, currentUserRole, calls, setCalls, notes, setNotes, dailyGoal, teamGoal, currentUser, todayDailyDeals }: CallsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFuStatus, setFilterFuStatus] = useState<string>('');
   const [filterState, setFilterState] = useState<string>('');
@@ -81,7 +89,6 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
   ];
 
-  // Fetch state goal for rep
   useEffect(() => {
     if (currentUserRole === 'rep' && currentUser?.state) {
       fetchRepStateGoal(currentUser.state);
@@ -93,21 +100,13 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     const currentYear = new Date().getFullYear();
     try {
       const { data } = await supabase
-        .from('state_goals')
-        .select('*')
-        .eq('state', state)
-        .eq('month', currentMonth)
-        .eq('year', currentYear)
+        .from('state_goals').select('*')
+        .eq('state', state).eq('month', currentMonth).eq('year', currentYear)
         .single();
-      if (data) {
-        setStateGoalDaily(Math.round(data.monthly_goal / data.funding_days));
-      }
-    } catch {
-      setStateGoalDaily(0);
-    }
+      if (data) setStateGoalDaily(Math.round(data.monthly_goal / data.funding_days));
+    } catch { setStateGoalDaily(0); }
   };
 
-  // State deals today (all reps in this state)
   const stateDealsToday = (() => {
     if (!currentUser?.state) return 0;
     const todayStart = new Date();
@@ -126,12 +125,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       setCalls((prevCalls) =>
         prevCalls.map((call) => {
-          if (
-            call.statusLast === 'Accepted' &&
-            call.fuStatus === 'Deal' &&
-            call.dealDate &&
-            call.dealDate < sevenDaysAgo
-          ) {
+          if (call.statusLast === 'Accepted' && call.fuStatus === 'Deal' && call.dealDate && call.dealDate < sevenDaysAgo) {
             return { ...call, fuStatus: 'Pending', dealDate: undefined };
           }
           return call;
@@ -157,11 +151,9 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
 
   const isToday = (date: Date): boolean => {
     const today = new Date();
-    return (
-      date.getDate() === today.getDate() &&
+    return date.getDate() === today.getDate() &&
       date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
-    );
+      date.getFullYear() === today.getFullYear();
   };
 
   const handleSort = (field: SortField) => {
@@ -193,6 +185,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     currentUserRole === 'rep' ? call.assignedTo === currentUserId : true
   );
   const uniqueStatusLast = Array.from(new Set(roleFilteredCalls.map((c) => c.statusLast).filter(Boolean))).sort();
+  const uniqueStates = Array.from(new Set(roleFilteredCalls.map((c) => c.state))).sort();
 
   const toggleStatusLastFilter = (status: string) => {
     const newFilter = new Set(filterStatusLast);
@@ -203,25 +196,19 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
 
   const filteredCalls = calls.filter((call) => {
     if (currentUserRole === 'rep' && call.assignedTo !== currentUserId) return false;
-
-    const matchesSearch =
-      !searchQuery ||
+    const matchesSearch = !searchQuery ||
       call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       call.state.toLowerCase().includes(searchQuery.toLowerCase());
-
     const matchesFuStatus = !filterFuStatus || call.fuStatus === filterFuStatus;
     const matchesState = !filterState || call.state === filterState;
     const matchesStatusLast = filterStatusLast.size === 0 || filterStatusLast.has(call.statusLast);
-
     const callDate = new Date(call.submittedDate);
     const matchesDateFrom = !dateFrom || callDate >= new Date(dateFrom);
     const matchesDateTo = !dateTo || callDate <= new Date(dateTo);
-
     const isCompleted = call.fuStatus === 'No Deal' || call.fuStatus === 'Closed' || call.fuStatus === 'Duplicates';
     const isExplicitlyFiltering = filterFuStatus === 'No Deal' || filterFuStatus === 'Closed' || filterFuStatus === 'Duplicates';
     if (!showCompleted && isCompleted && !isExplicitlyFiltering) return false;
-
     return matchesSearch && matchesFuStatus && matchesState && matchesStatusLast && matchesDateFrom && matchesDateTo;
   });
 
@@ -248,20 +235,33 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     setCurrentPage(1);
   }, [searchQuery, filterFuStatus, filterState, filterStatusLast, dateFrom, dateTo, showCompleted]);
 
-  const uniqueStates = Array.from(new Set(roleFilteredCalls.map((c) => c.state))).sort();
-
-  // Deals today: rep's own deals using dealDate
-  const dealsToday = filteredCalls.filter((c) =>
+  // CSV deals today (filtered by role)
+  const csvDealsToday = filteredCalls.filter((c) =>
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
     c.dealDate &&
     isToday(new Date(c.dealDate))
   ).length;
 
-  const teamDealsToday = calls.filter((c) =>
+  // Daily deals from Daily Deals tab (filtered by role for reps)
+  const myDailyDealsToday = (todayDailyDeals || []).filter(d =>
+    (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal') &&
+    (currentUserRole !== 'rep' || d.addedBy === currentUserId)
+  ).length;
+
+  const dealsToday = csvDealsToday + myDailyDealsToday;
+
+  // Team deals today (CSV + daily deals)
+  const csvTeamDealsToday = calls.filter((c) =>
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
     c.dealDate &&
     isToday(new Date(c.dealDate))
   ).length;
+
+  const allDailyDealsToday = (todayDailyDeals || []).filter(d =>
+    d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal'
+  ).length;
+
+  const teamDealsToday = csvTeamDealsToday + allDailyDealsToday;
 
   const goalProgress = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
   const teamGoalProgress = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
@@ -322,8 +322,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
     if (!noteText) return;
     const newNote: CallNote = {
       id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      callId,
-      noteText,
+      callId, noteText,
       createdBy: currentUserId,
       createdByName: currentUserRole === 'admin' ? 'Admin User' : 'Rep User',
       createdAt: new Date(),
@@ -345,7 +344,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
         </p>
       </div>
 
-      {/* KPI CARDS — 5 columns, no Deals Today card */}
+      {/* KPI CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <p className="text-sm text-gray-400">Total Calls</p>
@@ -412,6 +411,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
         )}
       </div>
 
+      {/* Filters */}
       <div className="bg-gray-800 p-4 rounded-lg shadow border border-gray-700">
         <div className="flex gap-4 flex-wrap items-center">
           <div className="flex-1 min-w-[200px]">
@@ -455,13 +455,12 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
         </div>
       </div>
 
+      {/* Status filter chips */}
       <div className="bg-gray-800 p-4 rounded-lg shadow border border-gray-700">
         <div className="flex items-center gap-2 mb-3">
           <p className="text-sm font-semibold text-gray-300">Application Status:</p>
           {filterStatusLast.size > 0 && (
-            <button onClick={() => setFilterStatusLast(new Set())} className="text-xs text-blue-400 hover:text-blue-300 underline">
-              Clear All
-            </button>
+            <button onClick={() => setFilterStatusLast(new Set())} className="text-xs text-blue-400 hover:text-blue-300 underline">Clear All</button>
           )}
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -480,6 +479,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
         </div>
       </div>
 
+      {/* Calls Table */}
       <div className="bg-gray-800 rounded-lg shadow border border-gray-700 overflow-hidden">
         <div className="px-6 py-3 border-b border-gray-700 flex items-center justify-between bg-gray-750">
           <p className="text-sm text-gray-400">
@@ -535,11 +535,8 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
                       <td className="px-4 py-4">
                         {isExpanded ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
                       </td>
-                      <td
-                        className="px-4 py-4 text-sm font-medium text-blue-400 underline cursor-pointer"
-                        title="Click to copy"
-                        onClick={(e) => { e.stopPropagation(); copyToClipboard(call.applicationId); }}
-                      >
+                      <td className="px-4 py-4 text-sm font-medium text-blue-400 underline cursor-pointer" title="Click to copy"
+                        onClick={(e) => { e.stopPropagation(); copyToClipboard(call.applicationId); }}>
                         {call.applicationId}
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-200">{call.dealerName}</td>
@@ -614,7 +611,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
                                   {callNotes.map((note) => (
                                     <div key={note.id} className="bg-gray-700 p-3 rounded-lg">
                                       <p className="text-sm text-gray-200">{note.noteText}</p>
-                                      <p className="text-xs text-gray-500 mt-2">{note.createdByName} • {note.createdAt.toLocaleString()}</p>
+                                      <p className="text-xs text-gray-500 mt-2">{note.createdByName} · {note.createdAt.toLocaleString()}</p>
                                     </div>
                                   ))}
                                 </div>

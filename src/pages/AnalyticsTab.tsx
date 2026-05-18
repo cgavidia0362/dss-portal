@@ -26,15 +26,23 @@ interface FundingData {
   };
 }
 
+interface DailyDealSummary {
+  id: string;
+  addedBy: string;
+  fuStatus: string;
+  dealDate: string;
+}
+
 interface AnalyticsTabProps {
   currentUser: User;
   calls: Call[];
   fundingData: FundingData;
+  todayDailyDeals?: DailyDealSummary[];
 }
 
 type TimePeriod = 'daily' | 'weekly' | 'monthly';
 
-export default function AnalyticsTab({ currentUser, calls, fundingData }: AnalyticsTabProps) {
+export default function AnalyticsTab({ currentUser, calls, fundingData, todayDailyDeals }: AnalyticsTabProps) {
   const [dealPeriod, setDealPeriod] = useState<TimePeriod>('daily');
   const [stateGoal, setStateGoal] = useState<{ monthlyGoal: number; fundingDays: number } | null>(null);
 
@@ -53,10 +61,12 @@ export default function AnalyticsTab({ currentUser, calls, fundingData }: Analyt
         .eq('state', state).eq('month', currentMonth).eq('year', currentYear)
         .single();
       if (data) setStateGoal({ monthlyGoal: data.monthly_goal, fundingDays: data.funding_days });
-    } catch { setStateGoal(null); }
+    } catch {
+      setStateGoal(null);
+    }
   };
 
-  // My calls only
+  // My calls only (from CSV)
   const myCalls = calls.filter(c => c.assignedTo === currentUser.id);
 
   const getStartDate = (period: TimePeriod) => {
@@ -73,11 +83,24 @@ export default function AnalyticsTab({ currentUser, calls, fundingData }: Analyt
 
   const getMyDealsForPeriod = (period: TimePeriod) => {
     const startDate = getStartDate(period);
-    return myCalls.filter(c => {
+
+    // CSV-based deals
+    const csvDeals = myCalls.filter(c => {
       if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
       const date = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
       return date >= startDate;
     }).length;
+
+    // For daily period, also count today's daily deals entered by this rep
+    if (period === 'daily') {
+      const myDailyDeals = (todayDailyDeals || []).filter(d =>
+        d.addedBy === currentUser.id &&
+        (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
+      ).length;
+      return csvDeals + myDailyDeals;
+    }
+
+    return csvDeals;
   };
 
   const myPending = myCalls.filter(c => c.fuStatus === 'Pending').length;
@@ -86,24 +109,30 @@ export default function AnalyticsTab({ currentUser, calls, fundingData }: Analyt
   const myTotalDeals = myCalls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
   const closingRate = myCalls.length > 0 ? ((myTotalDeals / myCalls.length) * 100).toFixed(1) : '0';
 
-  // State total funded: use uploaded funding data if available
+  // State performance
+  const stateCalls = currentUser.state ? calls.filter(c => c.state === currentUser.state) : [];
+
   const stateFundedThisMonth = currentUser.state && fundingData[currentUser.state]
     ? fundingData[currentUser.state].count
-    : calls.filter(c => {
-        if (c.state !== currentUser.state) return false;
+    : stateCalls.filter(c => {
         if (!c.dealDate) return false;
         const d = new Date(c.dealDate);
-        return (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
-          d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
+        return (
+          (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+          d.getMonth() + 1 === currentMonth &&
+          d.getFullYear() === currentYear
+        );
       }).length;
 
-  // My contribution: only MY deals for MY assigned state this month
   const myContributionThisMonth = myCalls.filter(c => {
     if (c.state !== currentUser.state) return false;
     if (!c.dealDate) return false;
     const d = new Date(c.dealDate);
-    return (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
-      d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
+    return (
+      (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+      d.getMonth() + 1 === currentMonth &&
+      d.getFullYear() === currentYear
+    );
   }).length;
 
   const dailyGoal = stateGoal ? Math.round(stateGoal.monthlyGoal / stateGoal.fundingDays) : 0;
@@ -130,8 +159,13 @@ export default function AnalyticsTab({ currentUser, calls, fundingData }: Analyt
           <h3 className="text-xl font-semibold text-gray-100">My Deals</h3>
           <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
             {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
-              <button key={p} onClick={() => setDealPeriod(p)}
-                className={`px-4 py-2 text-sm font-medium transition ${dealPeriod === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}>
+              <button
+                key={p}
+                onClick={() => setDealPeriod(p)}
+                className={`px-4 py-2 text-sm font-medium transition ${
+                  dealPeriod === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                }`}
+              >
                 {p.charAt(0).toUpperCase() + p.slice(1)}
               </button>
             ))}
@@ -140,7 +174,12 @@ export default function AnalyticsTab({ currentUser, calls, fundingData }: Analyt
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 flex items-center gap-6">
           <Award className="w-14 h-14 text-green-400 opacity-60" />
           <div>
-            <p className="text-sm text-gray-400 mb-1">{dealPeriod.charAt(0).toUpperCase() + dealPeriod.slice(1)} Deals</p>
+            <p className="text-sm text-gray-400 mb-1">
+              {dealPeriod.charAt(0).toUpperCase() + dealPeriod.slice(1)} Deals
+              {dealPeriod === 'daily' && (todayDailyDeals || []).filter(d => d.addedBy === currentUser.id && (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')).length > 0 && (
+                <span className="ml-2 text-xs text-green-500">(includes daily deals entries)</span>
+              )}
+            </p>
             <p className="text-6xl font-bold text-green-400">{getMyDealsForPeriod(dealPeriod)}</p>
           </div>
         </div>
@@ -199,12 +238,8 @@ export default function AnalyticsTab({ currentUser, calls, fundingData }: Analyt
                     <p className="text-2xl font-bold text-gray-100">{stateGoal.monthlyGoal}</p>
                   </div>
                   <div className="bg-gray-700 rounded-lg p-4">
-                    <p className="text-xs text-gray-400 mb-1">
-                      {currentUser.state} Total Funded
-                    </p>
-                    <p className={`text-2xl font-bold ${getProgressTextColor(progress)}`}>
-                      {stateFundedThisMonth}
-                    </p>
+                    <p className="text-xs text-gray-400 mb-1">{currentUser.state} Total Funded</p>
+                    <p className={`text-2xl font-bold ${getProgressTextColor(progress)}`}>{stateFundedThisMonth}</p>
                     {fundingData[currentUser.state] && (
                       <p className="text-xs text-green-500 mt-1">from funding report</p>
                     )}
@@ -225,8 +260,10 @@ export default function AnalyticsTab({ currentUser, calls, fundingData }: Analyt
                   <p className={`text-sm font-bold ${getProgressTextColor(progress)}`}>{progress.toFixed(0)}%</p>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-3 mb-4">
-                  <div className={`h-3 rounded-full transition-all ${getProgressColor(progress)}`}
-                    style={{ width: `${Math.min(progress, 100)}%` }} />
+                  <div
+                    className={`h-3 rounded-full transition-all ${getProgressColor(progress)}`}
+                    style={{ width: `${Math.min(progress, 100)}%` }}
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

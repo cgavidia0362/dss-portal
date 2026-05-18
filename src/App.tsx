@@ -69,6 +69,13 @@ interface FundingData {
   };
 }
 
+export interface DailyDealSummary {
+  id: string;
+  addedBy: string;
+  fuStatus: string;
+  dealDate: string;
+}
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,6 +96,7 @@ function App() {
   });
 
   const [fundingData, setFundingData] = useState<FundingData>({});
+  const [todayDailyDeals, setTodayDailyDeals] = useState<DailyDealSummary[]>([]);
 
   useEffect(() => {
     checkAuth();
@@ -116,9 +124,23 @@ function App() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchUsers();
+      fetchTodayDailyDeals();
     }
   }, [isAuthenticated]);
 
+  // Real-time subscription for daily deals — keeps all tabs in sync
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const channel = supabase
+      .channel('app_daily_deals_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_deals' }, () => {
+        fetchTodayDailyDeals();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [isAuthenticated]);
+
+  // Reset to calls tab if current tab not allowed
   useEffect(() => {
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
     const type = hashParams.get('type');
@@ -127,6 +149,7 @@ function App() {
       setIsLoading(false);
     }
   }, []);
+
   const checkAuth = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -150,11 +173,8 @@ function App() {
       if (error) throw error;
       if (profile) {
         setCurrentUser({
-          id: profile.id,
-          name: profile.name,
-          email: profile.email,
-          role: profile.role,
-          active: profile.active,
+          id: profile.id, name: profile.name, email: profile.email,
+          role: profile.role, active: profile.active,
           allowedStatuses: profile.allowed_statuses || [],
           state: profile.state || undefined,
         });
@@ -175,17 +195,35 @@ function App() {
       if (error) throw error;
       if (data) {
         setUsers(data.map((user: any) => ({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          active: user.active,
+          id: user.id, name: user.name, email: user.email,
+          role: user.role, active: user.active,
           allowedStatuses: user.allowed_statuses || [],
           state: user.state || undefined,
         })));
       }
     } catch (error) {
       console.error('Error fetching users:', error);
+    }
+  };
+
+  const fetchTodayDailyDeals = async () => {
+    try {
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const { data } = await supabase
+        .from('daily_deals')
+        .select('id, added_by, fu_status, deal_date')
+        .eq('deal_date', today);
+      if (data) {
+        setTodayDailyDeals(data.map((d: any) => ({
+          id: d.id,
+          addedBy: d.added_by,
+          fuStatus: d.fu_status,
+          dealDate: d.deal_date,
+        })));
+      }
+    } catch (err) {
+      console.error('Error fetching daily deals summary:', err);
     }
   };
 
@@ -244,15 +282,12 @@ function App() {
           <div className="flex items-center justify-between h-16">
             <h1 className="text-2xl font-bold text-blue-400">DSS Portal</h1>
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-400">
-                {currentUser.name} ({currentUser.role})
-              </span>
+              <span className="text-sm text-gray-400">{currentUser.name} ({currentUser.role})</span>
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition"
               >
-                <LogOut className="w-4 h-4" />
-                Logout
+                <LogOut className="w-4 h-4" /> Logout
               </button>
             </div>
           </div>
@@ -295,6 +330,7 @@ function App() {
             dailyGoal={goals.daily[currentUser.id] || 0}
             teamGoal={goals.team}
             currentUser={currentUser}
+            todayDailyDeals={todayDailyDeals}
           />
         )}
         {activeTab === 'upload' && (
@@ -325,6 +361,7 @@ function App() {
             goals={goals}
             setGoals={setGoals}
             fundingData={fundingData}
+            todayDailyDeals={todayDailyDeals}
           />
         )}
         {activeTab === 'users' && (
@@ -338,10 +375,15 @@ function App() {
             currentUser={currentUser}
             calls={calls}
             fundingData={fundingData}
+            todayDailyDeals={todayDailyDeals}
           />
         )}
-         {activeTab === 'daily-deals' && currentUser && (
-          <DailyDealsTab currentUser={currentUser} />
+        {activeTab === 'daily-deals' && currentUser && (
+          <DailyDealsTab
+            currentUser={currentUser}
+            goals={goals}
+            onRefresh={fetchTodayDailyDeals}
+          />
         )}
       </main>
     </div>

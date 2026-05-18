@@ -56,6 +56,13 @@ interface FundingData {
   };
 }
 
+interface DailyDealSummary {
+  id: string;
+  addedBy: string;
+  fuStatus: string;
+  dealDate: string;
+}
+
 interface ReportingTabProps {
   currentUserId: string;
   currentUserRole: 'admin' | 'manager' | 'rep';
@@ -63,6 +70,7 @@ interface ReportingTabProps {
   goals: Goals;
   setGoals: (goals: Goals) => void;
   fundingData: FundingData;
+  todayDailyDeals?: DailyDealSummary[];
 }
 
 type TimePeriod = 'daily' | 'weekly' | 'monthly';
@@ -70,7 +78,7 @@ type TimePeriod = 'daily' | 'weekly' | 'monthly';
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export default function ReportingTab({
-  currentUserId, currentUserRole, calls, goals, setGoals, fundingData,
+  currentUserId, currentUserRole, calls, goals, setGoals, fundingData, todayDailyDeals,
 }: ReportingTabProps) {
   const [stateGoals, setStateGoals] = useState<StateGoal[]>([]);
   const [stateStats, setStateStats] = useState<StateStats[]>([]);
@@ -111,12 +119,10 @@ export default function ReportingTab({
 
   const calculateStateStats = () => {
     const states = [...new Set(calls.map(c => c.state))].sort();
-
     const stats: StateStats[] = states.map(state => {
       const stateCalls = calls.filter(c => c.state === state);
       const totalApps = stateCalls.length;
 
-      // Use uploaded funding data if available, else fall back to call-based count
       let funded = 0;
       let totalAmount = 0;
       if (fundingData[state]) {
@@ -143,11 +149,9 @@ export default function ReportingTab({
 
       return { state, totalApps, funded, totalAmount, monthlyGoal, fundingDays, dailyGoal, weeklyGoal, progress, neededPerDay, daysElapsed, daysRemaining };
     });
-
     setStateStats(stats);
   };
 
-  // Total funded across all states
   const totalFundedCount = Object.values(fundingData).reduce((sum, d) => sum + d.count, 0);
   const totalFundedAmount = Object.values(fundingData).reduce((sum, d) => sum + d.totalAmount, 0);
   const hasFundingData = Object.keys(fundingData).length > 0;
@@ -216,8 +220,23 @@ export default function ReportingTab({
 
   const revenueStats = calculateRevenueStats(revenuePeriod);
 
-  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const dealsToday = calls.filter(c => (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && new Date(c.dealDate) >= todayStart).length;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  // CSV deals today
+  const csvDealsToday = calls.filter(
+    (call) => (call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal') &&
+      call.dealDate && new Date(call.dealDate) >= todayStart
+  ).length;
+
+  // Daily deals tab entries today
+  const dailyDealsTodayCount = (todayDailyDeals || []).filter(d =>
+    d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal'
+  ).length;
+
+  // Combined deals today
+  const dealsToday = csvDealsToday + dailyDealsTodayCount;
+
   const totalDeals = calls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
   const conversionRate = calls.length > 0 ? ((totalDeals / calls.length) * 100).toFixed(1) : '0';
 
@@ -322,21 +341,33 @@ export default function ReportingTab({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <div className="flex items-center justify-between">
-              <div><p className="text-gray-400 text-sm">Deals Today</p><p className="text-3xl font-bold text-green-400">{dealsToday}</p></div>
+              <div>
+                <p className="text-gray-400 text-sm">Deals Today</p>
+                <p className="text-3xl font-bold text-green-400">{dealsToday}</p>
+                {dailyDealsTodayCount > 0 && (
+                  <p className="text-xs text-green-500 mt-1">+{dailyDealsTodayCount} from daily deals</p>
+                )}
+              </div>
               <CheckCircle2 className="w-12 h-12 text-green-400 opacity-20" />
             </div>
             <div className="mt-2 text-sm text-gray-500">Goal: {goals.team}/day</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <div className="flex items-center justify-between">
-              <div><p className="text-gray-400 text-sm">Total Deals</p><p className="text-3xl font-bold text-blue-400">{totalDeals}</p></div>
+              <div>
+                <p className="text-gray-400 text-sm">Total Deals</p>
+                <p className="text-3xl font-bold text-blue-400">{totalDeals}</p>
+              </div>
               <Award className="w-12 h-12 text-blue-400 opacity-20" />
             </div>
             <div className="mt-2 text-sm text-gray-500">Monthly Goal: {goals.monthly}</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             <div className="flex items-center justify-between">
-              <div><p className="text-gray-400 text-sm">Conversion Rate</p><p className="text-3xl font-bold text-purple-400">{conversionRate}%</p></div>
+              <div>
+                <p className="text-gray-400 text-sm">Conversion Rate</p>
+                <p className="text-3xl font-bold text-purple-400">{conversionRate}%</p>
+              </div>
               <TrendingUp className="w-12 h-12 text-purple-400 opacity-20" />
             </div>
           </div>
@@ -357,7 +388,6 @@ export default function ReportingTab({
           )}
         </div>
 
-        {/* Total Funded Summary Tile */}
         {hasFundingData && (
           <div className="bg-gradient-to-r from-green-900 to-emerald-900 rounded-lg p-5 border border-green-700 mb-4">
             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -384,7 +414,6 @@ export default function ReportingTab({
           </div>
         )}
 
-        {/* State Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {stateStats.map(stat => (
             <div key={stat.state} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
@@ -504,7 +533,7 @@ export default function ReportingTab({
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie data={statusDistribution} cx="50%" cy="50%" labelLine={false} label={e => e.name} outerRadius={100} fill="#8884d8" dataKey="value">
-                  {statusDistribution.map((_, i) => <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />)}
+                  {statusDistribution.map((_: any, i: number) => <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }} />
               </PieChart>
