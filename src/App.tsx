@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, Upload, Users, FileText, UserCog, LogOut } from 'lucide-react';
+import { BarChart3, Upload, Users, FileText, UserCog, LogOut, TrendingUp } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import LoginPage from './pages/LoginPage';
 import CallsTab from './pages/CallsTab';
@@ -7,6 +7,7 @@ import UploadTab from './pages/UploadTab';
 import AssignTab from './pages/AssignTab';
 import ReportingTab from './pages/ReportingTab';
 import UserManagementTab from './pages/UserManagementTab';
+import AnalyticsTab from './pages/AnalyticsTab';
 
 interface Dealer {
   cifNumber: string;
@@ -196,10 +197,11 @@ function App() {
       { id: 'assign', label: 'Assign', icon: Users },
       { id: 'reporting', label: 'Reporting', icon: BarChart3 },
       { id: 'users', label: 'Users', icon: UserCog },
+      { id: 'analytics', label: 'Analytics', icon: TrendingUp },
     ];
-    if (role === 'admin') return allTabs;
-    if (role === 'manager') return allTabs.filter(t => t.id !== 'users');
-    return allTabs.filter(t => t.id === 'calls');
+    if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
+    if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
+    return allTabs.filter(t => t.id === 'calls' || t.id === 'analytics');
   };
 
   if (isLoading) {
@@ -306,10 +308,16 @@ function App() {
             setGoals={setGoals}
           />
         )}
-        {activeTab === 'users' && (
+       {activeTab === 'users' && (
           <UserManagementTab
             currentUserId={currentUser.id}
             currentUserRole={currentUser.role}
+          />
+        )}
+        {activeTab === 'analytics' && currentUser && (
+          <AnalyticsTab
+            currentUser={currentUser}
+            calls={calls}
           />
         )}
       </main>
