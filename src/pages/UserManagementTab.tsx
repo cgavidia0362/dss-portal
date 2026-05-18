@@ -403,7 +403,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               <h3 className="text-xl font-bold text-gray-100">Setup Link</h3>
               <button onClick={() => setSetupLinkModal(null)} className="text-gray-400 hover:text-gray-200">
                 <X className="w-5 h-5" />
-              </button>
+              </button>Loading
             </div>
             <p className="text-sm text-gray-400 mb-4">
               Share this link with <span className="text-white font-semibold">{setupLinkModal.email}</span>. They will be prompted to set their password when they click it.

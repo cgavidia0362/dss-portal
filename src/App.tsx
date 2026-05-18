@@ -118,6 +118,14 @@ function App() {
     }
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const type = hashParams.get('type');
+    if (type === 'recovery') {
+      setShowPasswordReset(true);
+      setIsLoading(false);
+    }
+  }, []);
   const checkAuth = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
