@@ -164,8 +164,8 @@ export default function DailyDealsTab({ currentUser }: DailyDealsTabProps) {
     }
     try {
       setFormError('');
-      const { data, error: insertError } = await supabase
-        .from('daily_deals').insert({
+      const { error: insertError } = await supabase
+      .from('daily_deals').insert({
           app_id: form.appId.trim(),
           dealer_name: form.dealerName.trim(),
           customer_name: form.customerName.trim(),
