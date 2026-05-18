@@ -91,7 +91,7 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { cellDates: true });
 
       if (jsonData.length === 0) {
         setUploadResult({ success: false, message: 'The uploaded file is empty or has no valid data.' });
@@ -115,11 +115,18 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
           }
         }
 
+        // Handle Excel date serials, Date objects, and date strings
         let timestampSubmit = new Date();
-        const timestampStr = String(row['Timestamp Submit'] || '');
-        if (timestampStr) {
-          const parsed = new Date(timestampStr);
-          if (!isNaN(parsed.getTime())) timestampSubmit = parsed;
+        const rawTimestamp = row['Timestamp Submit'];
+        if (rawTimestamp) {
+          if (rawTimestamp instanceof Date) {
+            timestampSubmit = rawTimestamp;
+          } else {
+            const parsed = new Date(String(rawTimestamp));
+            if (!isNaN(parsed.getTime())) {
+              timestampSubmit = parsed;
+            }
+          }
         }
 
         const statusLast = String(row['Status Last'] || '').trim();
@@ -198,7 +205,6 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
         const state = String(row['Dealer State'] || '').trim();
         if (!state) return;
 
-        // Parse loan amount — strips $, commas, spaces
         const loanAmountStr = String(row['Loan Amount'] || '0').replace(/[$,\s]/g, '');
         const loanAmount = parseFloat(loanAmountStr) || 0;
 
@@ -358,7 +364,6 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
           </div>
         )}
 
-        {/* Current funding data summary */}
         {Object.keys(fundingData).length > 0 && !fundingUploadResult && (
           <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
             <p className="text-sm font-semibold text-gray-300 mb-3">Currently Loaded Funding Data:</p>
