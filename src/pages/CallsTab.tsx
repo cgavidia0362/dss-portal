@@ -247,8 +247,19 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
 
   const uniqueStates = Array.from(new Set(calls.map((c) => c.state))).sort();
 
-  const dealsToday = filteredCalls.filter((c) => c.fuStatus === 'Deal' && isToday(c.updatedAt)).length;
-  const teamDealsToday = calls.filter((c) => c.fuStatus === 'Deal' && isToday(c.updatedAt)).length;
+  // Deals today: rep's own deals using dealDate
+  const dealsToday = filteredCalls.filter((c) =>
+    (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+    c.dealDate &&
+    isToday(new Date(c.dealDate))
+  ).length;
+
+  const teamDealsToday = calls.filter((c) =>
+    (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+    c.dealDate &&
+    isToday(new Date(c.dealDate))
+  ).length;
+
   const goalProgress = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
   const teamGoalProgress = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
 
@@ -319,9 +330,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
   };
 
   const getCallNotes = (callId: string) => notes.filter((note) => note.callId === callId);
-
   const copyToClipboard = (text: string) => navigator.clipboard.writeText(text);
-
   const goToPage = (page: number) => setCurrentPage(Math.max(1, Math.min(page, totalPages)));
 
   return (
@@ -333,15 +342,13 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+      {/* KPI CARDS — 5 columns, no Deals Today card */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <p className="text-sm text-gray-400">Total Calls</p>
           <p className="text-3xl font-bold text-blue-400 mt-2">{kpis.total}</p>
         </div>
-        <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <p className="text-sm text-gray-400">Deals (Today)</p>
-          <p className="text-3xl font-bold text-green-400 mt-2">{kpis.deal}</p>
-        </div>
+
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm text-gray-400">Daily Goal</p>
@@ -353,6 +360,7 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
           </div>
           <p className="text-xs text-gray-400 mt-1">{kpis.goalProgress.toFixed(0)}% complete</p>
         </div>
+
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm text-gray-400">Team Goal</p>
@@ -364,12 +372,13 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
           </div>
           <p className="text-xs text-gray-400 mt-1">{kpis.teamGoalProgress.toFixed(0)}% complete</p>
         </div>
+
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
           <p className="text-sm text-gray-400">Pending</p>
           <p className="text-3xl font-bold text-yellow-400 mt-2">{kpis.pending}</p>
         </div>
 
-        {/* 6th card: State Goal for reps, No Answer for admin/manager */}
+        {/* 5th card: State Goal for reps, No Answer for admin/manager */}
         {currentUserRole === 'rep' ? (
           <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
             <p className="text-sm text-gray-400">
@@ -414,19 +423,11 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
               />
             </div>
           </div>
-          <select
-            value={filterState}
-            onChange={(e) => setFilterState(e.target.value)}
-            className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100"
-          >
+          <select value={filterState} onChange={(e) => setFilterState(e.target.value)} className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100">
             <option value="">All States</option>
             {uniqueStates.map((state) => <option key={state} value={state}>{state}</option>)}
           </select>
-          <select
-            value={filterFuStatus}
-            onChange={(e) => setFilterFuStatus(e.target.value)}
-            className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100"
-          >
+          <select value={filterFuStatus} onChange={(e) => setFilterFuStatus(e.target.value)} className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100">
             <option value="">All Statuses</option>
             <option value="Deal">Deal</option>
             <option value="Confirmed Deal">Confirmed Deal</option>
@@ -531,7 +532,11 @@ export default function CallsTab({ currentUserId, currentUserRole, calls, setCal
                       <td className="px-4 py-4">
                         {isExpanded ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
                       </td>
-                      <td className="px-4 py-4 text-sm font-medium text-blue-400 underline cursor-pointer" title="Click to copy" onClick={(e) => { e.stopPropagation(); copyToClipboard(call.applicationId); }}>
+                      <td
+                        className="px-4 py-4 text-sm font-medium text-blue-400 underline cursor-pointer"
+                        title="Click to copy"
+                        onClick={(e) => { e.stopPropagation(); copyToClipboard(call.applicationId); }}
+                      >
                         {call.applicationId}
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-200">{call.dealerName}</td>
