@@ -74,6 +74,7 @@ export interface DailyDealSummary {
   addedBy: string;
   fuStatus: string;
   dealDate: string;
+  amount: string;
 }
 
 function App() {
@@ -210,9 +211,9 @@ function App() {
     try {
       const now = new Date();
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const { data } = await supabase
+   const { data } = await supabase
         .from('daily_deals')
-        .select('id, added_by, fu_status, deal_date')
+        .select('id, added_by, fu_status, deal_date, amount')
         .eq('deal_date', today);
       if (data) {
         setTodayDailyDeals(data.map((d: any) => ({
@@ -220,6 +221,7 @@ function App() {
           addedBy: d.added_by,
           fuStatus: d.fu_status,
           dealDate: d.deal_date,
+          amount: d.amount || '0',
         })));
       }
     } catch (err) {

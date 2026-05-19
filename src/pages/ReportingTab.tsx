@@ -53,6 +53,7 @@ interface DailyDealSummary {
   addedBy: string;
   fuStatus: string;
   dealDate: string;
+  amount: string;
 }
 
 interface ReportingTabProps {
@@ -195,7 +196,15 @@ export default function ReportingTab({
   ).length;
 
   const periodTotalDeals = periodDealCalls.length + (period === 'daily' ? dailyDealCount : 0);
-  const periodTotalAmount = periodDealCalls.reduce((sum, c) => sum + getAmount(c), 0);
+  const csvTotalAmount = periodDealCalls.reduce((sum, c) => sum + getAmount(c), 0);
+
+  const dailyDealsAmount = period === 'daily'
+    ? (todayDailyDeals || [])
+        .filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
+        .reduce((sum, d) => sum + (parseFloat((d.amount || '0').replace(/[^0-9.-]+/g, '')) || 0), 0)
+    : 0;
+
+  const periodTotalAmount = csvTotalAmount + dailyDealsAmount;
   const periodAvgDeal = periodTotalDeals > 0 ? periodTotalAmount / periodTotalDeals : 0;
 
   // Static stats
