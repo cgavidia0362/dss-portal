@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, EyeOff, Eye, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
@@ -68,7 +68,10 @@ const parseAmount = (str: string) =>
   parseFloat((str || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
 const formatCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: 'USD',
+    minimumFractionDigits: 0, maximumFractionDigits: 0,
+  }).format(n);
 
 const medal = (i: number) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
 
@@ -76,6 +79,7 @@ export default function CallsTab({
   currentUserId, currentUserRole, calls, setCalls, notes, setNotes,
   dailyGoal, teamGoal, currentUser, todayDailyDeals, users,
 }: CallsTabProps) {
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFuStatus, setFilterFuStatus] = useState('');
   const [filterState, setFilterState] = useState('');
@@ -117,14 +121,17 @@ export default function CallsTab({
 
   const isToday = (date: Date) => {
     const t = new Date();
-    return date.getDate() === t.getDate() && date.getMonth() === t.getMonth() && date.getFullYear() === t.getFullYear();
+    return date.getDate() === t.getDate() &&
+      date.getMonth() === t.getMonth() &&
+      date.getFullYear() === t.getFullYear();
   };
 
   useEffect(() => {
     const interval = setInterval(() => {
       setCalls(prev => prev.map(call => {
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        if (call.statusLast === 'Accepted' && call.fuStatus === 'Deal' && call.dealDate && call.dealDate < sevenDaysAgo)
+        if (call.statusLast === 'Accepted' && call.fuStatus === 'Deal' &&
+          call.dealDate && call.dealDate < sevenDaysAgo)
           return { ...call, fuStatus: 'Pending', dealDate: undefined };
         return call;
       }));
@@ -152,8 +159,9 @@ export default function CallsTab({
     return 'bg-gray-700 text-gray-300 border-gray-600';
   };
 
-  // Filtering
-  const roleFilteredCalls = calls.filter(c => currentUserRole === 'rep' ? c.assignedTo === currentUserId : true);
+  const roleFilteredCalls = calls.filter(c =>
+    currentUserRole === 'rep' ? c.assignedTo === currentUserId : true
+  );
   const uniqueStatusLast = Array.from(new Set(roleFilteredCalls.map(c => c.statusLast).filter(Boolean))).sort();
   const uniqueStates = Array.from(new Set(roleFilteredCalls.map(c => c.state))).sort();
 
@@ -192,11 +200,10 @@ export default function CallsTab({
   const totalPages = Math.ceil(sortedCalls.length / itemsPerPage);
   const paginatedCalls = sortedCalls.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  useEffect(() => { setCurrentPage(1); }, [searchQuery, filterFuStatus, filterState, filterStatusLast, dateFrom, dateTo, showCompleted]);
+  useEffect(() => { setCurrentPage(1); },
+    [searchQuery, filterFuStatus, filterState, filterStatusLast, dateFrom, dateTo, showCompleted]);
 
   // KPI calculations
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-
   const csvDealsToday = filteredCalls.filter(c =>
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))
   ).length;
@@ -217,7 +224,6 @@ export default function CallsTab({
   ).length;
 
   const teamDealsToday = csvTeamDealsToday + allDailyDealsToday;
-
   const goalPct = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
   const teamGoalPct = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
 
@@ -227,27 +233,36 @@ export default function CallsTab({
     c.dealDate && isToday(new Date(c.dealDate))
   ).length : 0;
 
+  const stateGoalPct = stateGoalDaily > 0
+    ? Math.min((stateDealsToday / stateGoalDaily) * 100, 100) : 0;
+
   const completedCount = calls.filter(c => {
     if (currentUserRole === 'rep' && c.assignedTo !== currentUserId) return false;
     return c.fuStatus === 'No Deal' || c.fuStatus === 'Closed' || c.fuStatus === 'Duplicates';
   }).length;
 
-  // Leaderboard from calls data
-  // Leaderboard — combines CSV deals + Daily Deals tab entries
+  // Status breakdown
+  const pendingCount = filteredCalls.filter(c => c.fuStatus === 'Pending').length;
+  const noAnswerCount = filteredCalls.filter(c => c.fuStatus === 'No Answer').length;
+  const dealTotalCount = filteredCalls.filter(c =>
+    c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal'
+  ).length;
+  const noDealCount = filteredCalls.filter(c => c.fuStatus === 'No Deal').length;
+  const breakdownTotal = filteredCalls.length || 1;
+  const pct = (n: number) => `${Math.round((n / breakdownTotal) * 100)}%`;
+
+  // Leaderboard — combines CSV deals + Daily Deals entries
   const leaderboard = (() => {
-    // Build name map from all sources
     const nameMap: { [id: string]: string } = {};
     calls.forEach(c => { if (c.assignedTo && c.assignedToName) nameMap[c.assignedTo] = c.assignedToName; });
     (users || []).forEach(u => { nameMap[u.id] = u.name; });
     if (currentUser) nameMap[currentUser.id] = currentUser.name;
 
-    // Initialize all known reps with 0 deals
     const repMap: { [id: string]: { name: string; dealCount: number; amount: number } } = {};
     Object.entries(nameMap).forEach(([id, name]) => {
       repMap[id] = { name, dealCount: 0, amount: 0 };
     });
 
-    // Count CSV-based deals today
     calls.forEach(c => {
       if (!c.assignedTo || !repMap[c.assignedTo]) return;
       if ((c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))) {
@@ -256,7 +271,6 @@ export default function CallsTab({
       }
     });
 
-    // Count Daily Deals tab entries today
     (todayDailyDeals || []).forEach(d => {
       if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
       if (!repMap[d.addedBy]) {
@@ -275,8 +289,7 @@ export default function CallsTab({
   const handleStatusChange = (callId: string, newStatus: Call['fuStatus']) => {
     setCalls(prev => prev.map(c => c.id === callId
       ? { ...c, fuStatus: newStatus, updatedAt: new Date(), dealDate: newStatus === 'Deal' ? new Date() : c.dealDate }
-      : c
-    ));
+      : c));
   };
 
   const handleSaveStatusLast = (callId: string) => {
@@ -326,93 +339,140 @@ export default function CallsTab({
       </div>
 
       {/* KPI CARDS + LEADERBOARD */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-stretch">
 
-        {/* Uniform KPI cards — all same size */}
-        <div className="grid grid-cols-5 gap-3">
+        {/* LEFT: 2 rows */}
+        <div className="flex flex-col gap-3">
 
-          {/* Total Calls */}
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-            <p className="text-xs text-gray-400 uppercase tracking-wider">Total Calls</p>
-            <p className="text-2xl font-bold text-blue-400">{filteredCalls.length}</p>
-            <p className="text-xs text-gray-600">all calls</p>
-          </div>
+          {/* Row 1: 3 goal cards */}
+          <div className="grid grid-cols-3 gap-3">
 
-          {/* Daily Goal */}
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-            <p className="text-xs text-gray-400 uppercase tracking-wider">Daily Goal</p>
-            <p className="text-2xl font-bold text-purple-400">
-              {dealsToday}
-              <span className="text-sm font-normal text-gray-500 ml-1">/ {dailyGoal}</span>
-            </p>
-            <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-              <div className="h-full bg-purple-500 rounded-full" style={{ width: `${goalPct}%` }} />
-            </div>
-          </div>
-
-          {/* Team Goal */}
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-            <p className="text-xs text-gray-400 uppercase tracking-wider">Team Goal</p>
-            <p className="text-2xl font-bold text-cyan-400">
-              {teamDealsToday}
-              <span className="text-sm font-normal text-gray-500 ml-1">/ {teamGoal}</span>
-            </p>
-            <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-              <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${teamGoalPct}%` }} />
-            </div>
-          </div>
-
-          {/* Pending */}
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-            <p className="text-xs text-gray-400 uppercase tracking-wider">Pending</p>
-            <p className="text-2xl font-bold text-yellow-400">
-              {filteredCalls.filter(c => c.fuStatus === 'Pending').length}
-            </p>
-            <p className="text-xs text-gray-600">currently pending</p>
-          </div>
-
-          {/* 5th card: State Goal (rep) or No Answer (admin/manager) */}
-          {currentUserRole === 'rep' ? (
+            {/* Daily Goal */}
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-              <p className="text-xs text-gray-400 uppercase tracking-wider">
-                State {currentUser?.state ? `(${currentUser.state})` : ''}
+              <p className="text-xs text-gray-400 uppercase tracking-wider">Daily Goal</p>
+              <p className="text-2xl font-bold text-purple-400">
+                {dealsToday}
+                <span className="text-sm font-normal text-gray-500 ml-1">/ {dailyGoal}</span>
               </p>
-              {stateGoalDaily > 0 ? (
-                <>
-                  <p className="text-2xl font-bold text-teal-400">
-                    {stateDealsToday}
-                    <span className="text-sm font-normal text-gray-500 ml-1">/ {stateGoalDaily}</span>
-                  </p>
-                  <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-teal-500 rounded-full"
-                      style={{ width: `${Math.min((stateDealsToday / stateGoalDaily) * 100, 100)}%` }} />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="text-2xl font-bold text-teal-400">{stateDealsToday}</p>
-                  <p className="text-xs text-gray-600">no goal set</p>
-                </>
-              )}
+              <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
+              </div>
+              <p className="text-xs text-gray-600">{goalPct.toFixed(0)}% complete</p>
             </div>
-          ) : (
+
+            {/* Team Goal */}
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-              <p className="text-xs text-gray-400 uppercase tracking-wider">No Answer</p>
-              <p className="text-2xl font-bold text-orange-400">
-                {filteredCalls.filter(c => c.fuStatus === 'No Answer').length}
+              <p className="text-xs text-gray-400 uppercase tracking-wider">Team Goal</p>
+              <p className="text-2xl font-bold text-cyan-400">
+                {teamDealsToday}
+                <span className="text-sm font-normal text-gray-500 ml-1">/ {teamGoal}</span>
               </p>
-              <p className="text-xs text-gray-600">no answer today</p>
+              <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
+              </div>
+              <p className="text-xs text-gray-600">{teamGoalPct.toFixed(0)}% complete</p>
             </div>
-          )}
+
+            {/* State Goal (rep) or No Answer (admin/manager) */}
+            {currentUserRole === 'rep' ? (
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
+                <p className="text-xs text-gray-400 uppercase tracking-wider">
+                  State Goal {currentUser?.state ? `(${currentUser.state})` : ''}
+                </p>
+                {stateGoalDaily > 0 ? (
+                  <>
+                    <p className="text-2xl font-bold text-teal-400">
+                      {stateDealsToday}
+                      <span className="text-sm font-normal text-gray-500 ml-1">/ {stateGoalDaily}</span>
+                    </p>
+                    <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-teal-500 rounded-full transition-all"
+                        style={{ width: `${stateGoalPct}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-600">{stateGoalPct.toFixed(0)}% complete</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-teal-400">{stateDealsToday}</p>
+                    <div className="h-1 bg-gray-700 rounded-full" />
+                    <p className="text-xs text-gray-600">no goal set</p>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
+                <p className="text-xs text-gray-400 uppercase tracking-wider">No Answer</p>
+                <p className="text-2xl font-bold text-orange-400">{noAnswerCount}</p>
+                <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-orange-500 rounded-full"
+                    style={{ width: `${pct(noAnswerCount)}` }} />
+                </div>
+                <p className="text-xs text-gray-600">of {filteredCalls.length} calls</p>
+              </div>
+            )}
+          </div>
+
+          {/* Row 2: Call status breakdown */}
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex-1">
+            <div className="flex items-baseline justify-between mb-4">
+              <p className="text-sm font-semibold text-gray-200">Call Status Breakdown</p>
+              <div>
+                <span className="text-xl font-bold text-blue-400">{filteredCalls.length}</span>
+                <span className="text-xs text-gray-500 ml-1.5">total calls</span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-400 w-20 flex-shrink-0">Pending</span>
+                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-yellow-400 rounded-full transition-all"
+                    style={{ width: `${pct(pendingCount)}` }} />
+                </div>
+                <span className="text-xs font-semibold text-yellow-400 w-8 text-right flex-shrink-0">
+                  {pendingCount}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-400 w-20 flex-shrink-0">No Answer</span>
+                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-orange-400 rounded-full transition-all"
+                    style={{ width: `${pct(noAnswerCount)}` }} />
+                </div>
+                <span className="text-xs font-semibold text-orange-400 w-8 text-right flex-shrink-0">
+                  {noAnswerCount}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-400 w-20 flex-shrink-0">Deal</span>
+                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-400 rounded-full transition-all"
+                    style={{ width: `${pct(dealTotalCount)}` }} />
+                </div>
+                <span className="text-xs font-semibold text-green-400 w-8 text-right flex-shrink-0">
+                  {dealTotalCount}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-400 w-20 flex-shrink-0">No Deal</span>
+                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-red-400 rounded-full transition-all"
+                    style={{ width: `${pct(noDealCount)}` }} />
+                </div>
+                <span className="text-xs font-semibold text-red-400 w-8 text-right flex-shrink-0">
+                  {noDealCount}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* LEADERBOARD */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+        {/* RIGHT: Leaderboard */}
+        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
             <span className="text-base">🏆</span>
             <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
           </div>
-          <div className="divide-y divide-gray-700">
+          <div className="divide-y divide-gray-700 flex-1">
             {leaderboard.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-gray-500">No deals logged today</p>
             ) : (
@@ -420,7 +480,8 @@ export default function CallsTab({
                 const m = medal(idx);
                 const isMe = rep.id === currentUserId;
                 return (
-                  <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
+                  <div key={rep.id}
+                    className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
                     <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm">
                       {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
                     </div>
@@ -429,7 +490,9 @@ export default function CallsTab({
                         {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
+                        {rep.amount > 0
+                          ? formatCurrency(rep.amount)
+                          : <span className="italic">no deals yet</span>}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -448,7 +511,6 @@ export default function CallsTab({
 
       {/* FILTER BAR */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-3 flex gap-3 items-center flex-wrap">
-        {/* Search */}
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
           <input
@@ -459,25 +521,19 @@ export default function CallsTab({
             className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
-
-        {/* State */}
         <select value={filterState} onChange={e => setFilterState(e.target.value)}
           className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
           <option value="">All States</option>
           {uniqueStates.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-
-        {/* FU Status */}
         <select value={filterFuStatus} onChange={e => setFilterFuStatus(e.target.value)}
           className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
           <option value="">All Statuses</option>
           <option>Deal</option><option>Confirmed Deal</option><option>No Deal</option>
           <option>Pending</option><option>No Answer</option><option>Closed</option><option>Duplicates</option>
         </select>
-
-        {/* Date range — grouped as one unit */}
         <div className="flex items-center border border-gray-600 rounded-lg overflow-hidden bg-gray-700">
-          <div className="px-2 py-2 border-r border-gray-600 bg-gray-700">
+          <div className="px-2.5 py-2 border-r border-gray-600 bg-gray-700">
             <Search className="w-3.5 h-3.5 text-gray-500" />
           </div>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -486,8 +542,6 @@ export default function CallsTab({
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
             className="px-2 py-2 bg-gray-700 text-xs text-gray-300 focus:outline-none w-[120px]" />
         </div>
-
-        {/* Hidden toggle */}
         <button onClick={() => setShowCompleted(!showCompleted)}
           className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg text-sm text-gray-400 transition">
           {showCompleted ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
@@ -513,7 +567,7 @@ export default function CallsTab({
         })}
         {filterStatusLast.size > 0 && (
           <button onClick={() => setFilterStatusLast(new Set())}
-            className="ml-auto text-xs text-blue-400 hover:text-blue-300">
+            className="ml-auto text-xs text-blue-400 hover:text-blue-300 transition">
             Clear all
           </button>
         )}
@@ -521,12 +575,12 @@ export default function CallsTab({
 
       {/* TABLE */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-
-        {/* Table header bar */}
         <div className="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
           <p className="text-sm font-semibold text-gray-200">
             {sortedCalls.length} calls
-            <span className="ml-2 font-normal text-gray-400">· Page {currentPage} of {totalPages || 1}</span>
+            <span className="ml-2 font-normal text-gray-400">
+              · Page {currentPage} of {totalPages || 1}
+            </span>
           </p>
           <div className="flex items-center gap-1">
             <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
@@ -543,36 +597,47 @@ export default function CallsTab({
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="bg-gray-750 border-b border-gray-700">
+              <tr className="border-b border-gray-700 bg-gray-750">
                 <th className="w-10 px-4 py-3"></th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('applicationId')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('applicationId')}
+                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     App ID <SortIcon field="applicationId" />
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('dealerName')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('dealerName')}
+                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Dealer <SortIcon field="dealerName" />
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('state')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('state')}
+                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     State <SortIcon field="state" />
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('buyerFinal')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('buyerFinal')}
+                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Amount <SortIcon field="buyerFinal" />
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('submittedDate')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('submittedDate')}
+                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Date <SortIcon field="submittedDate" />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  Status Last
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  FU Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  Notes
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
@@ -581,7 +646,8 @@ export default function CallsTab({
                 const isExpanded = expandedRows.has(call.id);
                 return (
                   <>
-                    <tr key={call.id} className="hover:bg-gray-750 cursor-pointer transition-colors"
+                    <tr key={call.id}
+                      className="hover:bg-gray-750 cursor-pointer transition-colors"
                       onClick={() => toggleRow(call.id)}>
                       <td className="px-4 py-3 text-center">
                         {isExpanded
@@ -597,7 +663,9 @@ export default function CallsTab({
                           {call.applicationId}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-200 max-w-[180px] truncate">{call.dealerName}</td>
+                      <td className="px-4 py-3 text-sm text-gray-200 max-w-[180px] truncate">
+                        {call.dealerName}
+                      </td>
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">
                           {call.state}
@@ -606,13 +674,16 @@ export default function CallsTab({
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {editingAmount === call.id ? (
                           <div className="flex items-center gap-1">
-                            <input type="text" value={tempAmount} onChange={e => setTempAmount(e.target.value)}
+                            <input type="text" value={tempAmount}
+                              onChange={e => setTempAmount(e.target.value)}
                               className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
                               autoFocus />
-                            <button onClick={() => handleSaveAmount(call.id)} className="text-green-400 hover:text-green-300">
+                            <button onClick={() => handleSaveAmount(call.id)}
+                              className="text-green-400 hover:text-green-300">
                               <Check className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setEditingAmount(null)} className="text-red-400 hover:text-red-300">
+                            <button onClick={() => setEditingAmount(null)}
+                              className="text-red-400 hover:text-red-300">
                               <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -621,7 +692,8 @@ export default function CallsTab({
                             <span className="text-sm font-medium text-gray-100">
                               ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                             </span>
-                            <button onClick={() => { setEditingAmount(call.id); setTempAmount(call.buyerFinal); }}
+                            <button
+                              onClick={() => { setEditingAmount(call.id); setTempAmount(call.buyerFinal); }}
                               className="text-gray-600 hover:text-gray-400 transition">
                               <Edit2 className="w-3 h-3" />
                             </button>
@@ -632,15 +704,18 @@ export default function CallsTab({
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {editingStatusLast === call.id ? (
                           <div className="flex items-center gap-1">
-                            <select value={tempStatusLast} onChange={e => setTempStatusLast(e.target.value)}
+                            <select value={tempStatusLast}
+                              onChange={e => setTempStatusLast(e.target.value)}
                               className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
                               autoFocus>
                               {allStatusLastOptions.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
-                            <button onClick={() => handleSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300">
+                            <button onClick={() => handleSaveStatusLast(call.id)}
+                              className="text-green-400 hover:text-green-300">
                               <Check className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setEditingStatusLast(null)} className="text-red-400 hover:text-red-300">
+                            <button onClick={() => setEditingStatusLast(null)}
+                              className="text-red-400 hover:text-red-300">
                               <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -649,7 +724,8 @@ export default function CallsTab({
                             <span className={`px-2.5 py-0.5 rounded-full text-xs border ${getStatusLastStyle(call.statusLast)}`}>
                               {call.statusLast}
                             </span>
-                            <button onClick={() => { setEditingStatusLast(call.id); setTempStatusLast(call.statusLast); }}
+                            <button
+                              onClick={() => { setEditingStatusLast(call.id); setTempStatusLast(call.statusLast); }}
                               className="text-gray-600 hover:text-gray-400 transition">
                               <Edit2 className="w-3 h-3" />
                             </button>
@@ -731,7 +807,9 @@ export default function CallsTab({
               className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
               <ChevronLeft className="w-4 h-4 text-gray-400" />
             </button>
-            <span className="text-xs text-gray-400 px-2">Page {currentPage} of {totalPages || 1}</span>
+            <span className="text-xs text-gray-400 px-2">
+              Page {currentPage} of {totalPages || 1}
+            </span>
             <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
               className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
               <ChevronRightIcon className="w-4 h-4 text-gray-400" />
