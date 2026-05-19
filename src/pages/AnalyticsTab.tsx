@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { TrendingUp, CheckCircle2, Clock, XCircle, Award, Target } from 'lucide-react';
 
 interface Call {
   id: string;
@@ -31,6 +30,7 @@ interface DailyDealSummary {
   addedBy: string;
   fuStatus: string;
   dealDate: string;
+  amount: string;
 }
 
 interface AnalyticsTabProps {
@@ -66,7 +66,6 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
     }
   };
 
-  // My calls only (from CSV)
   const myCalls = calls.filter(c => c.assignedTo === currentUser.id);
 
   const getStartDate = (period: TimePeriod) => {
@@ -83,15 +82,11 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
 
   const getMyDealsForPeriod = (period: TimePeriod) => {
     const startDate = getStartDate(period);
-
-    // CSV-based deals
     const csvDeals = myCalls.filter(c => {
       if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
       const date = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
       return date >= startDate;
     }).length;
-
-    // For daily period, also count today's daily deals entered by this rep
     if (period === 'daily') {
       const myDailyDeals = (todayDailyDeals || []).filter(d =>
         d.addedBy === currentUser.id &&
@@ -99,40 +94,37 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
       ).length;
       return csvDeals + myDailyDeals;
     }
-
     return csvDeals;
   };
 
-  const myPending = myCalls.filter(c => c.fuStatus === 'Pending').length;
+  const myDeals = getMyDealsForPeriod(dealPeriod);
   const myConfirmedDeals = myCalls.filter(c => c.fuStatus === 'Confirmed Deal').length;
+  const myPending = myCalls.filter(c => c.fuStatus === 'Pending').length;
   const myNoAnswer = myCalls.filter(c => c.fuStatus === 'No Answer').length;
   const myTotalDeals = myCalls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
   const closingRate = myCalls.length > 0 ? ((myTotalDeals / myCalls.length) * 100).toFixed(1) : '0';
 
-  // State performance
-  const stateCalls = currentUser.state ? calls.filter(c => c.state === currentUser.state) : [];
+  const hasDailyDealsBonus = dealPeriod === 'daily' &&
+    (todayDailyDeals || []).filter(d =>
+      d.addedBy === currentUser.id &&
+      (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
+    ).length > 0;
 
+  // State performance
   const stateFundedThisMonth = currentUser.state && fundingData[currentUser.state]
     ? fundingData[currentUser.state].count
-    : stateCalls.filter(c => {
-        if (!c.dealDate) return false;
+    : myCalls.filter(c => {
+        if (c.state !== currentUser.state || !c.dealDate) return false;
         const d = new Date(c.dealDate);
-        return (
-          (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
-          d.getMonth() + 1 === currentMonth &&
-          d.getFullYear() === currentYear
-        );
+        return (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+          d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
       }).length;
 
   const myContributionThisMonth = myCalls.filter(c => {
-    if (c.state !== currentUser.state) return false;
-    if (!c.dealDate) return false;
+    if (c.state !== currentUser.state || !c.dealDate) return false;
     const d = new Date(c.dealDate);
-    return (
-      (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
-      d.getMonth() + 1 === currentMonth &&
-      d.getFullYear() === currentYear
-    );
+    return (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+      d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
   }).length;
 
   const dailyGoal = stateGoal ? Math.round(stateGoal.monthlyGoal / stateGoal.fundingDays) : 0;
@@ -142,163 +134,184 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
   const daysRemaining = stateGoal ? Math.max(stateGoal.fundingDays - daysElapsed, 1) : 0;
   const neededPerDay = stateGoal
     ? Math.ceil((stateGoal.monthlyGoal - stateFundedThisMonth) / daysRemaining) : 0;
+  const remainingToGoal = stateGoal
+    ? Math.max(stateGoal.monthlyGoal - stateFundedThisMonth, 0) : 0;
 
-  const getProgressColor = (p: number) => p >= 90 ? 'bg-green-500' : p >= 70 ? 'bg-blue-500' : p >= 50 ? 'bg-yellow-500' : 'bg-red-500';
-  const getProgressTextColor = (p: number) => p >= 90 ? 'text-green-400' : p >= 70 ? 'text-blue-400' : p >= 50 ? 'text-yellow-400' : 'text-red-400';
+  const getProgressColor = (p: number) =>
+    p >= 90 ? 'bg-green-500' : p >= 70 ? 'bg-blue-500' : p >= 50 ? 'bg-yellow-500' : 'bg-red-500';
+  const getProgressTextColor = (p: number) =>
+    p >= 90 ? 'text-green-400' : p >= 70 ? 'text-blue-400' : p >= 50 ? 'text-yellow-400' : 'text-red-400';
+
+  const periodLabel = dealPeriod.charAt(0).toUpperCase() + dealPeriod.slice(1);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-100">My Analytics</h2>
-        <p className="text-gray-400 mt-1">Your personal performance — {currentUser.name}</p>
+    <div className="space-y-5">
+
+      {/* HEADER + TOGGLE */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-100">My Analytics</h2>
+          <p className="text-sm text-gray-400 mt-0.5">Your personal performance — {currentUser.name}</p>
+        </div>
+        <div className="flex overflow-hidden rounded-lg border border-gray-700">
+          {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
+            <button
+              key={p}
+              onClick={() => setDealPeriod(p)}
+              className={`px-5 py-2 text-sm font-medium transition ${
+                dealPeriod === p
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+              }`}
+            >
+              {p.charAt(0).toUpperCase() + p.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* SECTION 1: MY DEALS WITH PERIOD TOGGLE */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-semibold text-gray-100">My Deals</h3>
-          <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-            {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
-              <button
-                key={p}
-                onClick={() => setDealPeriod(p)}
-                className={`px-4 py-2 text-sm font-medium transition ${
-                  dealPeriod === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
-                }`}
-              >
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </button>
-            ))}
-          </div>
+      {/* KPI ROW — 5 uniform cards */}
+      <div className="grid grid-cols-5 gap-3">
+
+        {/* My Deals — green accent */}
+        <div className="bg-gray-800 rounded-lg border border-green-800 p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-green-400 uppercase tracking-wider">My Deals</p>
+          <p className="text-4xl font-bold text-green-400 leading-none">{myDeals}</p>
+          <p className="text-xs text-gray-500">
+            {periodLabel.toLowerCase()}
+            {hasDailyDealsBonus && (
+              <span className="ml-1.5 text-green-500">+daily entries</span>
+            )}
+          </p>
         </div>
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 flex items-center gap-6">
-          <Award className="w-14 h-14 text-green-400 opacity-60" />
-          <div>
-            <p className="text-sm text-gray-400 mb-1">
-              {dealPeriod.charAt(0).toUpperCase() + dealPeriod.slice(1)} Deals
-              {dealPeriod === 'daily' && (todayDailyDeals || []).filter(d => d.addedBy === currentUser.id && (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')).length > 0 && (
-                <span className="ml-2 text-xs text-green-500">(includes daily deals entries)</span>
-              )}
+
+        {/* Confirmed Deals */}
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-gray-400 uppercase tracking-wider">Confirmed</p>
+          <p className="text-4xl font-bold text-emerald-400 leading-none">{myConfirmedDeals}</p>
+          <p className="text-xs text-gray-500">confirmed deals</p>
+        </div>
+
+        {/* Closing Rate */}
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-gray-400 uppercase tracking-wider">Closing Rate</p>
+          <p className="text-4xl font-bold text-blue-400 leading-none">{closingRate}%</p>
+          <p className="text-xs text-gray-500">{myTotalDeals} of {myCalls.length} calls</p>
+        </div>
+
+        {/* Pending */}
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-gray-400 uppercase tracking-wider">Pending</p>
+          <p className="text-4xl font-bold text-yellow-400 leading-none">{myPending}</p>
+          <p className="text-xs text-gray-500">awaiting response</p>
+        </div>
+
+        {/* No Answer */}
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-gray-400 uppercase tracking-wider">No Answer</p>
+          <p className="text-4xl font-bold text-orange-400 leading-none">{myNoAnswer}</p>
+          <p className="text-xs text-gray-500">unanswered</p>
+        </div>
+
+      </div>
+
+      {/* STATE PERFORMANCE */}
+      {currentUser.state ? (
+        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+
+          {/* Card header */}
+          <div className="px-5 py-3 border-b border-gray-700 flex items-center gap-2.5">
+            <div className="w-2 h-2 rounded-full bg-purple-400" />
+            <p className="text-sm font-semibold text-gray-200">
+              State Performance — {currentUser.state}
             </p>
-            <p className="text-6xl font-bold text-green-400">{getMyDealsForPeriod(dealPeriod)}</p>
           </div>
-        </div>
-      </div>
 
-      {/* SECTION 2: STATUS OVERVIEW */}
-      <div>
-        <h3 className="text-xl font-semibold text-gray-100 mb-4">Status Overview</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm text-gray-400">Confirmed Deals</p>
-              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-            </div>
-            <p className="text-3xl font-bold text-emerald-400">{myConfirmedDeals}</p>
-          </div>
-          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm text-gray-400">Closing Rate</p>
-              <TrendingUp className="w-5 h-5 text-blue-400" />
-            </div>
-            <p className="text-3xl font-bold text-blue-400">{closingRate}%</p>
-            <p className="text-xs text-gray-500 mt-1">{myTotalDeals} of {myCalls.length} calls</p>
-          </div>
-          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm text-gray-400">Pending</p>
-              <Clock className="w-5 h-5 text-yellow-400" />
-            </div>
-            <p className="text-3xl font-bold text-yellow-400">{myPending}</p>
-          </div>
-          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm text-gray-400">No Answer</p>
-              <XCircle className="w-5 h-5 text-orange-400" />
-            </div>
-            <p className="text-3xl font-bold text-orange-400">{myNoAnswer}</p>
-          </div>
-        </div>
-      </div>
+          <div className="p-5">
 
-      {/* SECTION 3: STATE PERFORMANCE */}
-      <div>
-        <h3 className="text-xl font-semibold text-gray-100 mb-4 flex items-center gap-2">
-          <Target className="w-5 h-5 text-purple-400" />
-          State Performance {currentUser.state ? `— ${currentUser.state}` : ''}
-        </h3>
-
-        {currentUser.state ? (
-          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
             {stateGoal ? (
               <>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-gray-700 rounded-lg p-4">
-                    <p className="text-xs text-gray-400 mb-1">Monthly Goal</p>
-                    <p className="text-2xl font-bold text-gray-100">{stateGoal.monthlyGoal}</p>
+                {/* Top: 4 metric boxes */}
+                <div className="grid grid-cols-4 gap-3 mb-5">
+                  <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Monthly Goal</p>
+                    <p className="text-xl font-bold text-gray-100 leading-none">{stateGoal.monthlyGoal}</p>
                   </div>
-                  <div className="bg-gray-700 rounded-lg p-4">
-                    <p className="text-xs text-gray-400 mb-1">{currentUser.state} Total Funded</p>
-                    <p className={`text-2xl font-bold ${getProgressTextColor(progress)}`}>{stateFundedThisMonth}</p>
+                  <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">
+                      {currentUser.state} Total Funded
+                    </p>
+                    <p className={`text-xl font-bold leading-none ${getProgressTextColor(progress)}`}>
+                      {stateFundedThisMonth}
+                    </p>
                     {fundingData[currentUser.state] && (
                       <p className="text-xs text-green-500 mt-1">from funding report</p>
                     )}
                   </div>
-                  <div className="bg-gray-700 rounded-lg p-4">
-                    <p className="text-xs text-gray-400 mb-1">My Deals ({currentUser.state})</p>
-                    <p className="text-2xl font-bold text-blue-400">{myContributionThisMonth}</p>
+                  <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">
+                      My Deals ({currentUser.state})
+                    </p>
+                    <p className="text-xl font-bold text-blue-400 leading-none">{myContributionThisMonth}</p>
                     <p className="text-xs text-gray-500 mt-1">this month</p>
                   </div>
-                  <div className="bg-gray-700 rounded-lg p-4">
-                    <p className="text-xs text-gray-400 mb-1">Daily Goal</p>
-                    <p className="text-2xl font-bold text-purple-400">{dailyGoal}</p>
+                  <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Daily Goal</p>
+                    <p className="text-xl font-bold text-purple-400 leading-none">{dailyGoal}</p>
                   </div>
                 </div>
 
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-sm text-gray-400">Monthly Progress</p>
-                  <p className={`text-sm font-bold ${getProgressTextColor(progress)}`}>{progress.toFixed(0)}%</p>
-                </div>
-                <div className="w-full bg-gray-700 rounded-full h-3 mb-4">
-                  <div
-                    className={`h-3 rounded-full transition-all ${getProgressColor(progress)}`}
-                    style={{ width: `${Math.min(progress, 100)}%` }}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div className="bg-gray-700 rounded-lg p-3">
-                    <p className="text-gray-400 text-xs">Days Elapsed</p>
-                    <p className="text-gray-100 font-semibold text-lg">{daysElapsed}</p>
-                  </div>
-                  <div className="bg-gray-700 rounded-lg p-3">
-                    <p className="text-gray-400 text-xs">Days Remaining</p>
-                    <p className="text-gray-100 font-semibold text-lg">{daysRemaining}</p>
-                  </div>
-                  <div className="bg-gray-700 rounded-lg p-3">
-                    <p className="text-gray-400 text-xs">Need Per Day</p>
-                    <p className="text-gray-100 font-semibold text-lg">{neededPerDay}</p>
-                  </div>
-                  <div className="bg-gray-700 rounded-lg p-3">
-                    <p className="text-gray-400 text-xs">Remaining to Goal</p>
-                    <p className="text-gray-100 font-semibold text-lg">
-                      {Math.max(stateGoal.monthlyGoal - stateFundedThisMonth, 0)}
+                {/* Progress bar */}
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider">Monthly Progress</p>
+                    <p className={`text-sm font-bold ${getProgressTextColor(progress)}`}>
+                      {progress.toFixed(0)}%
                     </p>
                   </div>
+                  <div className="h-2.5 bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${getProgressColor(progress)}`}
+                      style={{ width: `${Math.min(progress, 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Bottom: 4 slim stat pills */}
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { label: 'Days Elapsed', value: daysElapsed, color: 'text-gray-200' },
+                    { label: 'Days Left', value: daysRemaining, color: 'text-gray-200' },
+                    { label: 'Need / Day', value: neededPerDay, color: 'text-yellow-400' },
+                    { label: 'To Goal', value: remainingToGoal, color: 'text-red-400' },
+                  ].map(stat => (
+                    <div key={stat.label}
+                      className="flex items-center justify-between border border-gray-700 rounded-lg px-3 py-2.5">
+                      <p className="text-xs text-gray-400">{stat.label}</p>
+                      <p className={`text-base font-bold ${stat.color}`}>{stat.value}</p>
+                    </div>
+                  ))}
                 </div>
               </>
             ) : (
-              <p className="text-gray-400 text-center py-6">
-                No goal has been set for {currentUser.state} this month yet.
-              </p>
+              <div className="py-8 text-center">
+                <p className="text-base font-medium text-gray-400">
+                  No goal set for {currentUser.state} this month.
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  Ask your admin to set a state goal in the Reporting tab.
+                </p>
+              </div>
             )}
           </div>
-        ) : (
-          <div className="bg-gray-800 rounded-lg p-8 border border-gray-700 text-center text-gray-400">
-            No state assigned to your account yet. Ask your admin to assign your state.
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
+          <p className="text-base font-medium text-gray-400">No state assigned to your account.</p>
+          <p className="text-sm text-gray-500 mt-1">Ask your admin to assign your state in the Users tab.</p>
+        </div>
+      )}
+
     </div>
   );
 }
