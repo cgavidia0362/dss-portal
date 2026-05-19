@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Target, Settings, Award } from 'lucide-react';
+import { Target, Settings } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
