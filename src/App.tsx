@@ -321,7 +321,7 @@ function App() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'calls' && (
+      {activeTab === 'calls' && (
           <CallsTab
             currentUserId={currentUser.id}
             currentUserRole={currentUser.role}
@@ -333,6 +333,7 @@ function App() {
             teamGoal={goals.team}
             currentUser={currentUser}
             todayDailyDeals={todayDailyDeals}
+            users={users}
           />
         )}
         {activeTab === 'upload' && (

@@ -58,6 +58,7 @@ interface CallsTabProps {
   teamGoal: number;
   currentUser?: User;
   todayDailyDeals?: DailyDealSummary[];
+  users?: User[];
 }
 
 type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | null;
@@ -73,9 +74,8 @@ const medal = (i: number) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '�
 
 export default function CallsTab({
   currentUserId, currentUserRole, calls, setCalls, notes, setNotes,
-  dailyGoal, teamGoal, currentUser, todayDailyDeals,
+  dailyGoal, teamGoal, currentUser, todayDailyDeals, users,
 }: CallsTabProps) {
-
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFuStatus, setFilterFuStatus] = useState('');
   const [filterState, setFilterState] = useState('');
@@ -233,23 +233,39 @@ export default function CallsTab({
   }).length;
 
   // Leaderboard from calls data
+  // Leaderboard — combines CSV deals + Daily Deals tab entries
   const leaderboard = (() => {
+    // Build name map from all sources
+    const nameMap: { [id: string]: string } = {};
+    calls.forEach(c => { if (c.assignedTo && c.assignedToName) nameMap[c.assignedTo] = c.assignedToName; });
+    (users || []).forEach(u => { nameMap[u.id] = u.name; });
+    if (currentUser) nameMap[currentUser.id] = currentUser.name;
+
+    // Initialize all known reps with 0 deals
     const repMap: { [id: string]: { name: string; dealCount: number; amount: number } } = {};
+    Object.entries(nameMap).forEach(([id, name]) => {
+      repMap[id] = { name, dealCount: 0, amount: 0 };
+    });
+
+    // Count CSV-based deals today
     calls.forEach(c => {
-      if (!c.assignedTo || !c.assignedToName) return;
-      if (!repMap[c.assignedTo]) repMap[c.assignedTo] = { name: c.assignedToName, dealCount: 0, amount: 0 };
+      if (!c.assignedTo || !repMap[c.assignedTo]) return;
       if ((c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))) {
         repMap[c.assignedTo].dealCount++;
         repMap[c.assignedTo].amount += parseAmount(c.buyerFinal);
       }
     });
-    // Also count daily deals entries
+
+    // Count Daily Deals tab entries today
     (todayDailyDeals || []).forEach(d => {
       if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
-      if (!repMap[d.addedBy]) return;
+      if (!repMap[d.addedBy]) {
+        repMap[d.addedBy] = { name: nameMap[d.addedBy] || 'Unknown', dealCount: 0, amount: 0 };
+      }
       repMap[d.addedBy].dealCount++;
       repMap[d.addedBy].amount += parseAmount(d.amount || '0');
     });
+
     return Object.entries(repMap)
       .map(([id, data]) => ({ id, ...data }))
       .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
