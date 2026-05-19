@@ -244,9 +244,7 @@ export default function CallsTab({
   // Status breakdown
   const pendingCount = filteredCalls.filter(c => c.fuStatus === 'Pending').length;
   const noAnswerCount = filteredCalls.filter(c => c.fuStatus === 'No Answer').length;
-  const dealTotalCount = filteredCalls.filter(c =>
-    c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal'
-  ).length;
+  const dealTotalCount = dealsToday; // combines CSV deals today + Daily Deals tab entries
   const noDealCount = filteredCalls.filter(c => c.fuStatus === 'No Deal').length;
   const breakdownTotal = filteredCalls.length || 1;
   const pct = (n: number) => `${Math.round((n / breakdownTotal) * 100)}%`;
