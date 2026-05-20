@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ChevronRight, ChevronDown, MessageSquare, Trash2, Plus, Users, Edit2, Check, X } from 'lucide-react';
+import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X } from 'lucide-react';
+
 
 interface DailyDeal {
   id: string;

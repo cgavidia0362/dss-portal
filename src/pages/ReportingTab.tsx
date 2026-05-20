@@ -58,7 +58,7 @@ interface DailyDealSummary {
 
 interface ReportingTabProps {
   currentUserId: string;
-  currentUserRole: 'admin' | 'manager' | 'rep';
+  currentUserRole: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   calls: Call[];
   goals: Goals;
   setGoals: (goals: Goals) => void;

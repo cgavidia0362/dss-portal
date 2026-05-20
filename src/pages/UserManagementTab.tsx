@@ -6,7 +6,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'rep';
+  role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   active: boolean;
   state?: string;
 }

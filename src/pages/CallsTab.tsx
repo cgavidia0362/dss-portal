@@ -33,7 +33,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'rep';
+  role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   active: boolean;
   allowedStatuses: string[];
   state?: string;
@@ -285,7 +285,7 @@ export default function CallsTab({
     (todayDailyDeals || []).forEach(d => {
       if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
       if (!repMap[d.addedBy]) {
-        repMap[d.addedBy] = { name: nameMap[d.addedBy] || 'Unknown', dealCount: 0, amount: 0 };
+        repMap[d.addedBy] = { name: nameMap[d.addedBy] || 'Unknown', dealCount: 0, amount: 0, role: roleMap[d.addedBy] || 'rep' };
       }
       repMap[d.addedBy].dealCount++;
       repMap[d.addedBy].amount += parseAmount(d.amount || '0');

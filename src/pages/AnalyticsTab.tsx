@@ -14,7 +14,7 @@ interface Call {
 interface User {
   id: string;
   name: string;
-  role: 'admin' | 'manager' | 'rep';
+  role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   state?: string;
 }
 
