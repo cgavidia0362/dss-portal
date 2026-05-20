@@ -93,7 +93,6 @@ export default function CallsTab({
   const [showCompleted, setShowCompleted] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [perStateGoals, setPerStateGoals] = useState<{ [state: string]: number }>({});
-  const [perStateGoals, setPerStateGoals] = useState<{ [state: string]: number }>({});
   const [editingStatusLast, setEditingStatusLast] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState<string | null>(null);
   const [tempStatusLast, setTempStatusLast] = useState('');
@@ -120,15 +119,12 @@ export default function CallsTab({
         .in('state', stateList).eq('month', currentMonth).eq('year', currentYear);
       if (data && data.length > 0) {
         const goalMap: { [state: string]: number } = {};
-        let totalDaily = 0;
         data.forEach((g: any) => {
-          const daily = Math.round(g.monthly_goal / g.funding_days);
-          goalMap[g.state] = daily;
-          totalDaily += daily;
+          goalMap[g.state] = Math.round(g.monthly_goal / g.funding_days);
         });
         setPerStateGoals(goalMap);
       }
-    } catch { setStateGoalDaily(0); }
+    } catch { setPerStateGoals({}); }
   };
 
   const isToday = (date: Date) => {
@@ -241,7 +237,6 @@ export default function CallsTab({
 
   // Multi-state handling
   const repStates = (currentUser?.state || '').split(',').map(s => s.trim()).filter(Boolean);
-
 
   // Per-state deal counts for today
   const stateDealsMap: { [state: string]: number } = {};
