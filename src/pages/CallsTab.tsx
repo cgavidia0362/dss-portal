@@ -92,7 +92,7 @@ export default function CallsTab({
   const [sortOrder, setSortOrder] = useState<SortOrder>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [stateGoalDaily, setStateGoalDaily] = useState(0);
+  const [perStateGoals, setPerStateGoals] = useState<{ [state: string]: number }>({});
   const [perStateGoals, setPerStateGoals] = useState<{ [state: string]: number }>({});
   const [editingStatusLast, setEditingStatusLast] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState<string | null>(null);
@@ -127,7 +127,6 @@ export default function CallsTab({
           totalDaily += daily;
         });
         setPerStateGoals(goalMap);
-        setStateGoalDaily(totalDaily);
       }
     } catch { setStateGoalDaily(0); }
   };
@@ -243,11 +242,6 @@ export default function CallsTab({
   // Multi-state handling
   const repStates = (currentUser?.state || '').split(',').map(s => s.trim()).filter(Boolean);
 
-  const stateDealsToday = repStates.length > 0 ? calls.filter(c =>
-    repStates.includes(c.state) &&
-    (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
-    c.dealDate && isToday(new Date(c.dealDate))
-  ).length : 0;
 
   // Per-state deal counts for today
   const stateDealsMap: { [state: string]: number } = {};
