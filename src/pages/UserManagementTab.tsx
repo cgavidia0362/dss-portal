@@ -110,8 +110,15 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
     if (userId === currentUserId) { setError("You can't delete your own account."); return; }
     if (!confirm(`Delete ${userName}? This cannot be undone.`)) return;
     try {
-      const { error: deleteError } = await supabase.from('profiles').delete().eq('id', userId);
-      if (deleteError) throw deleteError;
+      // Delete auth user via edge function (cascades to profile)
+      const { error: fnError } = await supabase.functions.invoke('delete-user', {
+        body: { userId },
+      });
+      if (fnError) {
+        // Fallback: delete just the profile if edge function fails
+        const { error: deleteError } = await supabase.from('profiles').delete().eq('id', userId);
+        if (deleteError) throw deleteError;
+      }
       setSuccess(`${userName} deleted.`);
       setTimeout(() => setSuccess(''), 3000);
       await fetchUsers();

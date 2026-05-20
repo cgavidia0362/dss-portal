@@ -231,6 +231,7 @@ export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDe
       if (err) throw err;
       setEditingDeal(null);
       await fetchTodayDeals();
+      onRefresh();
     } catch (e: any) {
       setError('Failed to update: ' + e.message);
     }
