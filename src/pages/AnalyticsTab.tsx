@@ -119,7 +119,6 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
 
   // State performance
   const repStates = (currentUser.state || '').split(',').map(s => s.trim()).filter(Boolean);
-  const primaryState = repStates[0] || '';
 
   const stateFundedThisMonth = repStates.reduce((total, st) => {
     if (fundingData[st]) return total + fundingData[st].count;
@@ -255,7 +254,7 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
                     <p className={`text-xl font-bold leading-none ${getProgressTextColor(progress)}`}>
                       {stateFundedThisMonth}
                     </p>
-                    {fundingData[currentUser.state] && (
+                    {repStates.some(st => fundingData[st]) && (
                       <p className="text-xs text-green-500 mt-1">from funding report</p>
                     )}
                   </div>
