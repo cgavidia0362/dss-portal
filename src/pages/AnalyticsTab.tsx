@@ -50,21 +50,28 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
   const currentYear = new Date().getFullYear();
   const currentDay = new Date().getDate();
 
-  useEffect(() => {
-    if (currentUser.state) fetchStateGoal(currentUser.state);
-  }, [currentUser.state]);
-
-  const fetchStateGoal = async (state: string) => {
-    try {
-      const { data } = await supabase
-        .from('state_goals').select('*')
-        .eq('state', state).eq('month', currentMonth).eq('year', currentYear)
-        .single();
-      if (data) setStateGoal({ monthlyGoal: data.monthly_goal, fundingDays: data.funding_days });
-    } catch {
-      setStateGoal(null);
-    }
-  };
+    useEffect(() => {
+      if (currentUser.state) fetchStateGoal(currentUser.state);
+    }, [currentUser.state]);
+  
+    const fetchStateGoal = async (stateStr: string) => {
+      const stateList = stateStr.split(',').map(s => s.trim()).filter(Boolean);
+      if (!stateList.length) return;
+      try {
+        const { data } = await supabase
+          .from('state_goals').select('*')
+          .in('state', stateList).eq('month', currentMonth).eq('year', currentYear);
+        if (data && data.length > 0) {
+          const totalGoal = data.reduce((sum: number, g: any) => sum + g.monthly_goal, 0);
+          const avgDays = Math.round(data.reduce((sum: number, g: any) => sum + g.funding_days, 0) / data.length);
+          setStateGoal({ monthlyGoal: totalGoal, fundingDays: avgDays });
+        } else {
+          setStateGoal(null);
+        }
+      } catch {
+        setStateGoal(null);
+      }
+    };
 
   const myCalls = calls.filter(c => c.assignedTo === currentUser.id);
 
@@ -111,17 +118,21 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
     ).length > 0;
 
   // State performance
-  const stateFundedThisMonth = currentUser.state && fundingData[currentUser.state]
-    ? fundingData[currentUser.state].count
-    : myCalls.filter(c => {
-        if (c.state !== currentUser.state || !c.dealDate) return false;
-        const d = new Date(c.dealDate);
-        return (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
-          d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
-      }).length;
+  const repStates = (currentUser.state || '').split(',').map(s => s.trim()).filter(Boolean);
+  const primaryState = repStates[0] || '';
+
+  const stateFundedThisMonth = repStates.reduce((total, st) => {
+    if (fundingData[st]) return total + fundingData[st].count;
+    return total + myCalls.filter(c => {
+      if (c.state !== st || !c.dealDate) return false;
+      const d = new Date(c.dealDate);
+      return (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+        d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
+    }).length;
+  }, 0);
 
   const myContributionThisMonth = myCalls.filter(c => {
-    if (c.state !== currentUser.state || !c.dealDate) return false;
+    if (!repStates.includes(c.state) || !c.dealDate) return false;
     const d = new Date(c.dealDate);
     return (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
       d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
@@ -216,14 +227,14 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
       </div>
 
       {/* STATE PERFORMANCE */}
-      {currentUser.state ? (
+      {repStates.length > 0 ? (
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
 
           {/* Card header */}
           <div className="px-5 py-3 border-b border-gray-700 flex items-center gap-2.5">
             <div className="w-2 h-2 rounded-full bg-purple-400" />
             <p className="text-sm font-semibold text-gray-200">
-              State Performance — {currentUser.state}
+              State Performance — {repStates.join(', ')}
             </p>
           </div>
 
@@ -239,7 +250,7 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
                   </div>
                   <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
                     <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">
-                      {currentUser.state} Total Funded
+                      {repStates.join('+')} Total Funded
                     </p>
                     <p className={`text-xl font-bold leading-none ${getProgressTextColor(progress)}`}>
                       {stateFundedThisMonth}
@@ -250,7 +261,7 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
                   </div>
                   <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
                     <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">
-                      My Deals ({currentUser.state})
+                      My Deals ({repStates.join('+')})
                     </p>
                     <p className="text-xl font-bold text-blue-400 leading-none">{myContributionThisMonth}</p>
                     <p className="text-xs text-gray-500 mt-1">this month</p>
@@ -295,8 +306,8 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
               </>
             ) : (
               <div className="py-8 text-center">
-                <p className="text-base font-medium text-gray-400">
-                  No goal set for {currentUser.state} this month.
+            <p className="text-base font-medium text-gray-400">
+                  No goal set for {repStates.join(', ')} this month.
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
                   Ask your admin to set a state goal in the Reporting tab.

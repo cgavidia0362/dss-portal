@@ -109,13 +109,19 @@ export default function CallsTab({
     if (currentUserRole === 'rep' && currentUser?.state) fetchRepStateGoal(currentUser.state);
   }, [currentUser?.state, currentUserRole]);
 
-  const fetchRepStateGoal = async (state: string) => {
+  const fetchRepStateGoal = async (stateStr: string) => {
+    const stateList = stateStr.split(',').map(s => s.trim()).filter(Boolean);
+    if (!stateList.length) return;
     const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
     try {
       const { data } = await supabase.from('state_goals').select('*')
-        .eq('state', state).eq('month', currentMonth).eq('year', currentYear).single();
-      if (data) setStateGoalDaily(Math.round(data.monthly_goal / data.funding_days));
+        .in('state', stateList).eq('month', currentMonth).eq('year', currentYear);
+      if (data && data.length > 0) {
+        const totalGoal = data.reduce((sum: number, g: any) => sum + g.monthly_goal, 0);
+        const avgDays = Math.round(data.reduce((sum: number, g: any) => sum + g.funding_days, 0) / data.length);
+        setStateGoalDaily(Math.round(totalGoal / avgDays));
+      }
     } catch { setStateGoalDaily(0); }
   };
 
@@ -227,8 +233,9 @@ export default function CallsTab({
   const goalPct = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
   const teamGoalPct = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
 
-  const stateDealsToday = currentUser?.state ? calls.filter(c =>
-    c.state === currentUser.state &&
+  const repStates = (currentUser?.state || '').split(',').map(s => s.trim()).filter(Boolean);
+  const stateDealsToday = repStates.length > 0 ? calls.filter(c =>
+    repStates.includes(c.state) &&
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
     c.dealDate && isToday(new Date(c.dealDate))
   ).length : 0;
@@ -375,7 +382,7 @@ export default function CallsTab({
             {currentUserRole === 'rep' ? (
               <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
                 <p className="text-xs text-gray-400 uppercase tracking-wider">
-                  State Goal {currentUser?.state ? `(${currentUser.state})` : ''}
+                  State Goal {repStates.length > 0 ? `(${repStates.join(', ')})` : ''}
                 </p>
                 {stateGoalDaily > 0 ? (
                   <>
