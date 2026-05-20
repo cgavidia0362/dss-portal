@@ -49,7 +49,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'rep';
+  role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   active: boolean;
   allowedStatuses: string[];
   state?: string;
@@ -253,6 +253,7 @@ function App() {
     ];
     if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
     if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
+    if (role === 'buying_assistant') return allTabs.filter(t => t.id === 'calls' || t.id === 'daily-deals');
     return allTabs.filter(t => t.id === 'calls' || t.id === 'analytics' || t.id === 'daily-deals');
   };
 

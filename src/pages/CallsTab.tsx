@@ -264,13 +264,14 @@ export default function CallsTab({
   // Leaderboard
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
+    const roleMap: { [id: string]: string } = {};
     calls.forEach(c => { if (c.assignedTo && c.assignedToName) nameMap[c.assignedTo] = c.assignedToName; });
-    (users || []).forEach(u => { nameMap[u.id] = u.name; });
-    if (currentUser) nameMap[currentUser.id] = currentUser.name;
+    (users || []).forEach(u => { nameMap[u.id] = u.name; roleMap[u.id] = u.role; });
+    if (currentUser) { nameMap[currentUser.id] = currentUser.name; roleMap[currentUser.id] = currentUser.role; }
 
-    const repMap: { [id: string]: { name: string; dealCount: number; amount: number } } = {};
+    const repMap: { [id: string]: { name: string; dealCount: number; amount: number; role: string } } = {};
     Object.entries(nameMap).forEach(([id, name]) => {
-      repMap[id] = { name, dealCount: 0, amount: 0 };
+      repMap[id] = { name, dealCount: 0, amount: 0, role: roleMap[id] || 'rep' };
     });
 
     calls.forEach(c => {
@@ -292,7 +293,8 @@ export default function CallsTab({
 
     return Object.entries(repMap)
       .map(([id, data]) => ({ id, ...data }))
-      .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
+      .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount)
+      .filter(rep => rep.dealCount > 0 || rep.role === 'rep');
   })();
 
   // Handlers

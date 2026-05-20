@@ -12,7 +12,7 @@ interface User {
 }
 
 interface EditForm {
-  role: 'admin' | 'manager' | 'rep';
+  role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   active: boolean;
   state: string;
 }
@@ -46,7 +46,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
   const [generatingLink, setGeneratingLink] = useState(false);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: '', email: '', role: 'rep' as 'admin' | 'manager' | 'rep' });
+  const [createForm, setCreateForm] = useState({ name: '', email: '', role: 'rep' as 'admin' | 'manager' | 'rep' | 'buying_assistant' });
   const [creating, setCreating] = useState(false);
 
   useEffect(() => { fetchUsers(); }, []);
@@ -176,6 +176,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
   const getRoleBadge = (role: string) => {
     if (role === 'admin') return 'bg-purple-900 text-purple-300 border-purple-700';
     if (role === 'manager') return 'bg-blue-900 text-blue-300 border-blue-700';
+    if (role === 'buying_assistant') return 'bg-teal-900 text-teal-300 border-teal-700';
     return 'bg-gray-700 text-gray-300 border-gray-600';
   };
 
@@ -304,6 +305,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                   onChange={e => setEditForm({ ...editForm, role: e.target.value as EditForm['role'] })}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
                   <option value="rep">Rep</option>
+                  <option value="buying_assistant">Buying Assistant</option>
                   <option value="manager">Manager</option>
                   <option value="admin">Admin</option>
                 </select>
@@ -451,9 +453,10 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               <div>
                 <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Role</label>
                 <select value={createForm.role}
-                  onChange={e => setCreateForm({ ...createForm, role: e.target.value as 'admin' | 'manager' | 'rep' })}
+                  onChange={e => setCreateForm({ ...createForm, role: e.target.value as 'admin' | 'manager' | 'rep' | 'buying_assistant' })}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
                   <option value="rep">Rep</option>
+                  <option value="buying_assistant">Buying Assistant</option>
                   <option value="manager">Manager</option>
                   <option value="admin">Admin</option>
                 </select>
