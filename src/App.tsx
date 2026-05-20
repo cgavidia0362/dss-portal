@@ -10,6 +10,7 @@ import UserManagementTab from './pages/UserManagementTab';
 import AnalyticsTab from './pages/AnalyticsTab';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import DailyDealsTab from './pages/DailyDealsTab';
+import NotesTab from './pages/NotesTab';
 
 interface Dealer {
   cifNumber: string;
@@ -126,6 +127,7 @@ function App() {
     if (isAuthenticated) {
       fetchUsers();
       fetchTodayDailyDeals();
+      fetchCallNotes();
     }
   }, [isAuthenticated]);
 
@@ -228,7 +230,25 @@ function App() {
       console.error('Error fetching daily deals summary:', err);
     }
   };
-
+  const fetchCallNotes = async () => {
+    try {
+      const { data } = await supabase
+        .from('call_notes').select('*')
+        .order('created_at', { ascending: true });
+      if (data) {
+        setNotes(data.map((n: any) => ({
+          id: n.id,
+          callId: n.call_id,
+          noteText: n.note_text,
+          createdBy: n.created_by,
+          createdByName: n.created_by_name,
+          createdAt: new Date(n.created_at),
+        })));
+      }
+    } catch (err) {
+      console.error('Error fetching call notes:', err);
+    }
+  };
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -250,11 +270,12 @@ function App() {
       { id: 'users', label: 'Users', icon: UserCog },
       { id: 'analytics', label: 'Analytics', icon: TrendingUp },
       { id: 'daily-deals', label: 'Daily Deals', icon: TrendingUp },
+      { id: 'notes', label: 'Notes', icon: FileText },
     ];
     if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
     if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
-    if (role === 'buying_assistant') return allTabs.filter(t => t.id === 'calls' || t.id === 'daily-deals');
-    return allTabs.filter(t => t.id === 'calls' || t.id === 'analytics' || t.id === 'daily-deals');
+    if (role === 'buying_assistant') return allTabs.filter(t => ['calls', 'daily-deals', 'notes'].includes(t.id));
+    return allTabs.filter(t => ['calls', 'analytics', 'daily-deals', 'notes'].includes(t.id));
   };
 
   if (isLoading) {
@@ -387,6 +408,12 @@ function App() {
             currentUser={currentUser}
             goals={goals}
             onRefresh={fetchTodayDailyDeals}
+          />
+        )}
+        {activeTab === 'notes' && currentUser && (
+          <NotesTab
+            currentUser={currentUser}
+            users={users}
           />
         )}
       </main>

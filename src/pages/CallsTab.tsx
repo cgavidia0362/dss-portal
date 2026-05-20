@@ -320,9 +320,22 @@ export default function CallsTab({
     setExpandedRows(n);
   };
 
-  const handleAddNote = (callId: string) => {
+  const handleAddNote = async (callId: string) => {
     const text = newNoteText[callId]?.trim();
     if (!text) return;
+    const call = calls.find(c => c.id === callId);
+    try {
+      await supabase.from('call_notes').insert({
+        call_id: callId,
+        application_id: call?.applicationId || '',
+        dealer_name: call?.dealerName || '',
+        note_text: text,
+        created_by: currentUserId,
+        created_by_name: currentUser?.name || 'User',
+      });
+    } catch (err) {
+      console.error('Failed to save note:', err);
+    }
     setNotes(prev => [...prev, {
       id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       callId, noteText: text,
@@ -332,7 +345,6 @@ export default function CallsTab({
     }]);
     setNewNoteText(prev => ({ ...prev, [callId]: '' }));
   };
-
   const getCallNotes = (callId: string) => notes.filter(n => n.callId === callId);
 
   const SortIcon = ({ field }: { field: SortField }) => (
