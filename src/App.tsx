@@ -175,7 +175,7 @@ function App() {
       if (profile) {
         setCurrentUser({
           id: profile.id, name: profile.name, email: profile.email,
-          role: profile.role, active: profile.active,
+          role: profile.role as 'admin' | 'manager' | 'rep' | 'buying_assistant', active: profile.active,
           allowedStatuses: profile.allowed_statuses || [],
           state: profile.state || undefined,
         });
@@ -197,7 +197,7 @@ function App() {
       if (data) {
         setUsers(data.map((user: any) => ({
           id: user.id, name: user.name, email: user.email,
-          role: user.role, active: user.active,
+          role: user.role as 'admin' | 'manager' | 'rep' | 'buying_assistant', active: user.active,
           allowedStatuses: user.allowed_statuses || [],
           state: user.state || undefined,
         })));
