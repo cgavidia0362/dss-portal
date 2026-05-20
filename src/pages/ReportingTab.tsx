@@ -108,6 +108,17 @@ export default function ReportingTab({
     } catch (err: any) { console.error('Error fetching goals:', err); }
   };
 
+  const countBusinessDaysElapsed = (year: number, month: number, toDay: number): number => {
+    let count = 0;
+    for (let d = 1; d <= toDay; d++) {
+      const date = new Date(year, month - 1, d);
+      const dow = date.getDay();
+      if (dow !== 0 && dow !== 6) count++;
+    }
+    return count;
+  };
+  
+
   const calculateStateStats = () => {
     const states = [...new Set(calls.map(c => c.state))].sort();
     const stats: StateStats[] = states.map(state => {
@@ -133,9 +144,10 @@ export default function ReportingTab({
       const fundingDays = stateGoal?.fundingDays || 20;
       const dailyGoal = monthlyGoal > 0 ? Math.round(monthlyGoal / fundingDays) : 0;
       const progress = monthlyGoal > 0 ? (funded / monthlyGoal) * 100 : 0;
-      const daysElapsed = Math.min(currentDay, fundingDays);
-      const daysRemaining = Math.max(fundingDays - daysElapsed, 1);
-      const neededPerDay = monthlyGoal > 0 ? Math.ceil((monthlyGoal - funded) / daysRemaining) : 0;
+      const daysElapsed = countBusinessDaysElapsed(currentYear, currentMonth, currentDay);
+      const daysRemaining = Math.max(fundingDays - daysElapsed, 0);
+      const neededPerDay = monthlyGoal > 0 && daysRemaining > 0
+        ? Math.ceil((monthlyGoal - funded) / daysRemaining) : 0;
 
       return { state, totalApps, funded, totalAmount, monthlyGoal, fundingDays, dailyGoal, progress, neededPerDay, daysRemaining };
     });

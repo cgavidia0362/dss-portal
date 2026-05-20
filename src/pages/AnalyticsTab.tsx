@@ -123,6 +123,16 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
       (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
     ).length > 0;
 
+    const countBusinessDaysElapsed = (year: number, month: number, toDay: number): number => {
+      let count = 0;
+      for (let d = 1; d <= toDay; d++) {
+        const date = new Date(year, month - 1, d);
+        const dow = date.getDay();
+        if (dow !== 0 && dow !== 6) count++;
+      }
+      return count;
+    };
+  
   // Build per-state performance data
   const statePerformanceData = repStates.map(st => {
     const goal = perStateGoals[st];
@@ -149,9 +159,10 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
     }).length;
 
     const progress = monthlyGoal > 0 ? (totalFunded / monthlyGoal) * 100 : 0;
-    const daysElapsed = Math.min(currentDay, fundingDays);
-    const daysRemaining = Math.max(fundingDays - daysElapsed, 1);
-    const neededPerDay = monthlyGoal > 0 ? Math.ceil((monthlyGoal - totalFunded) / daysRemaining) : 0;
+    const daysElapsed = countBusinessDaysElapsed(currentYear, currentMonth, currentDay);
+    const daysRemaining = Math.max(fundingDays - daysElapsed, 0);
+    const neededPerDay = monthlyGoal > 0 && daysRemaining > 0
+      ? Math.ceil((monthlyGoal - totalFunded) / daysRemaining) : 0;
     const remainingToGoal = Math.max(monthlyGoal - totalFunded, 0);
     const hasFundingReport = !!fundingData[st];
 
