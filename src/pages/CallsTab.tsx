@@ -93,6 +93,7 @@ export default function CallsTab({
   const [showCompleted, setShowCompleted] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [stateGoalDaily, setStateGoalDaily] = useState(0);
+  const [perStateGoals, setPerStateGoals] = useState<{ [state: string]: number }>({});
   const [editingStatusLast, setEditingStatusLast] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState<string | null>(null);
   const [tempStatusLast, setTempStatusLast] = useState('');
@@ -118,9 +119,15 @@ export default function CallsTab({
       const { data } = await supabase.from('state_goals').select('*')
         .in('state', stateList).eq('month', currentMonth).eq('year', currentYear);
       if (data && data.length > 0) {
-        const totalGoal = data.reduce((sum: number, g: any) => sum + g.monthly_goal, 0);
-        const avgDays = Math.round(data.reduce((sum: number, g: any) => sum + g.funding_days, 0) / data.length);
-        setStateGoalDaily(Math.round(totalGoal / avgDays));
+        const goalMap: { [state: string]: number } = {};
+        let totalDaily = 0;
+        data.forEach((g: any) => {
+          const daily = Math.round(g.monthly_goal / g.funding_days);
+          goalMap[g.state] = daily;
+          totalDaily += daily;
+        });
+        setPerStateGoals(goalMap);
+        setStateGoalDaily(totalDaily);
       }
     } catch { setStateGoalDaily(0); }
   };
@@ -233,15 +240,24 @@ export default function CallsTab({
   const goalPct = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
   const teamGoalPct = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
 
+  // Multi-state handling
   const repStates = (currentUser?.state || '').split(',').map(s => s.trim()).filter(Boolean);
+
   const stateDealsToday = repStates.length > 0 ? calls.filter(c =>
     repStates.includes(c.state) &&
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
     c.dealDate && isToday(new Date(c.dealDate))
   ).length : 0;
 
-  const stateGoalPct = stateGoalDaily > 0
-    ? Math.min((stateDealsToday / stateGoalDaily) * 100, 100) : 0;
+  // Per-state deal counts for today
+  const stateDealsMap: { [state: string]: number } = {};
+  repStates.forEach(st => {
+    stateDealsMap[st] = calls.filter(c =>
+      c.state === st &&
+      (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+      c.dealDate && isToday(new Date(c.dealDate))
+    ).length;
+  });
 
   const completedCount = calls.filter(c => {
     if (currentUserRole === 'rep' && c.assignedTo !== currentUserId) return false;
@@ -251,12 +267,12 @@ export default function CallsTab({
   // Status breakdown
   const pendingCount = filteredCalls.filter(c => c.fuStatus === 'Pending').length;
   const noAnswerCount = filteredCalls.filter(c => c.fuStatus === 'No Answer').length;
-  const dealTotalCount = dealsToday; // combines CSV deals today + Daily Deals tab entries
+  const dealTotalCount = dealsToday;
   const noDealCount = filteredCalls.filter(c => c.fuStatus === 'No Deal').length;
   const breakdownTotal = filteredCalls.length || 1;
   const pct = (n: number) => `${Math.round((n / breakdownTotal) * 100)}%`;
 
-  // Leaderboard — combines CSV deals + Daily Deals entries
+  // Leaderboard
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
     calls.forEach(c => { if (c.assignedTo && c.assignedToName) nameMap[c.assignedTo] = c.assignedToName; });
@@ -384,23 +400,36 @@ export default function CallsTab({
                 <p className="text-xs text-gray-400 uppercase tracking-wider">
                   State Goal {repStates.length > 0 ? `(${repStates.join(', ')})` : ''}
                 </p>
-                {stateGoalDaily > 0 ? (
-                  <>
-                    <p className="text-2xl font-bold text-teal-400">
-                      {stateDealsToday}
-                      <span className="text-sm font-normal text-gray-500 ml-1">/ {stateGoalDaily}</span>
-                    </p>
-                    <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-teal-500 rounded-full transition-all"
-                        style={{ width: `${stateGoalPct}%` }} />
-                    </div>
-                    <p className="text-xs text-gray-600">{stateGoalPct.toFixed(0)}% complete</p>
-                  </>
+                {repStates.length > 0 ? (
+                  <div className="space-y-2.5 mt-1">
+                    {repStates.map(st => {
+                      const goal = perStateGoals[st] || 0;
+                      const deals = stateDealsMap[st] || 0;
+                      const pctSt = goal > 0 ? Math.min((deals / goal) * 100, 100) : 0;
+                      return (
+                        <div key={st}>
+                          <div className="flex items-baseline justify-between mb-1">
+                            <span className="text-xs font-medium text-gray-400">{st}</span>
+                            <span className="text-sm font-bold text-teal-400">
+                              {deals}
+                              <span className="text-xs font-normal text-gray-500 ml-1">
+                                / {goal > 0 ? goal : '—'}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                            <div className="h-full bg-teal-500 rounded-full transition-all"
+                              style={{ width: `${pctSt}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <>
-                    <p className="text-2xl font-bold text-teal-400">{stateDealsToday}</p>
+                    <p className="text-2xl font-bold text-teal-400">0</p>
                     <div className="h-1 bg-gray-700 rounded-full" />
-                    <p className="text-xs text-gray-600">no goal set</p>
+                    <p className="text-xs text-gray-600">no states assigned</p>
                   </>
                 )}
               </div>
