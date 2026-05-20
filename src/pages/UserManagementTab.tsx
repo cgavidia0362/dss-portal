@@ -19,7 +19,7 @@ interface EditForm {
 
 interface UserManagementTabProps {
   currentUserId: string;
-  currentUserRole: 'admin' | 'manager' | 'rep';
+  currentUserRole: 'admin' | 'manager' | 'rep' | 'buying_assistant';
 }
 
 const US_STATES = [

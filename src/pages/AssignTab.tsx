@@ -36,7 +36,7 @@ interface Goals {
 }
 
 interface AssignTabProps {
-  currentUserRole: 'admin' | 'manager' | 'rep';
+  currentUserRole: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   calls: Call[];
   setCalls: React.Dispatch<React.SetStateAction<Call[]>>;
   users: User[];

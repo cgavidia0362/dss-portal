@@ -49,7 +49,7 @@ interface DailyDealSummary {
 
 interface CallsTabProps {
   currentUserId: string;
-  currentUserRole: 'admin' | 'manager' | 'rep';
+  currentUserRole: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   calls: Call[];
   setCalls: React.Dispatch<React.SetStateAction<Call[]>>;
   notes: CallNote[];
