@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { UserPlus, CheckSquare, Square, Target, Users, X, Search, ChevronDown } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface Call {
   id: string;
@@ -113,7 +114,6 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
     call.statusLast.toLowerCase().includes(unassignedSearch.toLowerCase())
   );
 
-  // Dealers for the selected states (used in dealer modal)
   const dealersForSelectedStates = Array.from(
     new Set(
       unassignedCalls
@@ -184,7 +184,6 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
     setSelectedDealers(newSet);
   };
 
-  // Preview count for status modal
   const getPreviewCount = () => {
     return unassignedCalls.filter(call => {
       let matchesValue = false;
@@ -200,24 +199,20 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
     }).length;
   };
 
-  // Step 1: Quick Assign clicked
   const handleQuickAssignClick = () => {
     if (quickAssignValues.size === 0 || !quickAssignRep) {
       alert('Please select both criteria and a rep');
       return;
     }
     if (assignMode === 'state') {
-      // Show dealer selection modal first
       setSelectedDealers(new Set());
       setDealerModalSearch('');
       setShowDealerModal(true);
     } else {
-      // By dealer — go straight to status modal
       setShowStatusModal(true);
     }
   };
 
-  // Step 2: Dealer modal continue
   const handleDealerModalContinue = () => {
     if (selectedDealers.size === 0) {
       alert('Please select at least one dealer');
@@ -227,8 +222,25 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
     setShowStatusModal(true);
   };
 
-  // Step 3: Confirm assignment
-  const handleConfirmAssign = () => {
+  // Save assignments to Supabase
+  const saveAssignmentsToSupabase = async (callIds: string[], repId: string, repName: string) => {
+    if (callIds.length === 0) return;
+    try {
+      // Update in batches of 50 to avoid query limits
+      for (let i = 0; i < callIds.length; i += 50) {
+        const batch = callIds.slice(i, i + 50);
+        await supabase.from('calls').update({
+          assigned_to: repId,
+          assigned_to_name: repName,
+          updated_at: new Date().toISOString(),
+        }).in('id', batch);
+      }
+    } catch (err) {
+      console.error('Error saving assignments to Supabase:', err);
+    }
+  };
+
+  const handleConfirmAssign = async () => {
     const repName = reps.find(r => r.id === quickAssignRep)?.name || '';
 
     const callsToAssign = unassignedCalls.filter(call => {
@@ -248,6 +260,7 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
       return;
     }
 
+    // Update local state
     setCalls(prevCalls =>
       prevCalls.map(call =>
         callsToAssign.some(c => c.id === call.id)
@@ -255,6 +268,9 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
           : call
       )
     );
+
+    // Save to Supabase
+    await saveAssignmentsToSupabase(callsToAssign.map(c => c.id), quickAssignRep, repName);
 
     setShowStatusModal(false);
     setShowDealerModal(false);
@@ -276,10 +292,13 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
     else setSelectedCalls(new Set(filteredUnassigned.map(c => c.id)));
   };
 
-  const handleAssignSelected = () => {
+  const handleAssignSelected = async () => {
     if (!selectedRep) { alert('Please select a rep to assign to'); return; }
     if (selectedCalls.size === 0) { alert('Please select at least one call to assign'); return; }
     const repName = reps.find(r => r.id === selectedRep)?.name || '';
+    const callIds = Array.from(selectedCalls);
+
+    // Update local state
     setCalls(prevCalls =>
       prevCalls.map(call =>
         selectedCalls.has(call.id)
@@ -287,19 +306,49 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
           : call
       )
     );
+
+    // Save to Supabase
+    await saveAssignmentsToSupabase(callIds, selectedRep, repName);
+
     setSelectedCalls(new Set());
     setSelectedRep('');
-    alert(`Successfully assigned ${selectedCalls.size} calls to ${repName}`);
+    alert(`Successfully assigned ${callIds.length} calls to ${repName}`);
   };
 
-  const handleSaveRepGoal = (repId: string) => {
-    setGoals(prev => ({ ...prev, daily: { ...prev.daily, [repId]: tempRepGoal } }));
+  const handleSaveRepGoal = async (repId: string) => {
+    const newDailyGoals = { ...goals.daily, [repId]: tempRepGoal };
+
+    // Update local state
+    setGoals(prev => ({ ...prev, daily: newDailyGoals }));
     setEditingRepGoal(null);
+
+    // Save to Supabase
+    try {
+      await supabase.from('team_goals').upsert({
+        id: 1,
+        rep_daily_goals: newDailyGoals,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('Error saving rep goal to Supabase:', err);
+    }
   };
 
-  const handleSaveTeamGoal = () => {
+  const handleSaveTeamGoal = async () => {
+    // Update local state
     setGoals(prev => ({ ...prev, team: tempTeamGoal }));
     setEditingTeamGoal(false);
+
+    // Save to Supabase
+    try {
+      await supabase.from('team_goals').upsert({
+        id: 1,
+        team_daily: tempTeamGoal,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('Error saving team goal to Supabase:', err);
+    }
   };
 
   const getDropdownLabel = () => {
@@ -352,18 +401,21 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
               </div>
               {editingTeamGoal ? (
                 <div className="flex items-center gap-2">
-                  <input type="number" value={tempTeamGoal} onChange={e => setTempTeamGoal(parseInt(e.target.value) || 0)} className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-20" autoFocus />
+                  <input type="number" value={tempTeamGoal} onChange={e => setTempTeamGoal(parseInt(e.target.value) || 0)}
+                    className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-20" autoFocus />
                   <button onClick={handleSaveTeamGoal} className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition">Save</button>
                   <button onClick={() => setEditingTeamGoal(false)} className="px-3 py-1 bg-gray-600 text-white rounded text-sm transition">Cancel</button>
                 </div>
               ) : (
                 <div className="flex items-center gap-3">
                   <span className="text-2xl font-bold text-cyan-400">{goals.team}</span>
-                  <button onClick={() => { setEditingTeamGoal(true); setTempTeamGoal(goals.team); }} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition">Edit</button>
+                  <button onClick={() => { setEditingTeamGoal(true); setTempTeamGoal(goals.team); }}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition">Edit</button>
                 </div>
               )}
             </div>
           </div>
+
           <div className="space-y-3">
             <p className="text-sm font-medium text-gray-300">Individual Goals (Daily)</p>
             {reps.map(rep => (
@@ -371,14 +423,16 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
                 <span className="text-gray-200 font-medium">{rep.name}</span>
                 {editingRepGoal === rep.id ? (
                   <div className="flex items-center gap-2">
-                    <input type="number" value={tempRepGoal} onChange={e => setTempRepGoal(parseInt(e.target.value) || 0)} className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-20" autoFocus />
+                    <input type="number" value={tempRepGoal} onChange={e => setTempRepGoal(parseInt(e.target.value) || 0)}
+                      className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-20" autoFocus />
                     <button onClick={() => handleSaveRepGoal(rep.id)} className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition">Save</button>
                     <button onClick={() => setEditingRepGoal(null)} className="px-3 py-1 bg-gray-600 text-white rounded text-sm transition">Cancel</button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
                     <span className="text-xl font-bold text-purple-400">{goals.daily[rep.id] || 0}</span>
-                    <button onClick={() => { setEditingRepGoal(rep.id); setTempRepGoal(goals.daily[rep.id] || 0); }} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition">Edit</button>
+                    <button onClick={() => { setEditingRepGoal(rep.id); setTempRepGoal(goals.daily[rep.id] || 0); }}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition">Edit</button>
                   </div>
                 )}
               </div>
@@ -393,8 +447,7 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
 
         <div className="flex gap-2 mb-4">
           {(['state', 'dealer'] as AssignMode[]).map(mode => (
-            <button
-              key={mode}
+            <button key={mode}
               onClick={() => { setAssignMode(mode); setQuickAssignValues(new Set()); setDropdownSearch(''); setDropdownOpen(false); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition ${assignMode === mode ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
             >
@@ -410,10 +463,8 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
               Select {assignMode === 'state' ? 'State' : 'Dealer'}(s)
             </label>
             <div className="relative">
-              <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-left text-gray-100 flex items-center justify-between hover:bg-gray-650 transition"
-              >
+              <button onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-left text-gray-100 flex items-center justify-between hover:bg-gray-650 transition">
                 <span className={quickAssignValues.size === 0 ? 'text-gray-400' : 'text-gray-100'}>
                   {getDropdownLabel()}
                 </span>
@@ -430,19 +481,19 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
                   <div className="p-2 border-b border-gray-600">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="text"
+                      <input type="text"
                         placeholder={`Search ${assignMode === 'state' ? 'states' : 'dealers'}...`}
                         value={dropdownSearch}
                         onChange={e => setDropdownSearch(e.target.value)}
                         className="w-full pl-9 pr-3 py-1.5 bg-gray-600 border border-gray-500 rounded text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        onClick={e => e.stopPropagation()}
-                      />
+                        onClick={e => e.stopPropagation()} />
                     </div>
                   </div>
                   <div className="px-3 py-2 border-b border-gray-600 flex gap-3">
-                    <button onClick={e => { e.stopPropagation(); setQuickAssignValues(new Set(getOptions().map(o => o.value))); }} className="text-xs text-blue-400 hover:text-blue-300">Select All</button>
-                    <button onClick={e => { e.stopPropagation(); setQuickAssignValues(new Set()); }} className="text-xs text-red-400 hover:text-red-300">Clear All</button>
+                    <button onClick={e => { e.stopPropagation(); setQuickAssignValues(new Set(getOptions().map(o => o.value))); }}
+                      className="text-xs text-blue-400 hover:text-blue-300">Select All</button>
+                    <button onClick={e => { e.stopPropagation(); setQuickAssignValues(new Set()); }}
+                      className="text-xs text-red-400 hover:text-red-300">Clear All</button>
                   </div>
                   <div className="max-h-52 overflow-y-auto">
                     {filteredOptions.length === 0 ? (
@@ -451,12 +502,11 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
                       filteredOptions.map(option => {
                         const isChecked = quickAssignValues.has(option.value);
                         return (
-                          <label
-                            key={option.value}
+                          <label key={option.value}
                             className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition ${isChecked ? 'bg-blue-900 bg-opacity-40' : 'hover:bg-gray-600'}`}
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <input type="checkbox" checked={isChecked} onChange={() => toggleQuickAssignValue(option.value)} className="w-4 h-4 accent-blue-500 cursor-pointer" />
+                            onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={isChecked} onChange={() => toggleQuickAssignValue(option.value)}
+                              className="w-4 h-4 accent-blue-500 cursor-pointer" />
                             <span className={`text-sm ${isChecked ? 'text-blue-300 font-medium' : 'text-gray-200'}`}>{option.label}</span>
                           </label>
                         );
@@ -471,13 +521,15 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
           {/* Rep selector */}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm text-gray-400 mb-2">Assign To</label>
-            <select value={quickAssignRep} onChange={e => setQuickAssignRep(e.target.value)} className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100">
+            <select value={quickAssignRep} onChange={e => setQuickAssignRep(e.target.value)}
+              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100">
               <option value="">Choose rep...</option>
               {reps.map(rep => <option key={rep.id} value={rep.id}>{rep.name}</option>)}
             </select>
           </div>
 
-          <button onClick={handleQuickAssignClick} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+          <button onClick={handleQuickAssignClick}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
             Quick Assign
             {quickAssignValues.size > 0 && (
               <span className="ml-2 bg-blue-500 px-2 py-0.5 rounded-full text-xs">{quickAssignValues.size}</span>
@@ -485,7 +537,6 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
           </button>
         </div>
 
-        {/* Step indicator for state mode */}
         {assignMode === 'state' && quickAssignValues.size > 0 && (
           <p className="text-xs text-gray-400 mt-3">
             After clicking Quick Assign, you'll choose which dealers to include from {Array.from(quickAssignValues).join(', ')}.
@@ -500,13 +551,9 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
             <h3 className="text-lg font-semibold text-gray-100">Unassigned Calls ({unassignedCalls.length})</h3>
             <div className="relative flex-1 min-w-[220px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by App ID, Dealer, State, Status..."
-                value={unassignedSearch}
-                onChange={e => setUnassignedSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+              <input type="text" placeholder="Search by App ID, Dealer, State, Status..."
+                value={unassignedSearch} onChange={e => setUnassignedSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               {unassignedSearch && (
                 <button onClick={() => setUnassignedSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200">
                   <X className="w-4 h-4" />
@@ -516,11 +563,13 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
             {selectedCalls.size > 0 && (
               <div className="flex items-center gap-4">
                 <span className="text-sm text-gray-400">{selectedCalls.size} selected</span>
-                <select value={selectedRep} onChange={e => setSelectedRep(e.target.value)} className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm">
+                <select value={selectedRep} onChange={e => setSelectedRep(e.target.value)}
+                  className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm">
                   <option value="">Assign to...</option>
                   {reps.map(rep => <option key={rep.id} value={rep.id}>{rep.name}</option>)}
                 </select>
-                <button onClick={handleAssignSelected} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
+                <button onClick={handleAssignSelected}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
                   Assign Selected
                 </button>
               </div>
@@ -612,38 +661,25 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
               <span className="ml-2 text-gray-500">({dealersForSelectedStates.length} dealers, {unassignedCalls.filter(c => quickAssignValues.has(c.state)).length} total calls)</span>
             </p>
 
-            {/* Search */}
             <div className="relative mb-3">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search dealers..."
-                value={dealerModalSearch}
+              <input type="text" placeholder="Search dealers..." value={dealerModalSearch}
                 onChange={e => setDealerModalSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+                className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500" />
             </div>
 
-            {/* Select All / Clear */}
             <div className="flex gap-3 mb-3 pb-3 border-b border-gray-700">
-              <button
-                onClick={() => setSelectedDealers(new Set(dealersForSelectedStates))}
-                className="text-sm text-blue-400 hover:text-blue-300 font-medium"
-              >
+              <button onClick={() => setSelectedDealers(new Set(dealersForSelectedStates))}
+                className="text-sm text-blue-400 hover:text-blue-300 font-medium">
                 ✓ Select All ({dealersForSelectedStates.length})
               </button>
-              <button
-                onClick={() => setSelectedDealers(new Set())}
-                className="text-sm text-red-400 hover:text-red-300"
-              >
-                Clear All
-              </button>
+              <button onClick={() => setSelectedDealers(new Set())}
+                className="text-sm text-red-400 hover:text-red-300">Clear All</button>
               {selectedDealers.size > 0 && (
                 <span className="text-sm text-gray-400 ml-auto">{selectedDealers.size} selected</span>
               )}
             </div>
 
-            {/* Dealer list */}
             <div className="max-h-64 overflow-y-auto space-y-1 mb-4">
               {filteredDealersInModal.length === 0 ? (
                 <p className="text-gray-400 text-sm text-center py-4">No dealers found</p>
@@ -652,22 +688,12 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
                   const isChecked = selectedDealers.has(dealer);
                   const callCount = getDealerCallCount(dealer);
                   return (
-                    <label
-                      key={dealer}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition ${isChecked ? 'bg-blue-900 bg-opacity-40' : 'hover:bg-gray-700'}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleDealer(dealer)}
-                        className="w-4 h-4 accent-blue-500 cursor-pointer flex-shrink-0"
-                      />
-                      <span className={`text-sm flex-1 ${isChecked ? 'text-blue-300 font-medium' : 'text-gray-200'}`}>
-                        {dealer}
-                      </span>
-                      <span className="text-xs text-gray-400 bg-gray-700 px-2 py-0.5 rounded-full">
-                        {callCount} calls
-                      </span>
+                    <label key={dealer}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition ${isChecked ? 'bg-blue-900 bg-opacity-40' : 'hover:bg-gray-700'}`}>
+                      <input type="checkbox" checked={isChecked} onChange={() => toggleDealer(dealer)}
+                        className="w-4 h-4 accent-blue-500 cursor-pointer flex-shrink-0" />
+                      <span className={`text-sm flex-1 ${isChecked ? 'text-blue-300 font-medium' : 'text-gray-200'}`}>{dealer}</span>
+                      <span className="text-xs text-gray-400 bg-gray-700 px-2 py-0.5 rounded-full">{callCount} calls</span>
                     </label>
                   );
                 })
@@ -675,19 +701,12 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
             </div>
 
             <div className="flex gap-3">
-              <button
-                onClick={handleDealerModalContinue}
-                disabled={selectedDealers.size === 0}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-lg font-medium transition"
-              >
+              <button onClick={handleDealerModalContinue} disabled={selectedDealers.size === 0}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-lg font-medium transition">
                 Continue → ({selectedDealers.size} dealers selected)
               </button>
-              <button
-                onClick={() => setShowDealerModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition"
-              >
-                Cancel
-              </button>
+              <button onClick={() => setShowDealerModal(false)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition">Cancel</button>
             </div>
           </div>
         </div>
@@ -715,11 +734,8 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
               {uniqueStatuses.map(status => {
                 const isSelected = selectedStatuses.has(status);
                 return (
-                  <button
-                    key={status}
-                    onClick={() => toggleStatus(status)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${getStatusColor(status, isSelected)}`}
-                  >
+                  <button key={status} onClick={() => toggleStatus(status)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${getStatusColor(status, isSelected)}`}>
                     {status}
                   </button>
                 );
@@ -732,16 +748,12 @@ export default function AssignTab({ currentUserRole, calls, setCalls, users, goa
               </p>
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={handleConfirmAssign}
-                disabled={getPreviewCount() === 0}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-lg font-medium transition"
-              >
+              <button onClick={handleConfirmAssign} disabled={getPreviewCount() === 0}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-lg font-medium transition">
                 Assign {getPreviewCount()} Calls
               </button>
-              <button onClick={() => setShowStatusModal(false)} className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition">
-                Cancel
-              </button>
+              <button onClick={() => setShowStatusModal(false)}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition">Cancel</button>
             </div>
           </div>
         </div>

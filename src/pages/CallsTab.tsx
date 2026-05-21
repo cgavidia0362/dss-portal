@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, EyeOff, Eye, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
@@ -68,10 +68,7 @@ const parseAmount = (str: string) =>
   parseFloat((str || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
 const formatCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency', currency: 'USD',
-    minimumFractionDigits: 0, maximumFractionDigits: 0,
-  }).format(n);
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 const medal = (i: number) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
 
@@ -92,7 +89,7 @@ export default function CallsTab({
   const [sortOrder, setSortOrder] = useState<SortOrder>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [perStateGoals, setPerStateGoals] = useState<{ [state: string]: number }>({});
+  const [stateGoalDaily, setStateGoalDaily] = useState(0);
   const [editingStatusLast, setEditingStatusLast] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState<string | null>(null);
   const [tempStatusLast, setTempStatusLast] = useState('');
@@ -100,46 +97,35 @@ export default function CallsTab({
   const itemsPerPage = 50;
 
   const allStatusLastOptions = [
-    'Accepted','Approved','Approval','Counter','Denial','Declined',
-    'Pending Approval','Document Received','Funded','Funding Pending',
-    'New Application','Incomplete','Withdrawn','Cancelled',
+    'Accepted', 'Approved', 'Approval', 'Counter', 'Denial', 'Declined',
+    'Pending Approval', 'Document Received', 'Funded', 'Funding Pending',
+    'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
   ];
 
   useEffect(() => {
     if (currentUserRole === 'rep' && currentUser?.state) fetchRepStateGoal(currentUser.state);
   }, [currentUser?.state, currentUserRole]);
 
-  const fetchRepStateGoal = async (stateStr: string) => {
-    const stateList = stateStr.split(',').map(s => s.trim()).filter(Boolean);
-    if (!stateList.length) return;
+  const fetchRepStateGoal = async (state: string) => {
     const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
     try {
       const { data } = await supabase.from('state_goals').select('*')
-        .in('state', stateList).eq('month', currentMonth).eq('year', currentYear);
-      if (data && data.length > 0) {
-        const goalMap: { [state: string]: number } = {};
-        data.forEach((g: any) => {
-          goalMap[g.state] = Math.round(g.monthly_goal / g.funding_days);
-        });
-        setPerStateGoals(goalMap);
-      }
-    } catch { setPerStateGoals({}); }
+        .eq('state', state).eq('month', currentMonth).eq('year', currentYear).single();
+      if (data) setStateGoalDaily(Math.round(data.monthly_goal / data.funding_days));
+    } catch { setStateGoalDaily(0); }
   };
 
   const isToday = (date: Date) => {
     const t = new Date();
-    return date.getDate() === t.getDate() &&
-      date.getMonth() === t.getMonth() &&
-      date.getFullYear() === t.getFullYear();
+    return date.getDate() === t.getDate() && date.getMonth() === t.getMonth() && date.getFullYear() === t.getFullYear();
   };
 
   useEffect(() => {
     const interval = setInterval(() => {
       setCalls(prev => prev.map(call => {
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        if (call.statusLast === 'Accepted' && call.fuStatus === 'Deal' &&
-          call.dealDate && call.dealDate < sevenDaysAgo)
+        if (call.statusLast === 'Accepted' && call.fuStatus === 'Deal' && call.dealDate && call.dealDate < sevenDaysAgo)
           return { ...call, fuStatus: 'Pending', dealDate: undefined };
         return call;
       }));
@@ -167,8 +153,11 @@ export default function CallsTab({
     return 'bg-gray-700 text-gray-300 border-gray-600';
   };
 
+  // Filtering
   const roleFilteredCalls = calls.filter(c =>
-    currentUserRole === 'rep' ? c.assignedTo === currentUserId : true
+    currentUserRole === 'rep' || currentUserRole === 'buying_assistant'
+      ? c.assignedTo === currentUserId
+      : true
   );
   const uniqueStatusLast = Array.from(new Set(roleFilteredCalls.map(c => c.statusLast).filter(Boolean))).sort();
   const uniqueStates = Array.from(new Set(roleFilteredCalls.map(c => c.state))).sort();
@@ -180,7 +169,7 @@ export default function CallsTab({
   };
 
   const filteredCalls = calls.filter(call => {
-    if (currentUserRole === 'rep' && call.assignedTo !== currentUserId) return false;
+    if ((currentUserRole === 'rep' || currentUserRole === 'buying_assistant') && call.assignedTo !== currentUserId) return false;
     if (searchQuery && !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.state.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -190,7 +179,7 @@ export default function CallsTab({
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
     if (dateTo && new Date(call.submittedDate) > new Date(dateTo)) return false;
     const isCompleted = call.fuStatus === 'No Deal' || call.fuStatus === 'Closed' || call.fuStatus === 'Duplicates';
-    const isExplicitlyFiltering = ['No Deal','Closed','Duplicates'].includes(filterFuStatus);
+    const isExplicitlyFiltering = ['No Deal', 'Closed', 'Duplicates'].includes(filterFuStatus);
     if (!showCompleted && isCompleted && !isExplicitlyFiltering) return false;
     return true;
   });
@@ -208,8 +197,7 @@ export default function CallsTab({
   const totalPages = Math.ceil(sortedCalls.length / itemsPerPage);
   const paginatedCalls = sortedCalls.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  useEffect(() => { setCurrentPage(1); },
-    [searchQuery, filterFuStatus, filterState, filterStatusLast, dateFrom, dateTo, showCompleted]);
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, filterFuStatus, filterState, filterStatusLast, dateFrom, dateTo, showCompleted]);
 
   // KPI calculations
   const csvDealsToday = filteredCalls.filter(c =>
@@ -232,48 +220,45 @@ export default function CallsTab({
   ).length;
 
   const teamDealsToday = csvTeamDealsToday + allDailyDealsToday;
+
   const goalPct = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
   const teamGoalPct = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
 
-  // Multi-state handling
-  const repStates = (currentUser?.state || '').split(',').map(s => s.trim()).filter(Boolean);
-
-  // Per-state deal counts for today
-  const stateDealsMap: { [state: string]: number } = {};
-  repStates.forEach(st => {
-    stateDealsMap[st] = calls.filter(c =>
-      c.state === st &&
-      (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
-      c.dealDate && isToday(new Date(c.dealDate))
-    ).length;
-  });
+  const stateDealsToday = currentUser?.state ? calls.filter(c =>
+    c.state === currentUser.state &&
+    (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+    c.dealDate && isToday(new Date(c.dealDate))
+  ).length : 0;
 
   const completedCount = calls.filter(c => {
-    if (currentUserRole === 'rep' && c.assignedTo !== currentUserId) return false;
+    if ((currentUserRole === 'rep' || currentUserRole === 'buying_assistant') && c.assignedTo !== currentUserId) return false;
     return c.fuStatus === 'No Deal' || c.fuStatus === 'Closed' || c.fuStatus === 'Duplicates';
   }).length;
 
-  // Status breakdown
   const pendingCount = filteredCalls.filter(c => c.fuStatus === 'Pending').length;
   const noAnswerCount = filteredCalls.filter(c => c.fuStatus === 'No Answer').length;
-  const dealTotalCount = dealsToday;
+  const dealTotalCount = filteredCalls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
   const noDealCount = filteredCalls.filter(c => c.fuStatus === 'No Deal').length;
   const breakdownTotal = filteredCalls.length || 1;
   const pct = (n: number) => `${Math.round((n / breakdownTotal) * 100)}%`;
 
-  // Leaderboard
+  // Leaderboard — combines CSV deals + Daily Deals entries, reps always show
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
-    const roleMap: { [id: string]: string } = {};
     calls.forEach(c => { if (c.assignedTo && c.assignedToName) nameMap[c.assignedTo] = c.assignedToName; });
-    (users || []).forEach(u => { nameMap[u.id] = u.name; roleMap[u.id] = u.role; });
-    if (currentUser) { nameMap[currentUser.id] = currentUser.name; roleMap[currentUser.id] = currentUser.role; }
+    (users || []).forEach(u => { nameMap[u.id] = u.name; });
+    if (currentUser) nameMap[currentUser.id] = currentUser.name;
 
-    const repMap: { [id: string]: { name: string; dealCount: number; amount: number; role: string } } = {};
+    const repMap: { [id: string]: { name: string; dealCount: number; amount: number; isRep: boolean } } = {};
+
+    // Initialize all known users
     Object.entries(nameMap).forEach(([id, name]) => {
-      repMap[id] = { name, dealCount: 0, amount: 0, role: roleMap[id] || 'rep' };
+      const userObj = (users || []).find(u => u.id === id);
+      const isRep = userObj?.role === 'rep';
+      repMap[id] = { name, dealCount: 0, amount: 0, isRep };
     });
 
+    // Count CSV-based deals today
     calls.forEach(c => {
       if (!c.assignedTo || !repMap[c.assignedTo]) return;
       if ((c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))) {
@@ -282,10 +267,11 @@ export default function CallsTab({
       }
     });
 
+    // Count Daily Deals tab entries today
     (todayDailyDeals || []).forEach(d => {
       if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
       if (!repMap[d.addedBy]) {
-        repMap[d.addedBy] = { name: nameMap[d.addedBy] || 'Unknown', dealCount: 0, amount: 0, role: roleMap[d.addedBy] || 'rep' };
+        repMap[d.addedBy] = { name: nameMap[d.addedBy] || 'Unknown', dealCount: 0, amount: 0, isRep: false };
       }
       repMap[d.addedBy].dealCount++;
       repMap[d.addedBy].amount += parseAmount(d.amount || '0');
@@ -293,25 +279,49 @@ export default function CallsTab({
 
     return Object.entries(repMap)
       .map(([id, data]) => ({ id, ...data }))
-      .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount)
-      .filter(rep => rep.dealCount > 0 || rep.role === 'rep');
+      // Reps always show; admin/manager/buying_assistant only if they have deals
+      .filter(r => r.isRep || r.dealCount > 0)
+      .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
   })();
 
-  // Handlers
-  const handleStatusChange = (callId: string, newStatus: Call['fuStatus']) => {
+  // ── HANDLERS (all save to Supabase) ────────────────────────────
+
+  const handleStatusChange = async (callId: string, newStatus: Call['fuStatus']) => {
+    const existingDealDate = calls.find(c => c.id === callId)?.dealDate;
+    const dealDate = newStatus === 'Deal' ? new Date() : existingDealDate;
+
     setCalls(prev => prev.map(c => c.id === callId
-      ? { ...c, fuStatus: newStatus, updatedAt: new Date(), dealDate: newStatus === 'Deal' ? new Date() : c.dealDate }
-      : c));
+      ? { ...c, fuStatus: newStatus, updatedAt: new Date(), dealDate }
+      : c
+    ));
+
+    await supabase.from('calls').update({
+      fu_status: newStatus,
+      deal_date: newStatus === 'Deal'
+        ? new Date().toISOString()
+        : (existingDealDate ? new Date(existingDealDate).toISOString() : null),
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
   };
 
-  const handleSaveStatusLast = (callId: string) => {
+  const handleSaveStatusLast = async (callId: string) => {
     setCalls(prev => prev.map(c => c.id === callId ? { ...c, statusLast: tempStatusLast } : c));
     setEditingStatusLast(null);
+
+    await supabase.from('calls').update({
+      status_last: tempStatusLast,
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
   };
 
-  const handleSaveAmount = (callId: string) => {
+  const handleSaveAmount = async (callId: string) => {
     setCalls(prev => prev.map(c => c.id === callId ? { ...c, buyerFinal: tempAmount } : c));
     setEditingAmount(null);
+
+    await supabase.from('calls').update({
+      buyer_final: tempAmount,
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
   };
 
   const toggleRow = (id: string) => {
@@ -324,27 +334,29 @@ export default function CallsTab({
     const text = newNoteText[callId]?.trim();
     if (!text) return;
     const call = calls.find(c => c.id === callId);
-    try {
-      await supabase.from('call_notes').insert({
-        call_id: callId,
-        application_id: call?.applicationId || '',
-        dealer_name: call?.dealerName || '',
-        note_text: text,
-        created_by: currentUserId,
-        created_by_name: currentUser?.name || 'User',
-      });
-    } catch (err) {
-      console.error('Failed to save note:', err);
-    }
+    const noteId = `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     setNotes(prev => [...prev, {
-      id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      callId, noteText: text,
+      id: noteId,
+      callId,
+      noteText: text,
       createdBy: currentUserId,
       createdByName: currentUser?.name || 'User',
       createdAt: new Date(),
     }]);
     setNewNoteText(prev => ({ ...prev, [callId]: '' }));
+
+    await supabase.from('call_notes').insert({
+      id: noteId,
+      call_id: callId,
+      application_id: call?.applicationId || '',
+      dealer_name: call?.dealerName || '',
+      note_text: text,
+      created_by: currentUserId,
+      created_by_name: currentUser?.name || 'User',
+    });
   };
+
   const getCallNotes = (callId: string) => notes.filter(n => n.callId === callId);
 
   const SortIcon = ({ field }: { field: SortField }) => (
@@ -358,7 +370,9 @@ export default function CallsTab({
       <div>
         <h2 className="text-2xl font-bold text-gray-100">Calls</h2>
         <p className="text-sm text-gray-400 mt-0.5">
-          {currentUserRole === 'admin' ? 'View and manage all calls' : 'View and manage your assigned calls'}
+          {currentUserRole === 'admin' || currentUserRole === 'manager'
+            ? 'View and manage all calls'
+            : 'View and manage your assigned calls'}
         </p>
       </div>
 
@@ -401,38 +415,27 @@ export default function CallsTab({
             {currentUserRole === 'rep' ? (
               <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
                 <p className="text-xs text-gray-400 uppercase tracking-wider">
-                  State Goal {repStates.length > 0 ? `(${repStates.join(', ')})` : ''}
+                  State Goal {currentUser?.state ? `(${currentUser.state})` : ''}
                 </p>
-                {repStates.length > 0 ? (
-                  <div className="space-y-2.5 mt-1">
-                    {repStates.map(st => {
-                      const goal = perStateGoals[st] || 0;
-                      const deals = stateDealsMap[st] || 0;
-                      const pctSt = goal > 0 ? Math.min((deals / goal) * 100, 100) : 0;
-                      return (
-                        <div key={st}>
-                          <div className="flex items-baseline justify-between mb-1">
-                            <span className="text-xs font-medium text-gray-400">{st}</span>
-                            <span className="text-sm font-bold text-teal-400">
-                              {deals}
-                              <span className="text-xs font-normal text-gray-500 ml-1">
-                                / {goal > 0 ? goal : '—'}
-                              </span>
-                            </span>
-                          </div>
-                          <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                            <div className="h-full bg-teal-500 rounded-full transition-all"
-                              style={{ width: `${pctSt}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                {stateGoalDaily > 0 ? (
+                  <>
+                    <p className="text-2xl font-bold text-teal-400">
+                      {stateDealsToday}
+                      <span className="text-sm font-normal text-gray-500 ml-1">/ {stateGoalDaily}</span>
+                    </p>
+                    <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-teal-500 rounded-full transition-all"
+                        style={{ width: `${Math.min((stateDealsToday / stateGoalDaily) * 100, 100)}%` }} />
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      {Math.min((stateDealsToday / stateGoalDaily) * 100, 100).toFixed(0)}% complete
+                    </p>
+                  </>
                 ) : (
                   <>
-                    <p className="text-2xl font-bold text-teal-400">0</p>
+                    <p className="text-2xl font-bold text-teal-400">{stateDealsToday}</p>
                     <div className="h-1 bg-gray-700 rounded-full" />
-                    <p className="text-xs text-gray-600">no states assigned</p>
+                    <p className="text-xs text-gray-600">no goal set</p>
                   </>
                 )}
               </div>
@@ -441,8 +444,7 @@ export default function CallsTab({
                 <p className="text-xs text-gray-400 uppercase tracking-wider">No Answer</p>
                 <p className="text-2xl font-bold text-orange-400">{noAnswerCount}</p>
                 <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-500 rounded-full"
-                    style={{ width: `${pct(noAnswerCount)}` }} />
+                  <div className="h-full bg-orange-500 rounded-full" style={{ width: `${pct(noAnswerCount)}` }} />
                 </div>
                 <p className="text-xs text-gray-600">of {filteredCalls.length} calls</p>
               </div>
@@ -459,46 +461,39 @@ export default function CallsTab({
               </div>
             </div>
             <div className="space-y-3">
+
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-400 w-20 flex-shrink-0">Pending</span>
                 <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-yellow-400 rounded-full transition-all"
-                    style={{ width: `${pct(pendingCount)}` }} />
+                  <div className="h-full bg-yellow-400 rounded-full transition-all" style={{ width: `${pct(pendingCount)}` }} />
                 </div>
-                <span className="text-xs font-semibold text-yellow-400 w-8 text-right flex-shrink-0">
-                  {pendingCount}
-                </span>
+                <span className="text-xs font-semibold text-yellow-400 w-8 text-right flex-shrink-0">{pendingCount}</span>
               </div>
+
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-400 w-20 flex-shrink-0">No Answer</span>
                 <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-400 rounded-full transition-all"
-                    style={{ width: `${pct(noAnswerCount)}` }} />
+                  <div className="h-full bg-orange-400 rounded-full transition-all" style={{ width: `${pct(noAnswerCount)}` }} />
                 </div>
-                <span className="text-xs font-semibold text-orange-400 w-8 text-right flex-shrink-0">
-                  {noAnswerCount}
-                </span>
+                <span className="text-xs font-semibold text-orange-400 w-8 text-right flex-shrink-0">{noAnswerCount}</span>
               </div>
+
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-400 w-20 flex-shrink-0">Deal</span>
                 <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-400 rounded-full transition-all"
-                    style={{ width: `${pct(dealTotalCount)}` }} />
+                  <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${pct(dealTotalCount)}` }} />
                 </div>
-                <span className="text-xs font-semibold text-green-400 w-8 text-right flex-shrink-0">
-                  {dealTotalCount}
-                </span>
+                <span className="text-xs font-semibold text-green-400 w-8 text-right flex-shrink-0">{dealTotalCount}</span>
               </div>
+
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-400 w-20 flex-shrink-0">No Deal</span>
                 <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-red-400 rounded-full transition-all"
-                    style={{ width: `${pct(noDealCount)}` }} />
+                  <div className="h-full bg-red-400 rounded-full transition-all" style={{ width: `${pct(noDealCount)}` }} />
                 </div>
-                <span className="text-xs font-semibold text-red-400 w-8 text-right flex-shrink-0">
-                  {noDealCount}
-                </span>
+                <span className="text-xs font-semibold text-red-400 w-8 text-right flex-shrink-0">{noDealCount}</span>
               </div>
+
             </div>
           </div>
         </div>
@@ -527,9 +522,7 @@ export default function CallsTab({
                         {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {rep.amount > 0
-                          ? formatCurrency(rep.amount)
-                          : <span className="italic">no deals yet</span>}
+                        {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -550,27 +543,26 @@ export default function CallsTab({
       <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-3 flex gap-3 items-center flex-wrap">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <input
-            type="text"
-            placeholder="Search App ID, Dealer, State…"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
+          <input type="text" placeholder="Search App ID, Dealer, State…"
+            value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
+
         <select value={filterState} onChange={e => setFilterState(e.target.value)}
           className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
           <option value="">All States</option>
           {uniqueStates.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+
         <select value={filterFuStatus} onChange={e => setFilterFuStatus(e.target.value)}
           className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
           <option value="">All Statuses</option>
           <option>Deal</option><option>Confirmed Deal</option><option>No Deal</option>
           <option>Pending</option><option>No Answer</option><option>Closed</option><option>Duplicates</option>
         </select>
+
         <div className="flex items-center border border-gray-600 rounded-lg overflow-hidden bg-gray-700">
-          <div className="px-2.5 py-2 border-r border-gray-600 bg-gray-700">
+          <div className="px-2 py-2 border-r border-gray-600">
             <Search className="w-3.5 h-3.5 text-gray-500" />
           </div>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -579,6 +571,7 @@ export default function CallsTab({
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
             className="px-2 py-2 bg-gray-700 text-xs text-gray-300 focus:outline-none w-[120px]" />
         </div>
+
         <button onClick={() => setShowCompleted(!showCompleted)}
           className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg text-sm text-gray-400 transition">
           {showCompleted ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
@@ -604,7 +597,7 @@ export default function CallsTab({
         })}
         {filterStatusLast.size > 0 && (
           <button onClick={() => setFilterStatusLast(new Set())}
-            className="ml-auto text-xs text-blue-400 hover:text-blue-300 transition">
+            className="ml-auto text-xs text-blue-400 hover:text-blue-300">
             Clear all
           </button>
         )}
@@ -612,12 +605,11 @@ export default function CallsTab({
 
       {/* TABLE */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+
         <div className="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
           <p className="text-sm font-semibold text-gray-200">
             {sortedCalls.length} calls
-            <span className="ml-2 font-normal text-gray-400">
-              · Page {currentPage} of {totalPages || 1}
-            </span>
+            <span className="ml-2 font-normal text-gray-400">· Page {currentPage} of {totalPages || 1}</span>
           </p>
           <div className="flex items-center gap-1">
             <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
@@ -634,47 +626,36 @@ export default function CallsTab({
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-700 bg-gray-750">
+              <tr className="bg-gray-750 border-b border-gray-700">
                 <th className="w-10 px-4 py-3"></th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('applicationId')}
-                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('applicationId')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     App ID <SortIcon field="applicationId" />
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('dealerName')}
-                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('dealerName')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Dealer <SortIcon field="dealerName" />
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('state')}
-                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('state')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     State <SortIcon field="state" />
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('buyerFinal')}
-                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('buyerFinal')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Amount <SortIcon field="buyerFinal" />
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => handleSort('submittedDate')}
-                    className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button onClick={() => handleSort('submittedDate')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Date <SortIcon field="submittedDate" />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Status Last
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  FU Status
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Notes
-                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
@@ -683,8 +664,8 @@ export default function CallsTab({
                 const isExpanded = expandedRows.has(call.id);
                 return (
                   <>
-                    <tr key={call.id}
-                      className="hover:bg-gray-750 cursor-pointer transition-colors"
+                     <tr key={call.id}
+                      className={`cursor-pointer transition-colors ${call.isDuplicate ? 'bg-yellow-900 bg-opacity-10 hover:bg-yellow-900 hover:bg-opacity-20' : 'hover:bg-gray-750'}`}
                       onClick={() => toggleRow(call.id)}>
                       <td className="px-4 py-3 text-center">
                         {isExpanded
@@ -692,17 +673,22 @@ export default function CallsTab({
                           : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />}
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className="text-sm text-blue-400 font-medium hover:underline cursor-pointer"
-                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(call.applicationId); }}
-                          title="Click to copy"
-                        >
-                          {call.applicationId}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="text-sm text-blue-400 font-medium hover:underline cursor-pointer"
+                            onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(call.applicationId); }}
+                            title="Click to copy"
+                          >
+                            {call.applicationId}
+                          </span>
+                          {call.isDuplicate && (
+                            <span className="px-1.5 py-0.5 bg-yellow-900 text-yellow-300 text-xs rounded border border-yellow-700 font-medium flex-shrink-0">
+                              DUPE
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-200 max-w-[180px] truncate">
-                        {call.dealerName}
-                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-200 max-w-[180px] truncate">{call.dealerName}</td>
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">
                           {call.state}
@@ -711,16 +697,13 @@ export default function CallsTab({
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {editingAmount === call.id ? (
                           <div className="flex items-center gap-1">
-                            <input type="text" value={tempAmount}
-                              onChange={e => setTempAmount(e.target.value)}
+                            <input type="text" value={tempAmount} onChange={e => setTempAmount(e.target.value)}
                               className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
                               autoFocus />
-                            <button onClick={() => handleSaveAmount(call.id)}
-                              className="text-green-400 hover:text-green-300">
+                            <button onClick={() => handleSaveAmount(call.id)} className="text-green-400 hover:text-green-300">
                               <Check className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setEditingAmount(null)}
-                              className="text-red-400 hover:text-red-300">
+                            <button onClick={() => setEditingAmount(null)} className="text-red-400 hover:text-red-300">
                               <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -729,8 +712,7 @@ export default function CallsTab({
                             <span className="text-sm font-medium text-gray-100">
                               ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                             </span>
-                            <button
-                              onClick={() => { setEditingAmount(call.id); setTempAmount(call.buyerFinal); }}
+                            <button onClick={() => { setEditingAmount(call.id); setTempAmount(call.buyerFinal); }}
                               className="text-gray-600 hover:text-gray-400 transition">
                               <Edit2 className="w-3 h-3" />
                             </button>
@@ -741,18 +723,15 @@ export default function CallsTab({
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {editingStatusLast === call.id ? (
                           <div className="flex items-center gap-1">
-                            <select value={tempStatusLast}
-                              onChange={e => setTempStatusLast(e.target.value)}
+                            <select value={tempStatusLast} onChange={e => setTempStatusLast(e.target.value)}
                               className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
                               autoFocus>
                               {allStatusLastOptions.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
-                            <button onClick={() => handleSaveStatusLast(call.id)}
-                              className="text-green-400 hover:text-green-300">
+                            <button onClick={() => handleSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300">
                               <Check className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setEditingStatusLast(null)}
-                              className="text-red-400 hover:text-red-300">
+                            <button onClick={() => setEditingStatusLast(null)} className="text-red-400 hover:text-red-300">
                               <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -761,8 +740,7 @@ export default function CallsTab({
                             <span className={`px-2.5 py-0.5 rounded-full text-xs border ${getStatusLastStyle(call.statusLast)}`}>
                               {call.statusLast}
                             </span>
-                            <button
-                              onClick={() => { setEditingStatusLast(call.id); setTempStatusLast(call.statusLast); }}
+                            <button onClick={() => { setEditingStatusLast(call.id); setTempStatusLast(call.statusLast); }}
                               className="text-gray-600 hover:text-gray-400 transition">
                               <Edit2 className="w-3 h-3" />
                             </button>
@@ -844,9 +822,7 @@ export default function CallsTab({
               className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
               <ChevronLeft className="w-4 h-4 text-gray-400" />
             </button>
-            <span className="text-xs text-gray-400 px-2">
-              Page {currentPage} of {totalPages || 1}
-            </span>
+            <span className="text-xs text-gray-400 px-2">Page {currentPage} of {totalPages || 1}</span>
             <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
               className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
               <ChevronRightIcon className="w-4 h-4 text-gray-400" />

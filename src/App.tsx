@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, Upload, Users, FileText, UserCog, LogOut, TrendingUp } from 'lucide-react';
+import { BarChart3, Upload, Users, FileText, UserCog, LogOut, TrendingUp, StickyNote } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import LoginPage from './pages/LoginPage';
 import CallsTab from './pages/CallsTab';
@@ -35,6 +35,7 @@ interface Call {
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
   dealDate?: Date;
+  isDuplicate?: boolean;
 }
 
 interface CallNote {
@@ -100,6 +101,7 @@ function App() {
   const [fundingData, setFundingData] = useState<FundingData>({});
   const [todayDailyDeals, setTodayDailyDeals] = useState<DailyDealSummary[]>([]);
 
+  // ── AUTH ─────────────────────────────────────────────────────────
   useEffect(() => {
     checkAuth();
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
@@ -118,16 +120,29 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    if (hashParams.get('type') === 'recovery') {
+      setShowPasswordReset(true);
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Reset to calls tab if current tab isn't allowed for this role
+  useEffect(() => {
     if (!currentUser) return;
     const allowed = getVisibleTabs(currentUser.role).map(t => t.id);
     if (!allowed.includes(activeTab)) setActiveTab('calls');
   }, [currentUser?.role]);
 
+  // Load all data on login
   useEffect(() => {
     if (isAuthenticated) {
       fetchUsers();
       fetchTodayDailyDeals();
       fetchCallNotes();
+      fetchCalls();
+      fetchFundingData();
+      fetchTeamGoals();
     }
   }, [isAuthenticated]);
 
@@ -143,16 +158,7 @@ function App() {
     return () => { supabase.removeChannel(channel); };
   }, [isAuthenticated]);
 
-  // Reset to calls tab if current tab not allowed
-  useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const type = hashParams.get('type');
-    if (type === 'recovery') {
-      setShowPasswordReset(true);
-      setIsLoading(false);
-    }
-  }, []);
-
+  // ── AUTH HELPERS ──────────────────────────────────────────────────
   const checkAuth = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -176,8 +182,11 @@ function App() {
       if (error) throw error;
       if (profile) {
         setCurrentUser({
-          id: profile.id, name: profile.name, email: profile.email,
-          role: profile.role as 'admin' | 'manager' | 'rep' | 'buying_assistant', active: profile.active,
+          id: profile.id,
+          name: profile.name,
+          email: profile.email,
+          role: profile.role as 'admin' | 'manager' | 'rep' | 'buying_assistant',
+          active: profile.active,
           allowedStatuses: profile.allowed_statuses || [],
           state: profile.state || undefined,
         });
@@ -191,6 +200,7 @@ function App() {
     }
   };
 
+  // ── DATA FETCHERS ─────────────────────────────────────────────────
   const fetchUsers = async () => {
     try {
       const { data, error } = await supabase
@@ -198,8 +208,11 @@ function App() {
       if (error) throw error;
       if (data) {
         setUsers(data.map((user: any) => ({
-          id: user.id, name: user.name, email: user.email,
-          role: user.role as 'admin' | 'manager' | 'rep' | 'buying_assistant', active: user.active,
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role as 'admin' | 'manager' | 'rep' | 'buying_assistant',
+          active: user.active,
           allowedStatuses: user.allowed_statuses || [],
           state: user.state || undefined,
         })));
@@ -213,7 +226,7 @@ function App() {
     try {
       const now = new Date();
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-   const { data } = await supabase
+      const { data } = await supabase
         .from('daily_deals')
         .select('id, added_by, fu_status, deal_date, amount')
         .eq('deal_date', today);
@@ -230,6 +243,7 @@ function App() {
       console.error('Error fetching daily deals summary:', err);
     }
   };
+
   const fetchCallNotes = async () => {
     try {
       const { data } = await supabase
@@ -249,11 +263,84 @@ function App() {
       console.error('Error fetching call notes:', err);
     }
   };
+
+  const fetchCalls = async () => {
+    try {
+      const { data } = await supabase
+        .from('calls')
+        .select('*')
+        .order('timestamp_submit', { ascending: false });
+      if (data && data.length > 0) {
+        setCalls(data.map((c: any) => ({
+          id: c.id,
+          applicationId: c.application_id,
+          dealerCifNumber: c.dealer_cif_number || '',
+          dealerName: c.dealer_name || '',
+          state: c.state || '',
+          buyerFinal: c.buyer_final || '0',
+          statusLast: c.status_last || '',
+          timestampSubmit: new Date(c.timestamp_submit),
+          submittedDate: c.submitted_date || '',
+          assignedTo: c.assigned_to || undefined,
+          assignedToName: c.assigned_to_name || undefined,
+          fuStatus: c.fu_status || undefined,
+          fiType: c.fi_type || undefined,
+          updatedAt: new Date(c.updated_at),
+          dealDate: c.deal_date ? new Date(c.deal_date) : undefined,
+          isDuplicate: c.is_duplicate || false,
+        })));
+      }
+    } catch (err) {
+      console.error('Error fetching calls:', err);
+    }
+  };
+
+  const fetchFundingData = async () => {
+    try {
+      const { data } = await supabase.from('funding_data').select('*');
+      if (data && data.length > 0) {
+        const fd: FundingData = {};
+        data.forEach((row: any) => {
+          fd[row.state] = { count: row.count, totalAmount: row.total_amount };
+        });
+        setFundingData(fd);
+      }
+    } catch (err) {
+      console.error('Error fetching funding data:', err);
+    }
+  };
+
+  const fetchTeamGoals = async () => {
+    try {
+      const { data } = await supabase
+        .from('team_goals')
+        .select('*')
+        .eq('id', 1)
+        .single();
+      if (data) {
+        setGoals(prev => ({
+          ...prev,
+          team: data.team_daily || 30,
+          weekly: data.team_weekly || 50,
+          monthly: data.team_monthly || 200,
+          daily: data.rep_daily_goals || {},
+        }));
+      }
+    } catch {
+      // Use defaults if no row saved yet
+    }
+  };
+
+  // ── HANDLERS ──────────────────────────────────────────────────────
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
       setIsAuthenticated(false);
       setCurrentUser(null);
+      setCalls([]);
+      setNotes([]);
+      setFundingData({});
+      setTodayDailyDeals([]);
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -261,6 +348,7 @@ function App() {
 
   const handleLoginSuccess = () => { checkAuth(); };
 
+  // ── TAB VISIBILITY ────────────────────────────────────────────────
   const getVisibleTabs = (role: string) => {
     const allTabs = [
       { id: 'calls', label: 'Calls', icon: FileText },
@@ -270,14 +358,16 @@ function App() {
       { id: 'users', label: 'Users', icon: UserCog },
       { id: 'analytics', label: 'Analytics', icon: TrendingUp },
       { id: 'daily-deals', label: 'Daily Deals', icon: TrendingUp },
-      { id: 'notes', label: 'Notes', icon: FileText },
+      { id: 'notes', label: 'Notes', icon: StickyNote },
     ];
     if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
     if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
     if (role === 'buying_assistant') return allTabs.filter(t => ['calls', 'daily-deals', 'notes'].includes(t.id));
+    // rep
     return allTabs.filter(t => ['calls', 'analytics', 'daily-deals', 'notes'].includes(t.id));
   };
 
+  // ── LOADING / AUTH GATES ──────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -299,6 +389,7 @@ function App() {
 
   const tabs = getVisibleTabs(currentUser.role);
 
+  // ── RENDER ────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-900">
       <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
@@ -320,7 +411,7 @@ function App() {
 
       <nav className="bg-gray-800 border-b border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-4 overflow-x-auto">
+          <div className="flex space-x-1 overflow-x-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -343,7 +434,8 @@ function App() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {activeTab === 'calls' && (
+
+        {activeTab === 'calls' && (
           <CallsTab
             currentUserId={currentUser.id}
             currentUserRole={currentUser.role}
@@ -358,6 +450,7 @@ function App() {
             users={users}
           />
         )}
+
         {activeTab === 'upload' && (
           <UploadTab
             calls={calls}
@@ -368,6 +461,7 @@ function App() {
             setFundingData={setFundingData}
           />
         )}
+
         {activeTab === 'assign' && (
           <AssignTab
             currentUserRole={currentUser.role}
@@ -378,6 +472,7 @@ function App() {
             setGoals={setGoals}
           />
         )}
+
         {activeTab === 'reporting' && (
           <ReportingTab
             currentUserId={currentUser.id}
@@ -389,13 +484,15 @@ function App() {
             todayDailyDeals={todayDailyDeals}
           />
         )}
+
         {activeTab === 'users' && (
           <UserManagementTab
             currentUserId={currentUser.id}
             currentUserRole={currentUser.role}
           />
         )}
-        {activeTab === 'analytics' && currentUser && (
+
+        {activeTab === 'analytics' && (
           <AnalyticsTab
             currentUser={currentUser}
             calls={calls}
@@ -403,19 +500,22 @@ function App() {
             todayDailyDeals={todayDailyDeals}
           />
         )}
-        {activeTab === 'daily-deals' && currentUser && (
+
+        {activeTab === 'daily-deals' && (
           <DailyDealsTab
             currentUser={currentUser}
             goals={goals}
             onRefresh={fetchTodayDailyDeals}
           />
         )}
-        {activeTab === 'notes' && currentUser && (
+
+        {activeTab === 'notes' && (
           <NotesTab
             currentUser={currentUser}
             users={users}
           />
         )}
+
       </main>
     </div>
   );

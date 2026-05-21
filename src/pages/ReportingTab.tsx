@@ -173,9 +173,19 @@ export default function ReportingTab({
     finally { setLoading(false); }
   };
 
-  const handleSaveTeamGoals = () => {
-    setGoals({ ...goals, team: parseInt(teamGoalInput.daily) || 0, weekly: parseInt(teamGoalInput.weekly) || 0, monthly: parseInt(teamGoalInput.monthly) || 0 });
+  const handleSaveTeamGoals = async () => {
+    const newTeam = parseInt(teamGoalInput.daily) || 0;
+    const newWeekly = parseInt(teamGoalInput.weekly) || 0;
+    const newMonthly = parseInt(teamGoalInput.monthly) || 0;
+    setGoals({ ...goals, team: newTeam, weekly: newWeekly, monthly: newMonthly });
     setShowTeamGoals(false);
+    await supabase.from('team_goals').upsert({
+      id: 1,
+      team_daily: newTeam,
+      team_weekly: newWeekly,
+      team_monthly: newMonthly,
+      updated_at: new Date().toISOString(),
+    });
   };
 
   // Date range for period
