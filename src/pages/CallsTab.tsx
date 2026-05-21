@@ -46,6 +46,7 @@ interface DailyDealSummary {
   fuStatus: string;
   dealDate: string;
   amount: string;
+  state: string;
 }
 
 interface CallsTabProps {
@@ -90,7 +91,7 @@ export default function CallsTab({
   const [sortOrder, setSortOrder] = useState<SortOrder>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [stateGoalDaily, setStateGoalDaily] = useState(0);
+  const [stateGoals, setStateGoals] = useState<{ [state: string]: number }>({});
   const [editingStatusLast, setEditingStatusLast] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState<string | null>(null);
   const [tempStatusLast, setTempStatusLast] = useState('');
@@ -107,14 +108,22 @@ export default function CallsTab({
     if (currentUserRole === 'rep' && currentUser?.state) fetchRepStateGoal(currentUser.state);
   }, [currentUser?.state, currentUserRole]);
 
-  const fetchRepStateGoal = async (state: string) => {
+  const fetchRepStateGoal = async (stateStr: string) => {
+    const stateList = stateStr.split(',').map(s => s.trim()).filter(Boolean);
+    if (!stateList.length) return;
     const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
     try {
       const { data } = await supabase.from('state_goals').select('*')
-        .eq('state', state).eq('month', currentMonth).eq('year', currentYear).single();
-      if (data) setStateGoalDaily(Math.round(data.monthly_goal / data.funding_days));
-    } catch { setStateGoalDaily(0); }
+        .in('state', stateList).eq('month', currentMonth).eq('year', currentYear);
+      if (data) {
+        const goals: { [state: string]: number } = {};
+        data.forEach((d: any) => {
+          goals[d.state] = Math.round(d.monthly_goal / d.funding_days);
+        });
+        setStateGoals(goals);
+      }
+    } catch { setStateGoals({}); }
   };
 
   const isToday = (date: Date) => {
@@ -225,11 +234,24 @@ export default function CallsTab({
   const goalPct = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
   const teamGoalPct = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
 
-  const stateDealsToday = currentUser?.state ? calls.filter(c =>
-    c.state === currentUser.state &&
+  const repStates = currentUser?.state
+  ? currentUser.state.split(',').map(s => s.trim()).filter(Boolean)
+  : [];
+
+const getStateDealsToday = (state: string) => {
+  const csvDeals = calls.filter(c =>
+    c.state === state &&
+    c.assignedTo === currentUserId &&
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
     c.dealDate && isToday(new Date(c.dealDate))
-  ).length : 0;
+  ).length;
+  const dailyDeals = (todayDailyDeals || []).filter(d =>
+    d.addedBy === currentUserId &&
+    d.state === state &&
+    (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
+  ).length;
+  return csvDeals + dailyDeals;
+};
 
   const completedCount = calls.filter(c => {
     if ((currentUserRole === 'rep' || currentUserRole === 'buying_assistant') && c.assignedTo !== currentUserId) return false;
@@ -415,29 +437,37 @@ export default function CallsTab({
             {/* State Goal (rep) or No Answer (admin/manager) */}
             {currentUserRole === 'rep' ? (
               <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-                <p className="text-xs text-gray-400 uppercase tracking-wider">
-                  State Goal {currentUser?.state ? `(${currentUser.state})` : ''}
-                </p>
-                {stateGoalDaily > 0 ? (
-                  <>
-                    <p className="text-2xl font-bold text-teal-400">
-                      {stateDealsToday}
-                      <span className="text-sm font-normal text-gray-500 ml-1">/ {stateGoalDaily}</span>
-                    </p>
-                    <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-teal-500 rounded-full transition-all"
-                        style={{ width: `${Math.min((stateDealsToday / stateGoalDaily) * 100, 100)}%` }} />
-                    </div>
-                    <p className="text-xs text-gray-600">
-                      {Math.min((stateDealsToday / stateGoalDaily) * 100, 100).toFixed(0)}% complete
-                    </p>
-                  </>
+                <p className="text-xs text-gray-400 uppercase tracking-wider">State Goal</p>
+                {repStates.length === 0 ? (
+                  <p className="text-xs text-gray-600 italic">No state assigned</p>
                 ) : (
-                  <>
-                    <p className="text-2xl font-bold text-teal-400">{stateDealsToday}</p>
-                    <div className="h-1 bg-gray-700 rounded-full" />
-                    <p className="text-xs text-gray-600">no goal set</p>
-                  </>
+                  <div className="flex flex-col gap-2">
+                    {repStates.map(state => {
+                      const goal = stateGoals[state] || 0;
+                      const deals = getStateDealsToday(state);
+                      const pctVal = goal > 0 ? Math.min((deals / goal) * 100, 100) : 0;
+                      return (
+                        <div key={state}>
+                          <div className="flex items-baseline justify-between mb-1">
+                            <span className="text-xs text-gray-400 font-medium">{state}</span>
+                            <span className="text-sm font-bold text-teal-400">
+                              {deals}
+                              <span className="text-xs font-normal text-gray-500 ml-1">
+                                / {goal > 0 ? goal : '—'}
+                              </span>
+                            </span>
+                          </div>
+                          <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
+                            <div className="h-full bg-teal-500 rounded-full transition-all"
+                              style={{ width: `${pctVal}%` }} />
+                          </div>
+                          {goal > 0 && (
+                            <p className="text-xs text-gray-600 mt-0.5">{pctVal.toFixed(0)}% complete</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             ) : (
