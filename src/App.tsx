@@ -104,6 +104,30 @@ function App() {
 
   // ── AUTH ─────────────────────────────────────────────────────────
   useEffect(() => {
+    // Check for password recovery in URL BEFORE running checkAuth
+    const hash = window.location.hash;
+    const hashParams = new URLSearchParams(hash.substring(1));
+    const urlParams = new URLSearchParams(window.location.search);
+    const isRecovery =
+      hashParams.get('type') === 'recovery' ||
+      urlParams.get('type') === 'recovery';
+
+    if (isRecovery) {
+      setShowPasswordReset(true);
+      setIsLoading(false);
+      // Still set up the auth listener so updateUser works
+      const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          setShowPasswordReset(true);
+          setIsLoading(false);
+        } else if (event === 'USER_UPDATED' && session?.user) {
+          setShowPasswordReset(false);
+          loadUserProfile(session.user.id);
+        }
+      });
+      return () => { authListener.subscription.unsubscribe(); };
+    }
+
     checkAuth();
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
@@ -118,14 +142,6 @@ function App() {
       }
     });
     return () => { authListener.subscription.unsubscribe(); };
-  }, []);
-
-  useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    if (hashParams.get('type') === 'recovery') {
-      setShowPasswordReset(true);
-      setIsLoading(false);
-    }
   }, []);
 
   // Reset to calls tab if current tab isn't allowed for this role
