@@ -80,21 +80,21 @@ export interface DailyDealSummary {
   state: string;
 }
 
+// Check for password recovery URL synchronously — before React mounts
+const isRecoveryUrl = (() => {
+  const hashParams = new URLSearchParams(window.location.hash.substring(1));
+  const urlParams = new URLSearchParams(window.location.search);
+  return (
+    hashParams.get('type') === 'recovery' ||
+    urlParams.get('type') === 'recovery'
+  );
+})();
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  // Check URL synchronously on first render — before any effects run
-  const isRecoveryUrl = (() => {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const urlParams = new URLSearchParams(window.location.search);
-    return (
-      hashParams.get('type') === 'recovery' ||
-      urlParams.get('type') === 'recovery'
-    );
-  })();
-
   const [isLoading, setIsLoading] = useState(!isRecoveryUrl);
   const [showPasswordReset, setShowPasswordReset] = useState(isRecoveryUrl);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const [activeTab, setActiveTab] = useState('calls');
   const [calls, setCalls] = useState<Call[]>([]);
@@ -114,7 +114,7 @@ function App() {
 
   // ── AUTH ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isRecoveryUrl) return; // Already handled synchronously above
+    if (isRecoveryUrl) return; // Already showing reset page, skip auth check
     checkAuth();
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
@@ -130,6 +130,7 @@ function App() {
     });
     return () => { authListener.subscription.unsubscribe(); };
   }, []);
+
   // Reset to calls tab if current tab isn't allowed for this role
   useEffect(() => {
     if (!currentUser) return;
@@ -149,7 +150,7 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  // Real-time subscription for daily deals — keeps all tabs in sync
+  // Real-time subscription for daily deals
   useEffect(() => {
     if (!isAuthenticated) return;
     const channel = supabase
@@ -317,10 +318,7 @@ function App() {
   const fetchTeamGoals = async () => {
     try {
       const { data } = await supabase
-        .from('team_goals')
-        .select('*')
-        .eq('id', 1)
-        .single();
+        .from('team_goals').select('*').eq('id', 1).single();
       if (data) {
         setGoals(prev => ({
           ...prev,
@@ -367,7 +365,6 @@ function App() {
     if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
     if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
     if (role === 'buying_assistant') return allTabs.filter(t => ['calls', 'daily-deals', 'notes'].includes(t.id));
-    // rep
     return allTabs.filter(t => ['calls', 'analytics', 'daily-deals', 'notes'].includes(t.id));
   };
 
