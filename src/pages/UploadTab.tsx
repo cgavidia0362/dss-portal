@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Upload, CheckCircle, AlertCircle, FileSpreadsheet, DollarSign } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 declare const XLSX: any;
 
@@ -44,10 +45,17 @@ interface UploadTabProps {
   setFundingData: React.Dispatch<React.SetStateAction<FundingData>>;
 }
 
+interface MatchedDeal {
+  appId: string;
+  repName: string;
+  dealDate: Date;
+}
+
 export default function UploadTab({ setCalls, dealers, setDealers, fundingData, setFundingData }: UploadTabProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadingFunding, setUploadingFunding] = useState(false);
   const [xlsxLoaded, setXlsxLoaded] = useState(false);
+  const [matchedDeals, setMatchedDeals] = useState<MatchedDeal[]>([]);
 
   const [uploadResult, setUploadResult] = useState<{
     success: boolean;
@@ -75,25 +83,60 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
     return () => { document.body.removeChild(script); };
   }, []);
 
-  // Helper: parse a raw value from XLSX into a JS Date
   const parseXlsxDate = (rawValue: any): Date | null => {
     if (!rawValue && rawValue !== 0) return null;
-
-    // Already a Date object (cellDates: true worked)
-    if (rawValue instanceof Date) {
-      return isNaN(rawValue.getTime()) ? null : rawValue;
-    }
-
-    // Excel serial number (e.g. 46122)
+    if (rawValue instanceof Date) return isNaN(rawValue.getTime()) ? null : rawValue;
     if (typeof rawValue === 'number') {
       const excelEpoch = new Date(Date.UTC(1899, 11, 30));
       const result = new Date(excelEpoch.getTime() + rawValue * 86400000);
       return isNaN(result.getTime()) ? null : result;
     }
-
-    // String date
     const parsed = new Date(String(rawValue));
     return isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  // Match parsed calls against Daily Deals in Supabase
+  const applyDailyDealsMatches = async (parsedCalls: Call[]): Promise<{ calls: Call[]; matches: MatchedDeal[] }> => {
+    const appIds = parsedCalls.map(c => c.applicationId).filter(Boolean);
+    if (!appIds.length) return { calls: parsedCalls, matches: [] };
+
+    try {
+      const { data } = await supabase
+        .from('daily_deals')
+        .select('*')
+        .in('app_id', appIds)
+        .in('fu_status', ['Deal', 'Confirmed Deal']);
+
+      if (!data || data.length === 0) return { calls: parsedCalls, matches: [] };
+
+      const dealMap: { [appId: string]: any } = {};
+      data.forEach((d: any) => { dealMap[d.app_id] = d; });
+
+      const processedCalls = parsedCalls.map(call => {
+        const match = dealMap[call.applicationId];
+        if (match) {
+          return {
+            ...call,
+            assignedTo: match.added_by,
+            assignedToName: match.added_by_name,
+            fuStatus: 'Deal' as const,
+            dealDate: new Date(match.created_at),
+          };
+        }
+        return call;
+      });
+
+      const matches: MatchedDeal[] = data.map((d: any) => ({
+        appId: d.app_id,
+        repName: d.added_by_name,
+        dealDate: new Date(d.created_at),
+      }));
+
+      return { calls: processedCalls, matches };
+    } catch (err) {
+      console.error('Error matching daily deals:', err);
+      return { calls: parsedCalls, matches: [] };
+    }
   };
 
   // ── CALLS UPLOAD ──────────────────────────────────────────────
@@ -107,10 +150,10 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
 
     setUploading(true);
     setUploadResult(null);
+    setMatchedDeals([]);
 
     try {
       const data = await file.arrayBuffer();
-      // cellDates: true must be on XLSX.read(), not sheet_to_json()
       const workbook = XLSX.read(data, { type: 'array', cellDates: true });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
@@ -137,7 +180,6 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
           }
         }
 
-        // Parse timestamp using the robust helper
         const parsedDate = parseXlsxDate(row['Timestamp Submit']);
         const timestampSubmit = parsedDate ?? new Date();
 
@@ -147,7 +189,7 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
 
         if (statusLast === 'Accepted') {
           initialFuStatus = 'Deal';
-          initialDealDate = timestampSubmit; // Use CSV date, not today
+          initialDealDate = timestampSubmit;
         }
 
         newCalls.push({
@@ -169,14 +211,19 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
         });
       });
 
+      // Apply Daily Deals matching
+      const { calls: processedCalls, matches } = await applyDailyDealsMatches(newCalls);
+
       const newDealersList = Array.from(discoveredDealers.values());
       if (newDealersList.length > 0) setDealers(prev => [...prev, ...newDealersList]);
-      setCalls(prev => [...prev, ...newCalls]);
+      setCalls(prev => [...prev, ...processedCalls]);
+
+      if (matches.length > 0) setMatchedDeals(matches);
 
       setUploadResult({
         success: true,
-        message: `Successfully processed ${newCalls.length} calls`,
-        callsCount: newCalls.length,
+        message: `Successfully processed ${processedCalls.length} calls`,
+        callsCount: processedCalls.length,
         newDealersCount: newDealersList.length,
         newDealersList,
       });
@@ -271,8 +318,18 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
               Upload your call data CSV. New dealers will be automatically added to the master dealer list.
             </p>
             <label className="cursor-pointer">
-              <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileUpload} disabled={uploading || !xlsxLoaded} className="hidden" />
-              <div className={`px-6 py-3 rounded-lg font-medium transition ${uploading || !xlsxLoaded ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileUpload}
+                disabled={uploading || !xlsxLoaded}
+                className="hidden"
+              />
+              <div className={`px-6 py-3 rounded-lg font-medium transition ${
+                uploading || !xlsxLoaded
+                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}>
                 {uploading ? 'Processing...' : !xlsxLoaded ? 'Loading...' : 'Select Calls CSV'}
               </div>
             </label>
@@ -280,8 +337,11 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
           </div>
         </div>
 
+        {/* Upload result */}
         {uploadResult && (
-          <div className={`p-6 rounded-lg shadow border ${uploadResult.success ? 'bg-green-900 border-green-700' : 'bg-red-900 border-red-700'}`}>
+          <div className={`p-6 rounded-lg shadow border ${
+            uploadResult.success ? 'bg-green-900 border-green-700' : 'bg-red-900 border-red-700'
+          }`}>
             <div className="flex items-start gap-4">
               {uploadResult.success
                 ? <CheckCircle className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
@@ -290,7 +350,9 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
                 <h4 className={`font-semibold mb-2 ${uploadResult.success ? 'text-green-100' : 'text-red-100'}`}>
                   {uploadResult.success ? 'Upload Successful!' : 'Upload Failed'}
                 </h4>
-                <p className={`text-sm ${uploadResult.success ? 'text-green-200' : 'text-red-200'}`}>{uploadResult.message}</p>
+                <p className={`text-sm ${uploadResult.success ? 'text-green-200' : 'text-red-200'}`}>
+                  {uploadResult.message}
+                </p>
                 {uploadResult.success && uploadResult.callsCount && (
                   <div className="mt-3 space-y-1">
                     <p className="text-sm text-green-200 flex items-center gap-2">
@@ -304,6 +366,33 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Daily Deals match notification */}
+        {matchedDeals.length > 0 && (
+          <div className="bg-green-900 border border-green-700 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg">🎯</span>
+              <p className="text-sm font-semibold text-green-300">
+                {matchedDeals.length} app{matchedDeals.length !== 1 ? 's' : ''} auto-matched from Daily Deals
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              {matchedDeals.map((m, i) => (
+                <div key={i} className="flex items-center gap-3 text-xs">
+                  <span className="font-semibold text-green-300">{m.appId}</span>
+                  <span className="text-green-500">→</span>
+                  <span className="text-green-200">{m.repName}</span>
+                  <span className="text-green-600">·</span>
+                  <span className="text-green-500">
+                    Deal logged {m.dealDate.toLocaleDateString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric',
+                    })}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -336,11 +425,22 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
             <DollarSign className="w-14 h-14 text-green-400 mb-4" />
             <h4 className="text-lg font-semibold text-gray-100 mb-2">Upload Funding CSV</h4>
             <p className="text-sm text-gray-400 mb-6 text-center max-w-md">
-              Upload your funding report. The system will count funded deals and total amounts per state and update the Reporting tab automatically.
+              Upload your funding report. The system will count funded deals and total amounts per state
+              and update the Reporting tab automatically.
             </p>
             <label className="cursor-pointer">
-              <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFundingFileUpload} disabled={uploadingFunding || !xlsxLoaded} className="hidden" />
-              <div className={`px-6 py-3 rounded-lg font-medium transition ${uploadingFunding || !xlsxLoaded ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}>
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFundingFileUpload}
+                disabled={uploadingFunding || !xlsxLoaded}
+                className="hidden"
+              />
+              <div className={`px-6 py-3 rounded-lg font-medium transition ${
+                uploadingFunding || !xlsxLoaded
+                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}>
                 {uploadingFunding ? 'Processing...' : !xlsxLoaded ? 'Loading...' : 'Select Funding CSV'}
               </div>
             </label>
@@ -349,7 +449,9 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
         </div>
 
         {fundingUploadResult && (
-          <div className={`p-6 rounded-lg shadow border ${fundingUploadResult.success ? 'bg-green-900 border-green-700' : 'bg-red-900 border-red-700'}`}>
+          <div className={`p-6 rounded-lg shadow border ${
+            fundingUploadResult.success ? 'bg-green-900 border-green-700' : 'bg-red-900 border-red-700'
+          }`}>
             <div className="flex items-start gap-4">
               {fundingUploadResult.success
                 ? <CheckCircle className="w-6 h-6 text-green-400 flex-shrink-0 mt-1" />
@@ -397,7 +499,8 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
             <DollarSign className="w-4 h-4" /> Expected Columns
           </h4>
           <p className="text-sm text-green-200">
-            Input Date, Account, Dealer, Deal Type, Fund Type, <strong>Dealer State</strong>, APR, Discount Percent, <strong>Loan Amount</strong>
+            Input Date, Account, Dealer, Deal Type, Fund Type, <strong>Dealer State</strong>, APR,
+            Discount Percent, <strong>Loan Amount</strong>
           </p>
         </div>
       </div>
@@ -405,11 +508,14 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
       {/* Dealer list */}
       {dealers.length > 0 && (
         <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4">Master Dealer List ({dealers.length} dealers)</h3>
+          <h3 className="text-lg font-semibold text-gray-100 mb-4">
+            Master Dealer List ({dealers.length} dealers)
+          </h3>
           <div className="bg-gray-750 p-4 rounded border border-gray-600 max-h-60 overflow-y-auto">
             <div className="space-y-2">
               {dealers.map(dealer => (
-                <div key={dealer.cifNumber} className="flex items-center justify-between text-sm py-2 border-b border-gray-700 last:border-0">
+                <div key={dealer.cifNumber}
+                  className="flex items-center justify-between text-sm py-2 border-b border-gray-700 last:border-0">
                   <div>
                     <span className="font-mono text-blue-400 font-medium">{dealer.cifNumber}</span>
                     <span className="text-gray-300 ml-3">{dealer.name}</span>
