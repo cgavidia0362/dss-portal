@@ -18,6 +18,7 @@ interface Call {
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
   dealDate?: Date;
+  isDuplicate?: boolean;
 }
 
 interface CallNote {
