@@ -228,7 +228,7 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
         }
 
         newCalls.push({
-          id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          id: String(row['Application Id'] || ''),
           applicationId: String(row['Application Id'] || ''),
           dealerCifNumber: cifNumber,
           dealerName,
@@ -272,10 +272,18 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
         }));
 
         const { error: upsertError } = await supabase
-          .from('calls')
-          .upsert(callsToUpsert, { onConflict: 'application_id' });
+        .from('calls')
+        .upsert(callsToUpsert, { onConflict: 'id' });
 
-        if (upsertError) console.error('Error saving calls to Supabase:', upsertError);
+      if (upsertError) {
+        console.error('Error saving calls to Supabase:', upsertError);
+        setUploadResult({
+          success: false,
+          message: `Calls processed but failed to save: ${upsertError.message}`,
+        });
+        setUploading(false);
+        return;
+      }
       }
 
       // Delete calls older than 30 days (based on timestamp_submit)
