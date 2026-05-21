@@ -82,9 +82,19 @@ export interface DailyDealSummary {
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showPasswordReset, setShowPasswordReset] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // Check URL synchronously on first render — before any effects run
+  const isRecoveryUrl = (() => {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const urlParams = new URLSearchParams(window.location.search);
+    return (
+      hashParams.get('type') === 'recovery' ||
+      urlParams.get('type') === 'recovery'
+    );
+  })();
+
+  const [isLoading, setIsLoading] = useState(!isRecoveryUrl);
+  const [showPasswordReset, setShowPasswordReset] = useState(isRecoveryUrl);
 
   const [activeTab, setActiveTab] = useState('calls');
   const [calls, setCalls] = useState<Call[]>([]);
@@ -104,30 +114,7 @@ function App() {
 
   // ── AUTH ─────────────────────────────────────────────────────────
   useEffect(() => {
-    // Check for password recovery in URL BEFORE running checkAuth
-    const hash = window.location.hash;
-    const hashParams = new URLSearchParams(hash.substring(1));
-    const urlParams = new URLSearchParams(window.location.search);
-    const isRecovery =
-      hashParams.get('type') === 'recovery' ||
-      urlParams.get('type') === 'recovery';
-
-    if (isRecovery) {
-      setShowPasswordReset(true);
-      setIsLoading(false);
-      // Still set up the auth listener so updateUser works
-      const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'PASSWORD_RECOVERY') {
-          setShowPasswordReset(true);
-          setIsLoading(false);
-        } else if (event === 'USER_UPDATED' && session?.user) {
-          setShowPasswordReset(false);
-          loadUserProfile(session.user.id);
-        }
-      });
-      return () => { authListener.subscription.unsubscribe(); };
-    }
-
+    if (isRecoveryUrl) return; // Already handled synchronously above
     checkAuth();
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
@@ -143,7 +130,6 @@ function App() {
     });
     return () => { authListener.subscription.unsubscribe(); };
   }, []);
-
   // Reset to calls tab if current tab isn't allowed for this role
   useEffect(() => {
     if (!currentUser) return;
