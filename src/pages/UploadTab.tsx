@@ -228,7 +228,7 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
         }
 
         newCalls.push({
-          id: String(row['Application Id'] || ''),
+          id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           applicationId: String(row['Application Id'] || ''),
           dealerCifNumber: cifNumber,
           dealerName,
@@ -256,7 +256,6 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
       // Save calls to Supabase (upsert by application_id)
       if (processedCalls.length > 0) {
         const callsToUpsert = processedCalls.map(c => ({
-          id: c.id,
           application_id: c.applicationId,
           dealer_cif_number: c.dealerCifNumber,
           dealer_name: c.dealerName,
@@ -273,7 +272,7 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
 
         const { error: upsertError } = await supabase
         .from('calls')
-        .upsert(callsToUpsert, { onConflict: 'id' });
+        .upsert(callsToUpsert, { onConflict: 'application_id' });
 
       if (upsertError) {
         console.error('Error saving calls to Supabase:', upsertError);
