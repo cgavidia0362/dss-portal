@@ -319,6 +319,16 @@ export default function DailyDealsTab({
     if (!c.dealDate) return false;
     return isToday(new Date(c.dealDate));
   });
+
+   // Temp debug — remove after confirming
+   console.log('callDealsToday:', callDealsToday.map(c => ({
+    appId: c.applicationId,
+    assignedTo: c.assignedTo,
+    assignedToName: c.assignedToName,
+    fuStatus: c.fuStatus,
+    dealDate: c.dealDate,
+  })));
+  
   const callDealCount = callDealsToday.length;
   const callDealAmount = callDealsToday.reduce((s, c) => s + parseAmount(c.buyerFinal || '0'), 0);
 
