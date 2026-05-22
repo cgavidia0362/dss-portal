@@ -328,7 +328,7 @@ export default function DailyDealsTab({
     fuStatus: c.fuStatus,
     dealDate: c.dealDate,
   })));
-  
+
   const callDealCount = callDealsToday.length;
   const callDealAmount = callDealsToday.reduce((s, c) => s + parseAmount(c.buyerFinal || '0'), 0);
 
@@ -372,14 +372,15 @@ export default function DailyDealsTab({
     });
 
     // Add Calls tab deals
-    callDealsToday.forEach(c => {
-      if (!c.assignedTo) return;
-      const name = c.assignedToName || nameMap[c.assignedTo] || 'Unknown';
-      if (!repMap[c.assignedTo]) {
-        repMap[c.assignedTo] = { name, dealCount: 0, amount: 0, role: roleMap[c.assignedTo] || 'rep' };
+  callDealsToday.forEach(c => {
+      const repId = c.assignedTo || 'unassigned';
+      const name = c.assignedToName || (c.assignedTo ? nameMap[c.assignedTo] : null) || 'Unassigned';
+      const role = c.assignedTo ? (roleMap[c.assignedTo] || 'rep') : 'rep';
+      if (!repMap[repId]) {
+        repMap[repId] = { name, dealCount: 0, amount: 0, role };
       }
-      repMap[c.assignedTo].dealCount++;
-      repMap[c.assignedTo].amount += parseAmount(c.buyerFinal || '0');
+      repMap[repId].dealCount++;
+      repMap[repId].amount += parseAmount(c.buyerFinal || '0');
     });
 
     return Object.entries(repMap)
