@@ -19,6 +19,8 @@ interface Call {
   updatedAt: Date;
   dealDate?: Date;
   isDuplicate?: boolean;
+  dealBy?: string;
+  dealByName?: string;
 }
 
 interface CallNote {
@@ -283,11 +285,16 @@ const getStateDealsToday = (state: string) => {
 
     // Count CSV-based deals today
     calls.forEach(c => {
-      if (!c.assignedTo || !repMap[c.assignedTo]) return;
-      if ((c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))) {
-        repMap[c.assignedTo].dealCount++;
-        repMap[c.assignedTo].amount += parseAmount(c.buyerFinal);
+      if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return;
+      if (!c.dealDate || !isToday(new Date(c.dealDate))) return;
+      const creditId = c.dealBy || c.assignedTo;
+      const creditName = c.dealByName || c.assignedToName;
+      if (!creditId || !creditName) return;
+      if (!repMap[creditId]) {
+        repMap[creditId] = { name: creditName, dealCount: 0, amount: 0, isRep: false };
       }
+      repMap[creditId].dealCount++;
+      repMap[creditId].amount += parseAmount(c.buyerFinal);
     });
 
     // Count Daily Deals tab entries today
@@ -323,6 +330,8 @@ const getStateDealsToday = (state: string) => {
       deal_date: newStatus === 'Deal'
         ? new Date().toISOString()
         : (existingDealDate ? new Date(existingDealDate).toISOString() : null),
+      deal_by: newStatus === 'Deal' ? currentUserId : null,
+      deal_by_name: newStatus === 'Deal' ? (currentUser?.name || null) : null,
       updated_at: new Date().toISOString(),
     }).eq('id', callId);
   };

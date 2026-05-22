@@ -35,6 +35,8 @@ interface Call {
   assignedTo?: string;
   assignedToName?: string;
   dealDate?: Date;
+  dealBy?: string;
+  dealByName?: string;
 }
 
 interface DailyDealSummary {
@@ -372,15 +374,16 @@ export default function DailyDealsTab({
     });
 
     // Add Calls tab deals
-  callDealsToday.forEach(c => {
-      const repId = c.assignedTo || 'unassigned';
-      const name = c.assignedToName || (c.assignedTo ? nameMap[c.assignedTo] : null) || 'Unassigned';
-      const role = c.assignedTo ? (roleMap[c.assignedTo] || 'rep') : 'rep';
-      if (!repMap[repId]) {
-        repMap[repId] = { name, dealCount: 0, amount: 0, role };
+    callDealsToday.forEach(c => {
+      const creditId = c.dealBy || c.assignedTo;
+      const creditName = c.dealByName || c.assignedToName || nameMap[creditId || ''] || 'Unknown';
+      if (!creditId) return;
+      const role = roleMap[creditId] || 'rep';
+      if (!repMap[creditId]) {
+        repMap[creditId] = { name: creditName, dealCount: 0, amount: 0, role };
       }
-      repMap[repId].dealCount++;
-      repMap[repId].amount += parseAmount(c.buyerFinal || '0');
+      repMap[creditId].dealCount++;
+      repMap[creditId].amount += parseAmount(c.buyerFinal || '0');
     });
 
     return Object.entries(repMap)

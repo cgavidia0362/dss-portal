@@ -293,6 +293,8 @@ function App() {
           updatedAt: new Date(c.updated_at),
           dealDate: c.deal_date ? new Date(c.deal_date) : undefined,
           isDuplicate: c.is_duplicate || false,
+          dealBy: c.deal_by || undefined,
+          dealByName: c.deal_by_name || undefined,
         })));
       }
     } catch (err) {
