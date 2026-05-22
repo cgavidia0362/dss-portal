@@ -104,7 +104,7 @@ const medal = (i: number) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '�
 
 export default function DailyDealsTab({
   currentUser, goals, onRefresh,
-  calls = [], todayDailyDeals = [], users = [],
+  calls = [], users = [],
 }: DailyDealsTabProps) {
   const today = getTodayString();
 
