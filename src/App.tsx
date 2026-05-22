@@ -502,11 +502,14 @@ function App() {
           />
         )}
 
-        {activeTab === 'daily-deals' && (
+{activeTab === 'daily-deals' && (
           <DailyDealsTab
             currentUser={currentUser}
             goals={goals}
             onRefresh={fetchTodayDailyDeals}
+            calls={calls}
+            todayDailyDeals={todayDailyDeals}
+            users={users}
           />
         )}
 

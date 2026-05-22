@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X } from 'lucide-react';
 
-
 interface DailyDeal {
   id: string;
   appId: string;
@@ -26,6 +25,27 @@ interface DailyDealNote {
   createdAt: string;
 }
 
+interface Call {
+  id: string;
+  applicationId: string;
+  dealerName: string;
+  buyerFinal: string;
+  state: string;
+  fuStatus?: string;
+  assignedTo?: string;
+  assignedToName?: string;
+  dealDate?: Date;
+}
+
+interface DailyDealSummary {
+  id: string;
+  addedBy: string;
+  fuStatus: string;
+  dealDate: string;
+  amount: string;
+  state: string;
+}
+
 interface User {
   id: string;
   name: string;
@@ -43,12 +63,9 @@ interface DailyDealsTabProps {
   currentUser: User;
   goals: Goals;
   onRefresh: () => void;
-}
-
-interface AllUser {
-  id: string;
-  name: string;
-  role: string;
+  calls?: Call[];
+  todayDailyDeals?: DailyDealSummary[];
+  users?: User[];
 }
 
 const FU_STATUSES = ['Deal', 'Confirmed Deal', 'Pending', 'No Answer', 'No Deal'];
@@ -85,14 +102,17 @@ const parseAmount = (str: string) =>
 
 const medal = (i: number) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
 
-export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDealsTabProps) {
+export default function DailyDealsTab({
+  currentUser, goals, onRefresh,
+  calls = [], todayDailyDeals = [], users = [],
+}: DailyDealsTabProps) {
   const today = getTodayString();
 
   const [todayDeals, setTodayDeals] = useState<DailyDeal[]>([]);
   const [dealNotes, setDealNotes] = useState<{ [dealId: string]: DailyDealNote[] }>({});
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [newNoteText, setNewNoteText] = useState<{ [dealId: string]: string }>({});
-  const [allUsers, setAllUsers] = useState<AllUser[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Form state
@@ -102,12 +122,12 @@ export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDe
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Inline editing state
+  // Inline editing
   const [editingDeal, setEditingDeal] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState('');
   const [editFuStatus, setEditFuStatus] = useState('');
 
-  // History modal state
+  // History modal
   const [showHistory, setShowHistory] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
@@ -280,25 +300,84 @@ export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDe
   for (let d = 1; d <= daysInMonth; d++) calendarDays.push(d);
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-  // KPIs
-  const dealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
-  const totalAmount = todayDeals.reduce((s, d) => s + parseAmount(d.amount), 0);
-  const goalPct = goals.team > 0 ? Math.min((dealCount / goals.team) * 100, 100) : 0;
-  const activeReps = new Set(todayDeals.map(d => d.addedByName)).size;
+  // ── COMBINED KPIS (Daily Deals tab + Calls tab) ──────────────────
 
-  // Leaderboard — only reps always show, others only if deals > 0
-  const leaderboard = allUsers.map(u => {
-    const deals = todayDeals.filter(d =>
-      d.addedBy === u.id && (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
-    );
-    return {
-      id: u.id, name: u.name, role: u.role,
-      dealCount: deals.length,
-      totalAmount: deals.reduce((s, d) => s + parseAmount(d.amount), 0),
-    };
-  })
-    .filter(rep => rep.dealCount > 0 || rep.role === 'rep')
-    .sort((a, b) => b.dealCount - a.dealCount || b.totalAmount - a.totalAmount);
+  const isToday = (date: Date) => {
+    const t = new Date();
+    return date.getDate() === t.getDate() &&
+      date.getMonth() === t.getMonth() &&
+      date.getFullYear() === t.getFullYear();
+  };
+
+  // Deals from Daily Deals tab
+  const ddDealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
+  const ddTotalAmount = todayDeals.reduce((s, d) => s + parseAmount(d.amount), 0);
+
+  // Deals from Calls tab marked today
+  const callDealsToday = calls.filter(c => {
+    if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
+    if (!c.dealDate) return false;
+    return isToday(new Date(c.dealDate));
+  });
+  const callDealCount = callDealsToday.length;
+  const callDealAmount = callDealsToday.reduce((s, c) => s + parseAmount(c.buyerFinal || '0'), 0);
+
+  // Combined
+  const totalDealCount = ddDealCount + callDealCount;
+  const totalAmount = ddTotalAmount + callDealAmount;
+  const goalPct = goals.team > 0 ? Math.min((totalDealCount / goals.team) * 100, 100) : 0;
+
+  // Active reps — unique names from both sources
+  const activeRepNames = new Set([
+    ...todayDeals.map(d => d.addedByName),
+    ...callDealsToday.filter(c => c.assignedToName).map(c => c.assignedToName as string),
+  ]);
+  const activeReps = activeRepNames.size;
+
+  // ── COMBINED LEADERBOARD ─────────────────────────────────────────
+  const leaderboard = (() => {
+    // Build name + role map from all sources
+    const nameMap: { [id: string]: string } = {};
+    const roleMap: { [id: string]: string } = {};
+
+    // Use allUsers (fetched from Supabase) as primary source
+    allUsers.forEach(u => { nameMap[u.id] = u.name; roleMap[u.id] = u.role; });
+    // Also merge from passed-in users prop
+    users.forEach(u => { nameMap[u.id] = u.name; roleMap[u.id] = u.role; });
+
+    // Initialize all reps with 0 deals
+    const repMap: { [id: string]: { name: string; dealCount: number; amount: number; role: string } } = {};
+    Object.entries(nameMap).forEach(([id, name]) => {
+      repMap[id] = { name, dealCount: 0, amount: 0, role: roleMap[id] || 'rep' };
+    });
+
+    // Add Daily Deals tab entries
+    todayDeals.forEach(d => {
+      if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
+      if (!repMap[d.addedBy]) {
+        repMap[d.addedBy] = { name: d.addedByName, dealCount: 0, amount: 0, role: roleMap[d.addedBy] || 'rep' };
+      }
+      repMap[d.addedBy].dealCount++;
+      repMap[d.addedBy].amount += parseAmount(d.amount);
+    });
+
+    // Add Calls tab deals
+    callDealsToday.forEach(c => {
+      if (!c.assignedTo) return;
+      const name = c.assignedToName || nameMap[c.assignedTo] || 'Unknown';
+      if (!repMap[c.assignedTo]) {
+        repMap[c.assignedTo] = { name, dealCount: 0, amount: 0, role: roleMap[c.assignedTo] || 'rep' };
+      }
+      repMap[c.assignedTo].dealCount++;
+      repMap[c.assignedTo].amount += parseAmount(c.buyerFinal || '0');
+    });
+
+    return Object.entries(repMap)
+      .map(([id, data]) => ({ id, ...data }))
+      // Reps always show (even at 0); others only if they have deals
+      .filter(r => r.dealCount > 0 || r.role === 'rep')
+      .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
+  })();
 
   return (
     <div className="space-y-5">
@@ -336,11 +415,17 @@ export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDe
           <div className="grid grid-cols-4 gap-3">
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
               <p className="text-xs text-gray-400 uppercase tracking-wider">Deals Today</p>
-              <p className="text-3xl font-bold text-green-400 leading-none">{dealCount}</p>
+              <p className="text-3xl font-bold text-green-400 leading-none">{totalDealCount}</p>
+              {callDealCount > 0 && (
+                <p className="text-xs text-gray-500">+{callDealCount} from calls</p>
+              )}
             </div>
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
               <p className="text-xs text-gray-400 uppercase tracking-wider">Total Amount</p>
               <p className="text-xl font-bold text-green-400 leading-none">{formatCurrency(totalAmount)}</p>
+              {callDealAmount > 0 && (
+                <p className="text-xs text-gray-500">+{formatCurrency(callDealAmount)} from calls</p>
+              )}
             </div>
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
               <div className="flex items-center gap-1.5">
@@ -348,10 +433,10 @@ export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDe
                 <p className="text-xs text-gray-400 uppercase tracking-wider">Team Goal</p>
               </div>
               <p className="text-xl font-bold text-cyan-400 leading-none">
-                {dealCount} <span className="text-sm font-normal text-gray-500">/ {goals.team}</span>
+                {totalDealCount} <span className="text-sm font-normal text-gray-500">/ {goals.team}</span>
               </p>
               <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${goalPct}%` }} />
+                <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
               </div>
             </div>
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
@@ -448,7 +533,7 @@ export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDe
                         {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {rep.totalAmount > 0 ? formatCurrency(rep.totalAmount) : <span className="italic">no deals yet</span>}
+                        {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -645,10 +730,10 @@ export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDe
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <button onClick={() => { if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); } else setCalendarMonth(m => m - 1); }}
-                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">&lsaquo;</button>
+                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">‹</button>
                 <span className="text-base font-medium text-gray-100">{monthNames[calendarMonth]} {calendarYear}</span>
                 <button onClick={() => { if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); } else setCalendarMonth(m => m + 1); }}
-                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">&rsaquo;</button>
+                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">›</button>
               </div>
               <div className="grid grid-cols-7 gap-1 mb-2">
                 {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
@@ -659,12 +744,12 @@ export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDe
                 {calendarDays.map((day, i) => {
                   if (!day) return <div key={i} />;
                   const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const isToday = dateStr === today;
+                  const isTodayDate = dateStr === today;
                   const isFuture = dateStr > today;
                   const hasDeals = datesWithDeals.has(dateStr);
                   const isSelected = selectedDate === dateStr;
                   let cls = 'relative text-center text-sm py-2 rounded-lg transition font-normal ';
-                  if (isToday) cls += 'bg-blue-600 text-white font-medium';
+                  if (isTodayDate) cls += 'bg-blue-600 text-white font-medium';
                   else if (isFuture) cls += 'text-gray-600';
                   else if (isSelected) cls += 'bg-blue-900 border border-blue-500 text-blue-300 cursor-pointer';
                   else if (hasDeals) cls += 'bg-green-900 text-green-300 hover:bg-green-800 cursor-pointer font-medium';
@@ -672,7 +757,7 @@ export default function DailyDealsTab({ currentUser, goals, onRefresh }: DailyDe
                   return (
                     <div key={i} className={cls} onClick={() => handleCalendarClick(day)}>
                       {day}
-                      {hasDeals && !isToday && !isSelected && (
+                      {hasDeals && !isTodayDate && !isSelected && (
                         <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-green-400 block" />
                       )}
                     </div>
