@@ -321,7 +321,14 @@ const getStateDealsToday = (state: string) => {
     const dealDate = newStatus === 'Deal' ? new Date() : existingDealDate;
 
     setCalls(prev => prev.map(c => c.id === callId
-      ? { ...c, fuStatus: newStatus, updatedAt: new Date(), dealDate }
+      ? {
+          ...c,
+          fuStatus: newStatus,
+          updatedAt: new Date(),
+          dealDate,
+          dealBy: newStatus === 'Deal' ? currentUserId : undefined,
+          dealByName: newStatus === 'Deal' ? (currentUser?.name || undefined) : undefined,
+        }
       : c
     ));
 
