@@ -367,7 +367,7 @@ export default function CallsTab({
     e.stopPropagation();
     setExpandedRows(prev => {
       const n = new Set(prev);
-      n.add(callId);
+      if (n.has(callId)) n.delete(callId); else n.add(callId);
       return n;
     });
   };
