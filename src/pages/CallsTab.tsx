@@ -259,7 +259,7 @@ export default function CallsTab({
   }).length;
 
   // Status breakdown — No Call = not yet called (blank fuStatus)
-  const noCallCount = filteredCalls.filter(c => !c.fuStatus || c.fuStatus === '').length;
+  const noCallCount = filteredCalls.filter(c => !c.fuStatus).length;
   const pendingCount = filteredCalls.filter(c => c.fuStatus === 'Pending').length;
   const noAnswerCount = filteredCalls.filter(c => c.fuStatus === 'No Answer').length;
   const dealTotalCount = filteredCalls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
