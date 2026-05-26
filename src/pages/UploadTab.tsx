@@ -53,7 +53,7 @@ interface MatchedDeal {
   dealDate: Date;
 }
 
-export default function UploadTab({ calls, setCalls, dealers, setDealers, fundingData, setFundingData, onUploadSuccess }: UploadTabProps) {
+export default function UploadTab({ setCalls, dealers, setDealers, fundingData, setFundingData, onUploadSuccess }: UploadTabProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadingFunding, setUploadingFunding] = useState(false);
   const [xlsxLoaded, setXlsxLoaded] = useState(false);
