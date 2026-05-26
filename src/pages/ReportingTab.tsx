@@ -117,7 +117,6 @@ export default function ReportingTab({
     }
     return count;
   };
-  
 
   const calculateStateStats = () => {
     const states = [...new Set(calls.map(c => c.state))].sort();
@@ -188,7 +187,6 @@ export default function ReportingTab({
     });
   };
 
-  // Date range for period
   const getStartDate = (p: TimePeriod) => {
     const now = new Date();
     if (p === 'daily') return new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -231,6 +229,7 @@ export default function ReportingTab({
 
   // Static stats
   const totalCalls = calls.length;
+  const totalNoCall = calls.filter(c => !c.fuStatus || c.fuStatus === '').length;
   const totalPending = calls.filter(c => c.fuStatus === 'Pending').length;
   const totalDealsAllTime = calls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
 
@@ -261,12 +260,14 @@ export default function ReportingTab({
       const isConfirmed = call.fuStatus === 'Confirmed Deal';
       const isPending = call.fuStatus === 'Pending';
       const isNoAnswer = call.fuStatus === 'No Answer';
+      const isNoCall = !call.fuStatus || call.fuStatus === '';
       if (ex) {
         ex.totalCalls++;
         if (isDeal) ex.deals++;
         if (isConfirmed) ex.confirmedDeals++;
         if (isPending) ex.pending++;
         if (isNoAnswer) ex.noAnswer++;
+        if (isNoCall) ex.noCall++;
       } else {
         acc.push({
           repId: call.assignedTo, repName: call.assignedToName,
@@ -275,6 +276,7 @@ export default function ReportingTab({
           confirmedDeals: isConfirmed ? 1 : 0,
           pending: isPending ? 1 : 0,
           noAnswer: isNoAnswer ? 1 : 0,
+          noCall: isNoCall ? 1 : 0,
         });
       }
       return acc;
@@ -330,7 +332,7 @@ export default function ReportingTab({
         </div>
 
         {/* Stat Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
           <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
             <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">Total Deals</p>
             <p className="text-3xl font-bold text-green-400">{periodTotalDeals}</p>
@@ -347,9 +349,14 @@ export default function ReportingTab({
             <p className="text-xs text-gray-500 mt-1">All time</p>
           </div>
           <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
+            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">No Call</p>
+            <p className="text-3xl font-bold text-gray-400">{totalNoCall}</p>
+            <p className="text-xs text-gray-500 mt-1">Not yet called</p>
+          </div>
+          <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
             <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">Pending</p>
             <p className="text-3xl font-bold text-yellow-400">{totalPending}</p>
-            <p className="text-xs text-gray-500 mt-1">Current</p>
+            <p className="text-xs text-gray-500 mt-1">Waiting on response</p>
           </div>
         </div>
 
@@ -440,7 +447,6 @@ export default function ReportingTab({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {stateStats.map(stat => (
             <div key={stat.state} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-              {/* Header row */}
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xl font-bold text-gray-100">{stat.state}</span>
                 {stat.monthlyGoal > 0 ? (
@@ -455,13 +461,10 @@ export default function ReportingTab({
 
               {stat.monthlyGoal > 0 ? (
                 <>
-                  {/* Progress bar */}
                   <div className="w-full bg-gray-700 rounded-full h-2 mb-3">
                     <div className={`h-2 rounded-full ${getProgressColor(stat.progress)}`}
                       style={{ width: `${Math.min(stat.progress, 100)}%` }} />
                   </div>
-
-                  {/* Stats row */}
                   <div className="flex items-center justify-between text-xs">
                     <span className={`font-semibold ${getProgressTextColor(stat.progress)}`}>
                       {stat.progress.toFixed(0)}% complete
@@ -473,8 +476,6 @@ export default function ReportingTab({
                       <span className="text-gray-200 font-medium">{stat.daysRemaining}</span> days left
                     </span>
                   </div>
-
-                  {/* Amount row */}
                   {stat.totalAmount > 0 && (
                     <div className="mt-2 pt-2 border-t border-gray-700">
                       <span className="text-xs text-green-400 font-semibold">{formatCurrency(stat.totalAmount)}</span>
@@ -514,10 +515,12 @@ export default function ReportingTab({
                 <thead className="bg-gray-900">
                   <tr>
                     <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Rep</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Deals</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Confirmed</th>
+                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Total Calls</th>
+                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">No Call</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Pending</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">No Answer</th>
+                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Deals</th>
+                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Confirmed</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Conv. Rate</th>
                   </tr>
                 </thead>
@@ -526,16 +529,22 @@ export default function ReportingTab({
                     <tr key={rep.repId} className="hover:bg-gray-750">
                       <td className="px-5 py-4 text-sm font-medium text-gray-200">{rep.repName}</td>
                       <td className="px-5 py-4">
-                        <span className="text-sm font-semibold text-green-400">{rep.deals}</span>
+                        <span className="text-sm text-blue-400">{rep.totalCalls}</span>
                       </td>
                       <td className="px-5 py-4">
-                        <span className="text-sm font-semibold text-emerald-400">{rep.confirmedDeals}</span>
+                        <span className="text-sm text-gray-400">{rep.noCall}</span>
                       </td>
                       <td className="px-5 py-4">
                         <span className="text-sm text-yellow-400">{rep.pending}</span>
                       </td>
                       <td className="px-5 py-4">
                         <span className="text-sm text-orange-400">{rep.noAnswer}</span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="text-sm font-semibold text-green-400">{rep.deals}</span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="text-sm font-semibold text-emerald-400">{rep.confirmedDeals}</span>
                       </td>
                       <td className="px-5 py-4">
                         <span className="text-sm font-semibold text-blue-400">{rep.conversionRate}%</span>
@@ -548,6 +557,7 @@ export default function ReportingTab({
                 <p className="text-xs text-gray-500">
                   Showing <span className="text-gray-400 font-medium">{repPeriodLabel}</span> view
                   &nbsp;·&nbsp; Conv. Rate = Confirmed Deals &divide; Total Calls
+                  &nbsp;·&nbsp; No Call = not yet attempted
                 </p>
               </div>
             </div>

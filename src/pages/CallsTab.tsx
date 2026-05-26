@@ -165,7 +165,6 @@ export default function CallsTab({
     return 'bg-gray-700 text-gray-300 border-gray-600';
   };
 
-  // Filtering
   const roleFilteredCalls = calls.filter(c =>
     currentUserRole === 'rep' || currentUserRole === 'buying_assistant'
       ? c.assignedTo === currentUserId
@@ -232,34 +231,35 @@ export default function CallsTab({
   ).length;
 
   const teamDealsToday = csvTeamDealsToday + allDailyDealsToday;
-
   const goalPct = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
   const teamGoalPct = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
 
   const repStates = currentUser?.state
-  ? currentUser.state.split(',').map(s => s.trim()).filter(Boolean)
-  : [];
+    ? currentUser.state.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
 
-const getStateDealsToday = (state: string) => {
-  const csvDeals = calls.filter(c =>
-    c.state === state &&
-    c.assignedTo === currentUserId &&
-    (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
-    c.dealDate && isToday(new Date(c.dealDate))
-  ).length;
-  const dailyDeals = (todayDailyDeals || []).filter(d =>
-    d.addedBy === currentUserId &&
-    d.state === state &&
-    (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
-  ).length;
-  return csvDeals + dailyDeals;
-};
+  const getStateDealsToday = (state: string) => {
+    const csvDeals = calls.filter(c =>
+      c.state === state &&
+      c.assignedTo === currentUserId &&
+      (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
+      c.dealDate && isToday(new Date(c.dealDate))
+    ).length;
+    const dailyDeals = (todayDailyDeals || []).filter(d =>
+      d.addedBy === currentUserId &&
+      d.state === state &&
+      (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
+    ).length;
+    return csvDeals + dailyDeals;
+  };
 
   const completedCount = calls.filter(c => {
     if ((currentUserRole === 'rep' || currentUserRole === 'buying_assistant') && c.assignedTo !== currentUserId) return false;
     return c.fuStatus === 'No Deal' || c.fuStatus === 'Closed' || c.fuStatus === 'Duplicates';
   }).length;
 
+  // Status breakdown — No Call = not yet called (blank fuStatus)
+  const noCallCount = filteredCalls.filter(c => !c.fuStatus || c.fuStatus === '').length;
   const pendingCount = filteredCalls.filter(c => c.fuStatus === 'Pending').length;
   const noAnswerCount = filteredCalls.filter(c => c.fuStatus === 'No Answer').length;
   const dealTotalCount = filteredCalls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
@@ -267,7 +267,7 @@ const getStateDealsToday = (state: string) => {
   const breakdownTotal = filteredCalls.length || 1;
   const pct = (n: number) => `${Math.round((n / breakdownTotal) * 100)}%`;
 
-  // Leaderboard — combines CSV deals + Daily Deals entries, reps always show
+  // Leaderboard
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
     calls.forEach(c => { if (c.assignedTo && c.assignedToName) nameMap[c.assignedTo] = c.assignedToName; });
@@ -276,14 +276,12 @@ const getStateDealsToday = (state: string) => {
 
     const repMap: { [id: string]: { name: string; dealCount: number; amount: number; isRep: boolean } } = {};
 
-    // Initialize all known users
     Object.entries(nameMap).forEach(([id, name]) => {
       const userObj = (users || []).find(u => u.id === id);
       const isRep = userObj?.role === 'rep';
       repMap[id] = { name, dealCount: 0, amount: 0, isRep };
     });
 
-    // Count CSV-based deals today
     calls.forEach(c => {
       if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return;
       if (!c.dealDate || !isToday(new Date(c.dealDate))) return;
@@ -297,7 +295,6 @@ const getStateDealsToday = (state: string) => {
       repMap[creditId].amount += parseAmount(c.buyerFinal);
     });
 
-    // Count Daily Deals tab entries today
     (todayDailyDeals || []).forEach(d => {
       if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
       if (!repMap[d.addedBy]) {
@@ -309,12 +306,11 @@ const getStateDealsToday = (state: string) => {
 
     return Object.entries(repMap)
       .map(([id, data]) => ({ id, ...data }))
-      // Reps always show; admin/manager/buying_assistant only if they have deals
       .filter(r => r.isRep || r.dealCount > 0)
       .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
   })();
 
-  // ── HANDLERS (all save to Supabase) ────────────────────────────
+  // ── HANDLERS ────────────────────────────────────────────────────
 
   const handleStatusChange = async (callId: string, newStatus: Call['fuStatus']) => {
     const existingDealDate = calls.find(c => c.id === callId)?.dealDate;
@@ -333,7 +329,7 @@ const getStateDealsToday = (state: string) => {
     ));
 
     await supabase.from('calls').update({
-      fu_status: newStatus,
+      fu_status: newStatus || null,
       deal_date: newStatus === 'Deal'
         ? new Date().toISOString()
         : (existingDealDate ? new Date(existingDealDate).toISOString() : null),
@@ -346,7 +342,6 @@ const getStateDealsToday = (state: string) => {
   const handleSaveStatusLast = async (callId: string) => {
     setCalls(prev => prev.map(c => c.id === callId ? { ...c, statusLast: tempStatusLast } : c));
     setEditingStatusLast(null);
-
     await supabase.from('calls').update({
       status_last: tempStatusLast,
       updated_at: new Date().toISOString(),
@@ -356,7 +351,6 @@ const getStateDealsToday = (state: string) => {
   const handleSaveAmount = async (callId: string) => {
     setCalls(prev => prev.map(c => c.id === callId ? { ...c, buyerFinal: tempAmount } : c));
     setEditingAmount(null);
-
     await supabase.from('calls').update({
       buyer_final: tempAmount,
       updated_at: new Date().toISOString(),
@@ -367,6 +361,15 @@ const getStateDealsToday = (state: string) => {
     const n = new Set(expandedRows);
     if (n.has(id)) n.delete(id); else n.add(id);
     setExpandedRows(n);
+  };
+
+  const openNotes = (e: React.MouseEvent, callId: string) => {
+    e.stopPropagation();
+    setExpandedRows(prev => {
+      const n = new Set(prev);
+      n.add(callId);
+      return n;
+    });
   };
 
   const handleAddNote = async (callId: string) => {
@@ -418,7 +421,6 @@ const getStateDealsToday = (state: string) => {
       {/* KPI CARDS + LEADERBOARD */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-stretch">
 
-        {/* LEFT: 2 rows */}
         <div className="flex flex-col gap-3">
 
           {/* Row 1: 3 goal cards */}
@@ -474,8 +476,7 @@ const getStateDealsToday = (state: string) => {
                             </span>
                           </div>
                           <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                            <div className="h-full bg-teal-500 rounded-full transition-all"
-                              style={{ width: `${pctVal}%` }} />
+                            <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${pctVal}%` }} />
                           </div>
                           {goal > 0 && (
                             <p className="text-xs text-gray-600 mt-0.5">{pctVal.toFixed(0)}% complete</p>
@@ -508,6 +509,15 @@ const getStateDealsToday = (state: string) => {
               </div>
             </div>
             <div className="space-y-3">
+
+              {/* No Call — not yet called */}
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-400 w-20 flex-shrink-0">No Call</span>
+                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-gray-500 rounded-full transition-all" style={{ width: `${pct(noCallCount)}` }} />
+                </div>
+                <span className="text-xs font-semibold text-gray-400 w-8 text-right flex-shrink-0">{noCallCount}</span>
+              </div>
 
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-400 w-20 flex-shrink-0">Pending</span>
@@ -604,6 +614,7 @@ const getStateDealsToday = (state: string) => {
         <select value={filterFuStatus} onChange={e => setFilterFuStatus(e.target.value)}
           className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
           <option value="">All Statuses</option>
+          <option value="">No Call</option>
           <option>Deal</option><option>Confirmed Deal</option><option>No Deal</option>
           <option>Pending</option><option>No Answer</option><option>Closed</option><option>Duplicates</option>
         </select>
@@ -703,6 +714,7 @@ const getStateDealsToday = (state: string) => {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
+                <th className="w-12 px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
@@ -711,7 +723,7 @@ const getStateDealsToday = (state: string) => {
                 const isExpanded = expandedRows.has(call.id);
                 return (
                   <>
-                     <tr key={call.id}
+                    <tr key={call.id}
                       className={`cursor-pointer transition-colors ${call.isDuplicate ? 'bg-yellow-900 bg-opacity-10 hover:bg-yellow-900 hover:bg-opacity-20' : 'hover:bg-gray-750'}`}
                       onClick={() => toggleRow(call.id)}>
                       <td className="px-4 py-3 text-center">
@@ -799,8 +811,8 @@ const getStateDealsToday = (state: string) => {
                           onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
                           className="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
                           <option value="">Select…</option>
-                          <option>Deal</option><option>No Deal</option><option>Pending</option>
-                          <option>No Answer</option><option>Closed</option><option>Duplicates</option>
+                          <option>Deal</option><option>Confirmed Deal</option><option>No Deal</option>
+                          <option>Pending</option><option>No Answer</option><option>Closed</option><option>Duplicates</option>
                         </select>
                       </td>
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
@@ -811,11 +823,25 @@ const getStateDealsToday = (state: string) => {
                           </div>
                         )}
                       </td>
+                      {/* Note button */}
+                      <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={e => openNotes(e, call.id)}
+                          title="Add note"
+                          className={`p-1.5 rounded-lg transition ${
+                            callNotes.length > 0
+                              ? 'bg-blue-900 text-blue-300 hover:bg-blue-800'
+                              : 'bg-gray-700 text-gray-500 hover:bg-gray-600 hover:text-gray-300'
+                          }`}
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
                     </tr>
 
                     {isExpanded && (
                       <tr key={`${call.id}-exp`}>
-                        <td colSpan={9} className="px-4 py-4 pl-12 bg-gray-750">
+                        <td colSpan={10} className="px-4 py-4 pl-12 bg-gray-750">
                           <div className="space-y-3 max-w-2xl">
                             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                               Notes ({callNotes.length})
@@ -842,6 +868,7 @@ const getStateDealsToday = (state: string) => {
                                 onChange={e => setNewNoteText(prev => ({ ...prev, [call.id]: e.target.value }))}
                                 onKeyDown={e => { if (e.key === 'Enter') handleAddNote(call.id); }}
                                 className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                autoFocus
                               />
                               <button onClick={() => handleAddNote(call.id)}
                                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
