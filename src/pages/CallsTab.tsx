@@ -376,27 +376,28 @@ export default function CallsTab({
     const text = newNoteText[callId]?.trim();
     if (!text) return;
     const call = calls.find(c => c.id === callId);
-    const noteId = `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    setNotes(prev => [...prev, {
-      id: noteId,
-      callId,
-      noteText: text,
-      createdBy: currentUserId,
-      createdByName: currentUser?.name || 'User',
-      createdAt: new Date(),
-    }]);
     setNewNoteText(prev => ({ ...prev, [callId]: '' }));
 
-    await supabase.from('call_notes').insert({
-      id: noteId,
+    const { data, error } = await supabase.from('call_notes').insert({
       call_id: callId,
       application_id: call?.applicationId || '',
       dealer_name: call?.dealerName || '',
       note_text: text,
       created_by: currentUserId,
       created_by_name: currentUser?.name || 'User',
-    });
+    }).select().single();
+
+    if (!error && data) {
+      setNotes(prev => [...prev, {
+        id: data.id,
+        callId,
+        noteText: text,
+        createdBy: currentUserId,
+        createdByName: currentUser?.name || 'User',
+        createdAt: new Date(data.created_at),
+      }]);
+    }
   };
 
   const getCallNotes = (callId: string) => notes.filter(n => n.callId === callId);
