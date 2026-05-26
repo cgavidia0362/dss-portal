@@ -824,14 +824,14 @@ export default function CallsTab({
                         )}
                       </td>
                       {/* Note button */}
-                      <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                      <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={e => openNotes(e, call.id)}
                           title="Add note"
-                          className={`p-1.5 rounded-lg transition ${
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${
                             callNotes.length > 0
-                              ? 'bg-blue-900 text-blue-300 hover:bg-blue-800'
-                              : 'bg-gray-700 text-gray-500 hover:bg-gray-600 hover:text-gray-300'
+                              ? 'bg-blue-600 text-white hover:bg-blue-500'
+                              : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
                           }`}
                         >
                           <MessageSquare className="w-3.5 h-3.5" />
