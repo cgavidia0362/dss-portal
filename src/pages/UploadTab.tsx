@@ -44,6 +44,7 @@ interface UploadTabProps {
   setDealers: React.Dispatch<React.SetStateAction<Dealer[]>>;
   fundingData: FundingData;
   setFundingData: React.Dispatch<React.SetStateAction<FundingData>>;
+  onUploadSuccess?: () => Promise<void>;
 }
 
 interface MatchedDeal {
@@ -52,7 +53,7 @@ interface MatchedDeal {
   dealDate: Date;
 }
 
-export default function UploadTab({ setCalls, dealers, setDealers, fundingData, setFundingData }: UploadTabProps) {
+export default function UploadTab({ calls, setCalls, dealers, setDealers, fundingData, setFundingData, onUploadSuccess }: UploadTabProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadingFunding, setUploadingFunding] = useState(false);
   const [xlsxLoaded, setXlsxLoaded] = useState(false);
@@ -274,15 +275,18 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
         .from('calls')
         .upsert(callsToUpsert, { onConflict: 'application_id' });
 
-      if (upsertError) {
-        console.error('Error saving calls to Supabase:', upsertError);
-        setUploadResult({
-          success: false,
-          message: `Calls processed but failed to save: ${upsertError.message}`,
-        });
-        setUploading(false);
-        return;
-      }
+        if (upsertError) {
+          console.error('Error saving calls to Supabase:', upsertError);
+          setUploadResult({
+            success: false,
+            message: `Calls processed but failed to save: ${upsertError.message}`,
+          });
+          setUploading(false);
+          return;
+        }
+  
+        // Re-fetch from Supabase so local state has real UUIDs for assignments
+        if (onUploadSuccess) await onUploadSuccess();
       }
 
       // Delete calls older than 30 days (based on timestamp_submit)

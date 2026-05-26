@@ -454,7 +454,7 @@ function App() {
           />
         )}
 
-        {activeTab === 'upload' && (
+{activeTab === 'upload' && (
           <UploadTab
             calls={calls}
             setCalls={setCalls}
@@ -462,6 +462,7 @@ function App() {
             setDealers={setDealers}
             fundingData={fundingData}
             setFundingData={setFundingData}
+            onUploadSuccess={fetchCalls}
           />
         )}
 
