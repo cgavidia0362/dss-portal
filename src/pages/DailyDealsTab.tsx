@@ -117,19 +117,16 @@ export default function DailyDealsTab({
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Form state
   const [showForm, setShowForm] = useState(true);
   const [form, setForm] = useState({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
   const [formError, setFormError] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Inline editing
   const [editingDeal, setEditingDeal] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState('');
   const [editFuStatus, setEditFuStatus] = useState('');
 
-  // History modal
   const [showHistory, setShowHistory] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
@@ -286,6 +283,14 @@ export default function DailyDealsTab({
     setExpandedRows(n);
   };
 
+  const toggleNotes = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (editingDeal === id) return;
+    const n = new Set(expandedRows);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    setExpandedRows(n);
+  };
+
   const handleCalendarClick = (day: number) => {
     const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     if (dateStr >= today || !datesWithDeals.has(dateStr)) return;
@@ -294,15 +299,12 @@ export default function DailyDealsTab({
     fetchDealsByDate(dateStr);
   };
 
-  // Calendar
   const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
   const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
   const calendarDays: (number | null)[] = [];
   for (let i = 0; i < firstDay; i++) calendarDays.push(null);
   for (let d = 1; d <= daysInMonth; d++) calendarDays.push(d);
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-  // ── COMBINED KPIS (Daily Deals tab + Calls tab) ──────────────────
 
   const isToday = (date: Date) => {
     const t = new Date();
@@ -311,9 +313,11 @@ export default function DailyDealsTab({
       date.getFullYear() === t.getFullYear();
   };
 
-  // Deals from Daily Deals tab
+  // Deals from Daily Deals tab — only Deal/Confirmed Deal count toward totals
   const ddDealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
-  const ddTotalAmount = todayDeals.reduce((s, d) => s + parseAmount(d.amount), 0);
+  const ddTotalAmount = todayDeals
+    .filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
+    .reduce((s, d) => s + parseAmount(d.amount), 0);
 
   // Deals from Calls tab marked today
   const callDealsToday = calls.filter(c => {
@@ -322,48 +326,30 @@ export default function DailyDealsTab({
     return isToday(new Date(c.dealDate));
   });
 
-   // Temp debug — remove after confirming
-   console.log('callDealsToday:', callDealsToday.map(c => ({
-    appId: c.applicationId,
-    assignedTo: c.assignedTo,
-    assignedToName: c.assignedToName,
-    fuStatus: c.fuStatus,
-    dealDate: c.dealDate,
-  })));
-
   const callDealCount = callDealsToday.length;
   const callDealAmount = callDealsToday.reduce((s, c) => s + parseAmount(c.buyerFinal || '0'), 0);
 
-  // Combined
   const totalDealCount = ddDealCount + callDealCount;
   const totalAmount = ddTotalAmount + callDealAmount;
   const goalPct = goals.team > 0 ? Math.min((totalDealCount / goals.team) * 100, 100) : 0;
 
-  // Active reps — unique names from both sources
   const activeRepNames = new Set([
-    ...todayDeals.map(d => d.addedByName),
+    ...todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').map(d => d.addedByName),
     ...callDealsToday.filter(c => c.assignedToName).map(c => c.assignedToName as string),
   ]);
   const activeReps = activeRepNames.size;
 
-  // ── COMBINED LEADERBOARD ─────────────────────────────────────────
   const leaderboard = (() => {
-    // Build name + role map from all sources
     const nameMap: { [id: string]: string } = {};
     const roleMap: { [id: string]: string } = {};
-
-    // Use allUsers (fetched from Supabase) as primary source
     allUsers.forEach(u => { nameMap[u.id] = u.name; roleMap[u.id] = u.role; });
-    // Also merge from passed-in users prop
     users.forEach(u => { nameMap[u.id] = u.name; roleMap[u.id] = u.role; });
 
-    // Initialize all reps with 0 deals
     const repMap: { [id: string]: { name: string; dealCount: number; amount: number; role: string } } = {};
     Object.entries(nameMap).forEach(([id, name]) => {
       repMap[id] = { name, dealCount: 0, amount: 0, role: roleMap[id] || 'rep' };
     });
 
-    // Add Daily Deals tab entries
     todayDeals.forEach(d => {
       if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
       if (!repMap[d.addedBy]) {
@@ -373,7 +359,6 @@ export default function DailyDealsTab({
       repMap[d.addedBy].amount += parseAmount(d.amount);
     });
 
-    // Add Calls tab deals
     callDealsToday.forEach(c => {
       const creditId = c.dealBy || c.assignedTo;
       const creditName = c.dealByName || c.assignedToName || nameMap[creditId || ''] || 'Unknown';
@@ -388,7 +373,6 @@ export default function DailyDealsTab({
 
     return Object.entries(repMap)
       .map(([id, data]) => ({ id, ...data }))
-      // Reps always show (even at 0); others only if they have deals
       .filter(r => r.dealCount > 0 || r.role === 'rep')
       .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
   })();
@@ -593,6 +577,7 @@ export default function DailyDealsTab({
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">By</th>
                   <th className="w-10 px-4 py-3"></th>
+                  <th className="w-10 px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
@@ -662,7 +647,23 @@ export default function DailyDealsTab({
                             </div>
                           )}
                         </td>
+
                         <td className="px-4 py-3 text-sm text-gray-400">{deal.addedByName}</td>
+
+                        {/* Note button */}
+                        <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={e => toggleNotes(e, deal.id)}
+                            title="Add note"
+                            className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${
+                              notes.length > 0
+                                ? 'bg-blue-600 text-white hover:bg-blue-500'
+                                : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
+                            }`}
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
 
                         {/* Save/Cancel or Delete */}
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
@@ -687,7 +688,7 @@ export default function DailyDealsTab({
 
                       {isExpanded && !isEditing && (
                         <tr key={`${deal.id}-expanded`}>
-                          <td colSpan={10} className="px-4 py-4 pl-14 bg-gray-750">
+                          <td colSpan={11} className="px-4 py-4 pl-14 bg-gray-750">
                             <div className="space-y-3 max-w-2xl">
                               <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                                 Notes ({notes.length})
@@ -711,7 +712,8 @@ export default function DailyDealsTab({
                                   value={newNoteText[deal.id] || ''}
                                   onChange={e => setNewNoteText(prev => ({ ...prev, [deal.id]: e.target.value }))}
                                   onKeyDown={e => { if (e.key === 'Enter') handleAddNote(deal.id); }}
-                                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  autoFocus />
                                 <button onClick={() => handleAddNote(deal.id)}
                                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
                                   Save
