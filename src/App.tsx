@@ -11,6 +11,7 @@ import AnalyticsTab from './pages/AnalyticsTab';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import DailyDealsTab from './pages/DailyDealsTab';
 import NotesTab from './pages/NotesTab';
+import PublicDealsPage from './pages/PublicDealsPage';
 
 interface Dealer {
   cifNumber: string;
@@ -89,6 +90,9 @@ const isRecoveryUrl = (() => {
     urlParams.get('type') === 'recovery'
   );
 })();
+
+// Check for public deals page before anything else
+const isPublicRoute = window.location.pathname === '/deals';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -371,6 +375,8 @@ function App() {
   };
 
   // ── LOADING / AUTH GATES ──────────────────────────────────────────
+  if (isPublicRoute) return <PublicDealsPage />;
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
