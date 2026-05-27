@@ -184,7 +184,8 @@ export default function CallsTab({
     if (searchQuery && !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.state.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    if (filterFuStatus && call.fuStatus !== filterFuStatus) return false;
+    if (filterFuStatus === 'No Call' && (call.fuStatus && call.fuStatus !== '')) return false;
+    if (filterFuStatus && filterFuStatus !== 'No Call' && call.fuStatus !== filterFuStatus) return false;
     if (filterState && call.state !== filterState) return false;
     if (filterStatusLast.size > 0 && !filterStatusLast.has(call.statusLast)) return false;
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
@@ -615,9 +616,9 @@ export default function CallsTab({
         <select value={filterFuStatus} onChange={e => setFilterFuStatus(e.target.value)}
           className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
           <option value="">All Statuses</option>
-          <option value="">No Call</option>
-          <option>Deal</option><option>Confirmed Deal</option><option>No Deal</option>
-          <option>Pending</option><option>No Answer</option><option>Closed</option><option>Duplicates</option>
+          <option value="No Call">No Call</option>
+          <option>Deal</option><option>No Deal</option>
+          <option>Pending</option><option>No Answer</option><option>Duplicates</option>
         </select>
 
         <div className="flex items-center border border-gray-600 rounded-lg overflow-hidden bg-gray-700">
@@ -811,9 +812,9 @@ export default function CallsTab({
                         <select value={call.fuStatus || ''}
                           onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
                           className="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
-                          <option value="">Select…</option>
-                          <option>Deal</option><option>Confirmed Deal</option><option>No Deal</option>
-                          <option>Pending</option><option>No Answer</option><option>Closed</option><option>Duplicates</option>
+<option value="">Select…</option>
+                          <option>Deal</option><option>No Deal</option>
+                          <option>Pending</option><option>No Answer</option><option>Duplicates</option>
                         </select>
                       </td>
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
