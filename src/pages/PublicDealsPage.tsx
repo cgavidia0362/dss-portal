@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare } from 'lucide-react';
 
 interface DailyDeal {
   id: string;
@@ -9,7 +10,16 @@ interface DailyDeal {
   amount: string;
   state: string;
   fuStatus: string;
+  addedBy: string;
   addedByName: string;
+  createdAt: string;
+}
+
+interface DealNote {
+  id: string;
+  dealId: string;
+  noteText: string;
+  createdByName: string;
   createdAt: string;
 }
 
@@ -52,6 +62,9 @@ export default function PublicDealsPage() {
 
   const [users, setUsers] = useState<RepUser[]>([]);
   const [todayDeals, setTodayDeals] = useState<DailyDeal[]>([]);
+  const [dealNotes, setDealNotes] = useState<{ [dealId: string]: DealNote[] }>({});
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [newNoteText, setNewNoteText] = useState<{ [dealId: string]: string }>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState('');
@@ -62,6 +75,11 @@ export default function PublicDealsPage() {
     appId: '', dealerName: '', customerName: '',
     amount: '', state: '', fuStatus: 'Deal',
   });
+
+  // Inline editing
+  const [editingDeal, setEditingDeal] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editFuStatus, setEditFuStatus] = useState('');
 
   useEffect(() => {
     fetchUsers();
@@ -94,7 +112,7 @@ export default function PublicDealsPage() {
       .eq('deal_date', today)
       .order('created_at', { ascending: false });
     if (data) {
-      setTodayDeals(data.map((d: any) => ({
+      const formatted = data.map((d: any) => ({
         id: d.id,
         appId: d.app_id,
         dealerName: d.dealer_name,
@@ -102,11 +120,37 @@ export default function PublicDealsPage() {
         amount: d.amount,
         state: d.state,
         fuStatus: d.fu_status,
+        addedBy: d.added_by,
         addedByName: d.added_by_name,
         createdAt: d.created_at,
-      })));
+      }));
+      setTodayDeals(formatted);
+      if (formatted.length > 0) fetchNotesForDeals(formatted.map((d: DailyDeal) => d.id));
     }
     setLoading(false);
+  };
+
+  const fetchNotesForDeals = async (dealIds: string[]) => {
+    if (!dealIds.length) return;
+    const { data } = await supabase
+      .from('daily_deal_notes')
+      .select('*')
+      .in('deal_id', dealIds)
+      .order('created_at', { ascending: true });
+    if (data) {
+      const grouped: { [id: string]: DealNote[] } = {};
+      data.forEach((n: any) => {
+        if (!grouped[n.deal_id]) grouped[n.deal_id] = [];
+        grouped[n.deal_id].push({
+          id: n.id,
+          dealId: n.deal_id,
+          noteText: n.note_text,
+          createdByName: n.created_by_name,
+          createdAt: n.created_at,
+        });
+      });
+      setDealNotes(grouped);
+    }
   };
 
   const handleSubmit = async () => {
@@ -140,6 +184,46 @@ export default function PublicDealsPage() {
     }
   };
 
+  const handleUpdateDeal = async (dealId: string) => {
+    try {
+      const { error: err } = await supabase.from('daily_deals')
+        .update({ amount: editAmount.trim(), fu_status: editFuStatus })
+        .eq('id', dealId);
+      if (err) throw err;
+      setEditingDeal(null);
+      await fetchTodayDeals();
+    } catch (e: any) {
+      setError('Failed to update: ' + e.message);
+    }
+  };
+
+  const handleAddNote = async (dealId: string) => {
+    const text = newNoteText[dealId]?.trim();
+    if (!text) return;
+    const currentUser = users.find(u => u.id === selectedUser);
+    const authorName = currentUser?.name || 'Anonymous';
+    const { error: err } = await supabase.from('daily_deal_notes').insert({
+      deal_id: dealId,
+      note_text: text,
+      created_by_name: authorName,
+    });
+    if (err) return;
+    setNewNoteText(prev => ({ ...prev, [dealId]: '' }));
+    await fetchNotesForDeals(todayDeals.map(d => d.id));
+  };
+
+  const toggleRow = (id: string) => {
+    if (editingDeal === id) return;
+    const n = new Set(expandedRows);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    setExpandedRows(n);
+  };
+
+  const toggleNotes = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    toggleRow(id);
+  };
+
   // KPIs
   const dealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
   const totalAmount = todayDeals
@@ -151,7 +235,7 @@ export default function PublicDealsPage() {
 
       {/* HEADER */}
       <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-bold text-blue-400">DSS Portal</h1>
             <span className="text-xs text-gray-500 bg-gray-700 px-2.5 py-1 rounded-full border border-gray-600">
@@ -162,7 +246,7 @@ export default function PublicDealsPage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
 
         {/* KPI CARDS */}
         <div className="grid grid-cols-3 gap-3">
@@ -220,33 +304,24 @@ export default function PublicDealsPage() {
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
-                <input
-                  type="text"
-                  value={form.appId}
+                <input type="text" value={form.appId}
                   onChange={e => setForm({ ...form, appId: e.target.value })}
                   placeholder="e.g. DTBFE001"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
-                <input
-                  type="text"
-                  value={form.dealerName}
+                <input type="text" value={form.dealerName}
                   onChange={e => setForm({ ...form, dealerName: e.target.value })}
                   placeholder="Dealer name"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer *</label>
-                <input
-                  type="text"
-                  value={form.customerName}
+                <input type="text" value={form.customerName}
                   onChange={e => setForm({ ...form, customerName: e.target.value })}
                   placeholder="Customer name"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
             </div>
 
@@ -254,41 +329,29 @@ export default function PublicDealsPage() {
             <div className="grid grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Amount *</label>
-                <input
-                  type="text"
-                  value={form.amount}
+                <input type="text" value={form.amount}
                   onChange={e => setForm({ ...form, amount: e.target.value })}
                   placeholder="$0"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">State *</label>
-                <input
-                  type="text"
-                  value={form.state}
+                <input type="text" value={form.state}
                   onChange={e => setForm({ ...form, state: e.target.value.toUpperCase() })}
-                  placeholder="IL"
-                  maxLength={2}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                  placeholder="IL" maxLength={2}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">FU Status *</label>
-                <select
-                  value={form.fuStatus}
+                <select value={form.fuStatus}
                   onChange={e => setForm({ ...form, fuStatus: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
                   {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="flex flex-col justify-end">
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition"
-                >
+                <button onClick={handleSubmit} disabled={submitting}
+                  className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
                   {submitting ? 'Saving…' : 'Add Deal'}
                 </button>
               </div>
@@ -306,9 +369,7 @@ export default function PublicDealsPage() {
           </div>
 
           {loading ? (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-500 text-sm">
-              Loading…
-            </div>
+            <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-500 text-sm">Loading…</div>
           ) : todayDeals.length === 0 ? (
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-10 text-center">
               <p className="text-sm text-gray-400">No deals logged yet today.</p>
@@ -320,35 +381,160 @@ export default function PublicDealsPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-700">
+                      <th className="w-10 px-4 py-3"></th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">State</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">By</th>
+                      <th className="w-10 px-4 py-3"></th>
+                      <th className="w-10 px-4 py-3"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
-                    {todayDeals.map(deal => (
-                      <tr key={deal.id} className="hover:bg-gray-750 transition-colors">
-                        <td className="px-4 py-3 text-sm text-blue-400 font-medium">{deal.appId}</td>
-                        <td className="px-4 py-3 text-sm text-gray-200">{deal.dealerName}</td>
-                        <td className="px-4 py-3 text-sm text-gray-200">{deal.customerName}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-gray-100">{deal.amount}</td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">
-                            {deal.state}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>
-                            {deal.fuStatus}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-400">{deal.addedByName}</td>
-                      </tr>
-                    ))}
+                    {todayDeals.map(deal => {
+                      const isExpanded = expandedRows.has(deal.id);
+                      const isEditing = editingDeal === deal.id;
+                      const notes = dealNotes[deal.id] || [];
+
+                      return (
+                        <>
+                          <tr key={deal.id}
+                            className={`hover:bg-gray-750 transition-colors ${!isEditing ? 'cursor-pointer' : ''}`}
+                            onClick={() => { if (!isEditing) toggleRow(deal.id); }}>
+                            <td className="px-4 py-3 text-center">
+                              {isExpanded
+                                ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
+                                : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-blue-400 font-medium">{deal.appId}</td>
+                            <td className="px-4 py-3 text-sm text-gray-200">{deal.dealerName}</td>
+                            <td className="px-4 py-3 text-sm text-gray-200">{deal.customerName}</td>
+
+                            {/* Amount — editable */}
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              {isEditing ? (
+                                <input type="text" value={editAmount}
+                                  onChange={e => setEditAmount(e.target.value)}
+                                  className="w-24 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
+                                  autoFocus />
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-sm font-semibold text-gray-100">{deal.amount}</span>
+                                  <button
+                                    onClick={() => { setEditingDeal(deal.id); setEditAmount(deal.amount); setEditFuStatus(deal.fuStatus); }}
+                                    className="text-gray-600 hover:text-gray-400 transition">
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">
+                                {deal.state}
+                              </span>
+                            </td>
+
+                            {/* FU Status — editable */}
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              {isEditing ? (
+                                <select value={editFuStatus}
+                                  onChange={e => setEditFuStatus(e.target.value)}
+                                  className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none">
+                                  {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                              ) : (
+                                <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>
+                                  {deal.fuStatus}
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              {notes.length > 0 && (
+                                <div className="flex items-center gap-1.5 text-blue-400">
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  <span className="text-xs font-bold">{notes.length}</span>
+                                </div>
+                              )}
+                            </td>
+
+                            <td className="px-4 py-3 text-sm text-gray-400">{deal.addedByName}</td>
+
+                            {/* Note button */}
+                            <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={e => toggleNotes(e, deal.id)}
+                                title="Add note"
+                                className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${
+                                  notes.length > 0
+                                    ? 'bg-blue-600 text-white hover:bg-blue-500'
+                                    : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
+                                }`}>
+                                <MessageSquare className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+
+                            {/* Save/Cancel */}
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              {isEditing && (
+                                <div className="flex items-center gap-1">
+                                  <button onClick={() => handleUpdateDeal(deal.id)} className="text-green-400 hover:text-green-300">
+                                    <Check className="w-4 h-4" />
+                                  </button>
+                                  <button onClick={() => setEditingDeal(null)} className="text-red-400 hover:text-red-300">
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+
+                          {isExpanded && !isEditing && (
+                            <tr key={`${deal.id}-exp`}>
+                              <td colSpan={11} className="px-4 py-4 pl-14 bg-gray-750">
+                                <div className="space-y-3 max-w-2xl">
+                                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                    Notes ({notes.length})
+                                  </p>
+                                  {notes.length === 0 ? (
+                                    <p className="text-sm text-gray-500 italic">No notes yet.</p>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {notes.map(note => (
+                                        <div key={note.id} className="bg-gray-700 px-4 py-3 rounded-lg border border-gray-600">
+                                          <p className="text-sm text-gray-200">{note.noteText}</p>
+                                          <p className="text-xs text-gray-500 mt-1.5">
+                                            {note.createdByName} · {new Date(note.createdAt).toLocaleString()}
+                                          </p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div className="flex gap-2">
+                                    <input type="text"
+                                      placeholder={selectedUser ? "Add a note…" : "Select your name above to add a note…"}
+                                      value={newNoteText[deal.id] || ''}
+                                      onChange={e => setNewNoteText(prev => ({ ...prev, [deal.id]: e.target.value }))}
+                                      onKeyDown={e => { if (e.key === 'Enter') handleAddNote(deal.id); }}
+                                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      autoFocus />
+                                    <button onClick={() => handleAddNote(deal.id)}
+                                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                                      Save
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
