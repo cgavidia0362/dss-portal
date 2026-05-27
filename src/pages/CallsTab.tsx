@@ -184,8 +184,8 @@ export default function CallsTab({
     if (searchQuery && !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.state.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    if (filterFuStatus === 'No Call' && (call.fuStatus && call.fuStatus !== '')) return false;
-    if (filterFuStatus && filterFuStatus !== 'No Call' && call.fuStatus !== filterFuStatus) return false;
+      if (filterFuStatus === 'No Call' && !!call.fuStatus) return false;
+      if (filterFuStatus && filterFuStatus !== 'No Call' && call.fuStatus !== filterFuStatus) return false;
     if (filterState && call.state !== filterState) return false;
     if (filterStatusLast.size > 0 && !filterStatusLast.has(call.statusLast)) return false;
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
