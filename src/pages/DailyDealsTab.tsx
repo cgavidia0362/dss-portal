@@ -127,6 +127,11 @@ export default function DailyDealsTab({
   const [editAmount, setEditAmount] = useState('');
   const [editFuStatus, setEditFuStatus] = useState('');
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Call[]>([]);
+  const [linkedCall, setLinkedCall] = useState<Call | null>(null);
+
   const [showHistory, setShowHistory] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
@@ -221,6 +226,39 @@ export default function DailyDealsTab({
     })));
   };
 
+  // ── SEARCH HANDLERS ─────────────────────────────────────────────
+
+  const handleSearch = () => {
+    if (!searchQuery.trim()) return;
+    const results = calls.filter(c =>
+      c.applicationId.toLowerCase().includes(searchQuery.toLowerCase().trim())
+    ).slice(0, 5);
+    setSearchResults(results);
+  };
+
+  const handleSelectCall = (call: Call) => {
+    setLinkedCall(call);
+    setForm(prev => ({
+      ...prev,
+      appId: call.applicationId,
+      dealerName: call.dealerName,
+      amount: call.buyerFinal || '',
+      state: call.state,
+      fuStatus: 'Deal',
+    }));
+    setSearchResults([]);
+    setSearchQuery('');
+  };
+
+  const clearLinkedCall = () => {
+    setLinkedCall(null);
+    setSearchQuery('');
+    setSearchResults([]);
+    setForm(prev => ({ ...prev, appId: '', dealerName: '', amount: '', state: '' }));
+  };
+
+  // ── DEAL HANDLERS ────────────────────────────────────────────────
+
   const handleAddDeal = async () => {
     if (!form.appId || !form.dealerName || !form.customerName || !form.amount || !form.state) {
       setFormError('All fields are required'); return;
@@ -234,6 +272,19 @@ export default function DailyDealsTab({
         added_by: currentUser.id, added_by_name: currentUser.name, deal_date: today,
       });
       if (err) throw err;
+
+      // If linked to an existing call, update its FU status and credit
+      if (linkedCall) {
+        await supabase.from('calls').update({
+          fu_status: form.fuStatus,
+          deal_by: currentUser.id,
+          deal_by_name: currentUser.name,
+          deal_date: today,
+          updated_at: new Date().toISOString(),
+        }).eq('id', linkedCall.id);
+        setLinkedCall(null);
+      }
+
       setSuccess('Deal added!');
       setTimeout(() => setSuccess(''), 3000);
       setForm({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
@@ -313,13 +364,13 @@ export default function DailyDealsTab({
       date.getFullYear() === t.getFullYear();
   };
 
-  // Deals from Daily Deals tab — only Deal/Confirmed Deal count toward totals
+  // ── KPIs ─────────────────────────────────────────────────────────
+
   const ddDealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
   const ddTotalAmount = todayDeals
     .filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
     .reduce((s, d) => s + parseAmount(d.amount), 0);
 
-  // Deals from Calls tab marked today
   const callDealsToday = calls.filter(c => {
     if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
     if (!c.dealDate) return false;
@@ -338,6 +389,8 @@ export default function DailyDealsTab({
     ...callDealsToday.filter(c => c.assignedToName).map(c => c.assignedToName as string),
   ]);
   const activeReps = activeRepNames.size;
+
+  // ── LEADERBOARD ──────────────────────────────────────────────────
 
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
@@ -423,16 +476,12 @@ export default function DailyDealsTab({
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
               <p className="text-xs text-gray-400 uppercase tracking-wider">Deals Today</p>
               <p className="text-3xl font-bold text-green-400 leading-none">{totalDealCount}</p>
-              {callDealCount > 0 && (
-                <p className="text-xs text-gray-500">+{callDealCount} from calls</p>
-              )}
+              {callDealCount > 0 && <p className="text-xs text-gray-500">+{callDealCount} from calls</p>}
             </div>
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
               <p className="text-xs text-gray-400 uppercase tracking-wider">Total Amount</p>
               <p className="text-xl font-bold text-green-400 leading-none">{formatCurrency(totalAmount)}</p>
-              {callDealAmount > 0 && (
-                <p className="text-xs text-gray-500">+{formatCurrency(callDealAmount)} from calls</p>
-              )}
+              {callDealAmount > 0 && <p className="text-xs text-gray-500">+{formatCurrency(callDealAmount)} from calls</p>}
             </div>
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
               <div className="flex items-center gap-1.5">
@@ -464,6 +513,66 @@ export default function DailyDealsTab({
             {showForm && (
               <div className="p-5">
                 {formError && <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded text-sm mb-4">{formError}</div>}
+
+                {/* App ID Search */}
+                <div className="bg-gray-750 border border-gray-600 rounded-lg p-3 mb-4">
+                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">
+                    Search existing app (optional)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults([]); }}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
+                      placeholder="Type App ID to search…"
+                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button onClick={handleSearch}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                      Search
+                    </button>
+                    {linkedCall && (
+                      <button onClick={clearLinkedCall}
+                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-400 rounded-lg text-sm transition">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Search results */}
+                  {searchResults.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {searchResults.map(call => (
+                        <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
+                            <span className="text-xs text-gray-300">{call.dealerName}</span>
+                            <span className="text-xs text-gray-500">{call.state}</span>
+                            <span className="text-xs text-gray-400">${parseAmount(call.buyerFinal).toLocaleString()}</span>
+                          </div>
+                          <button onClick={() => handleSelectCall(call)}
+                            className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">
+                            Use this app →
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {searchResults.length === 0 && searchQuery && !linkedCall && (
+                    <p className="text-xs text-gray-500 mt-2">No match found — fill in the details manually below.</p>
+                  )}
+
+                  {linkedCall && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-green-400">✓ Linked to existing call:</span>
+                      <span className="text-xs text-blue-400 font-medium">{linkedCall.applicationId}</span>
+                      <span className="text-xs text-gray-400">— {linkedCall.dealerName}</span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-3 gap-3 mb-3">
                   <div>
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
@@ -611,7 +720,6 @@ export default function DailyDealsTab({
                         <td className="px-4 py-3 text-sm text-gray-200">{deal.dealerName}</td>
                         <td className="px-4 py-3 text-sm text-gray-200">{deal.customerName}</td>
 
-                        {/* Amount — editable */}
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <input type="text" value={editAmount} onChange={e => setEditAmount(e.target.value)}
@@ -634,7 +742,6 @@ export default function DailyDealsTab({
                           <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{deal.state}</span>
                         </td>
 
-                        {/* FU Status — editable */}
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <select value={editFuStatus} onChange={e => setEditFuStatus(e.target.value)}
@@ -659,7 +766,6 @@ export default function DailyDealsTab({
 
                         <td className="px-4 py-3 text-sm text-gray-400">{deal.addedByName}</td>
 
-                        {/* Note button */}
                         <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                           <button
                             onClick={e => toggleNotes(e, deal.id)}
@@ -674,7 +780,6 @@ export default function DailyDealsTab({
                           </button>
                         </td>
 
-                        {/* Save/Cancel or Delete */}
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <div className="flex items-center gap-1">

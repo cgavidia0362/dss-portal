@@ -26,6 +26,19 @@ interface DealNote {
 interface RepUser {
   id: string;
   name: string;
+  role: string;
+}
+
+interface CallDeal {
+  id: string;
+  applicationId: string;
+  dealerName: string;
+  buyerFinal: string;
+  state: string;
+  dealBy?: string;
+  dealByName?: string;
+  assignedTo?: string;
+  assignedToName?: string;
 }
 
 const FU_STATUSES = ['Deal', 'Confirmed Deal', 'Pending', 'No Answer', 'No Deal'];
@@ -57,11 +70,14 @@ const getFuStatusStyle = (status: string) => {
   return 'bg-gray-700 text-gray-300 border-gray-600';
 };
 
+const medal = (i: number) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
+
 export default function PublicDealsPage() {
   const today = getTodayString();
 
   const [users, setUsers] = useState<RepUser[]>([]);
   const [todayDeals, setTodayDeals] = useState<DailyDeal[]>([]);
+  const [callDealsToday, setCallDealsToday] = useState<CallDeal[]>([]);
   const [dealNotes, setDealNotes] = useState<{ [dealId: string]: DealNote[] }>({});
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [newNoteText, setNewNoteText] = useState<{ [dealId: string]: string }>({});
@@ -81,14 +97,24 @@ export default function PublicDealsPage() {
   const [editAmount, setEditAmount] = useState('');
   const [editFuStatus, setEditFuStatus] = useState('');
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [linkedCall, setLinkedCall] = useState<any | null>(null);
+  const [searching, setSearching] = useState(false);
+
   useEffect(() => {
     fetchUsers();
     fetchTodayDeals();
+    fetchCallDealsToday();
 
     const channel = supabase
       .channel('public_deals_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_deals' }, () => {
         fetchTodayDeals();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calls' }, () => {
+        fetchCallDealsToday();
       })
       .subscribe();
 
@@ -98,10 +124,10 @@ export default function PublicDealsPage() {
   const fetchUsers = async () => {
     const { data } = await supabase
       .from('profiles')
-      .select('id, name')
+      .select('id, name, role')
       .eq('active', true)
       .order('name');
-    if (data) setUsers(data.map((u: any) => ({ id: u.id, name: u.name })));
+    if (data) setUsers(data.map((u: any) => ({ id: u.id, name: u.name, role: u.role })));
   };
 
   const fetchTodayDeals = async () => {
@@ -113,21 +139,37 @@ export default function PublicDealsPage() {
       .order('created_at', { ascending: false });
     if (data) {
       const formatted = data.map((d: any) => ({
-        id: d.id,
-        appId: d.app_id,
-        dealerName: d.dealer_name,
-        customerName: d.customer_name,
-        amount: d.amount,
-        state: d.state,
-        fuStatus: d.fu_status,
-        addedBy: d.added_by,
-        addedByName: d.added_by_name,
+        id: d.id, appId: d.app_id, dealerName: d.dealer_name,
+        customerName: d.customer_name, amount: d.amount,
+        state: d.state, fuStatus: d.fu_status,
+        addedBy: d.added_by, addedByName: d.added_by_name,
         createdAt: d.created_at,
       }));
       setTodayDeals(formatted);
       if (formatted.length > 0) fetchNotesForDeals(formatted.map((d: DailyDeal) => d.id));
     }
     setLoading(false);
+  };
+
+  const fetchCallDealsToday = async () => {
+    const { data } = await supabase
+      .from('calls')
+      .select('id, application_id, dealer_name, buyer_final, state, deal_by, deal_by_name, assigned_to, assigned_to_name')
+      .in('fu_status', ['Deal', 'Confirmed Deal'])
+      .like('deal_date', `${today}%`);
+    if (data) {
+      setCallDealsToday(data.map((c: any) => ({
+        id: c.id,
+        applicationId: c.application_id,
+        dealerName: c.dealer_name,
+        buyerFinal: c.buyer_final || '0',
+        state: c.state,
+        dealBy: c.deal_by || undefined,
+        dealByName: c.deal_by_name || undefined,
+        assignedTo: c.assigned_to || undefined,
+        assignedToName: c.assigned_to_name || undefined,
+      })));
+    }
   };
 
   const fetchNotesForDeals = async (dealIds: string[]) => {
@@ -142,16 +184,50 @@ export default function PublicDealsPage() {
       data.forEach((n: any) => {
         if (!grouped[n.deal_id]) grouped[n.deal_id] = [];
         grouped[n.deal_id].push({
-          id: n.id,
-          dealId: n.deal_id,
-          noteText: n.note_text,
-          createdByName: n.created_by_name,
-          createdAt: n.created_at,
+          id: n.id, dealId: n.deal_id, noteText: n.note_text,
+          createdByName: n.created_by_name, createdAt: n.created_at,
         });
       });
       setDealNotes(grouped);
     }
   };
+
+  // ── SEARCH ──────────────────────────────────────────────────────
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    const { data } = await supabase
+      .from('calls')
+      .select('id, application_id, dealer_name, buyer_final, state')
+      .ilike('application_id', `%${searchQuery.trim()}%`)
+      .limit(5);
+    setSearchResults(data || []);
+    setSearching(false);
+  };
+
+  const handleSelectCall = (call: any) => {
+    setLinkedCall(call);
+    setForm(prev => ({
+      ...prev,
+      appId: call.application_id,
+      dealerName: call.dealer_name,
+      amount: call.buyer_final || '',
+      state: call.state,
+      fuStatus: 'Deal',
+    }));
+    setSearchResults([]);
+    setSearchQuery('');
+  };
+
+  const clearLinkedCall = () => {
+    setLinkedCall(null);
+    setSearchQuery('');
+    setSearchResults([]);
+    setForm(prev => ({ ...prev, appId: '', dealerName: '', amount: '', state: '' }));
+  };
+
+  // ── SUBMIT ──────────────────────────────────────────────────────
 
   const handleSubmit = async () => {
     if (!selectedUser) { setError('Please select your name.'); return; }
@@ -174,6 +250,20 @@ export default function PublicDealsPage() {
         deal_date: today,
       });
       if (err) throw err;
+
+      // If linked to an existing call, update its FU status and credit
+      if (linkedCall) {
+        await supabase.from('calls').update({
+          fu_status: form.fuStatus,
+          deal_by: selectedUser,
+          deal_by_name: user?.name || 'Unknown',
+          deal_date: today,
+          updated_at: new Date().toISOString(),
+        }).eq('id', linkedCall.id);
+        setLinkedCall(null);
+        await fetchCallDealsToday();
+      }
+
       setSuccess(`Deal logged successfully for ${user?.name}!`);
       setForm({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
       setTimeout(() => setSuccess(''), 4000);
@@ -201,11 +291,10 @@ export default function PublicDealsPage() {
     const text = newNoteText[dealId]?.trim();
     if (!text) return;
     const currentUser = users.find(u => u.id === selectedUser);
-    const authorName = currentUser?.name || 'Anonymous';
     const { error: err } = await supabase.from('daily_deal_notes').insert({
       deal_id: dealId,
       note_text: text,
-      created_by_name: authorName,
+      created_by_name: currentUser?.name || 'Anonymous',
     });
     if (err) return;
     setNewNoteText(prev => ({ ...prev, [dealId]: '' }));
@@ -224,18 +313,65 @@ export default function PublicDealsPage() {
     toggleRow(id);
   };
 
-  // KPIs
-  const dealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
-  const totalAmount = todayDeals
+  // ── COMBINED KPIs ────────────────────────────────────────────────
+
+  const ddDealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
+  const ddTotalAmount = todayDeals
     .filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
     .reduce((s, d) => s + parseAmount(d.amount), 0);
+
+  const callDealCount = callDealsToday.length;
+  const callDealAmount = callDealsToday.reduce((s, c) => s + parseAmount(c.buyerFinal), 0);
+
+  const totalDealCount = ddDealCount + callDealCount;
+  const totalAmount = ddTotalAmount + callDealAmount;
+
+  // ── LEADERBOARD ──────────────────────────────────────────────────
+
+  const leaderboard = (() => {
+    const nameMap: { [id: string]: string } = {};
+    const roleMap: { [id: string]: string } = {};
+    users.forEach(u => { nameMap[u.id] = u.name; roleMap[u.id] = u.role; });
+
+    const repMap: { [id: string]: { name: string; dealCount: number; amount: number; role: string } } = {};
+    users.forEach(u => {
+      repMap[u.id] = { name: u.name, dealCount: 0, amount: 0, role: u.role };
+    });
+
+    // Daily deals entries
+    todayDeals.forEach(d => {
+      if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
+      if (!repMap[d.addedBy]) {
+        repMap[d.addedBy] = { name: d.addedByName, dealCount: 0, amount: 0, role: roleMap[d.addedBy] || 'rep' };
+      }
+      repMap[d.addedBy].dealCount++;
+      repMap[d.addedBy].amount += parseAmount(d.amount);
+    });
+
+    // Calls-based deals
+    callDealsToday.forEach(c => {
+      const creditId = c.dealBy || c.assignedTo;
+      const creditName = c.dealByName || c.assignedToName || nameMap[creditId || ''] || 'Unknown';
+      if (!creditId) return;
+      if (!repMap[creditId]) {
+        repMap[creditId] = { name: creditName, dealCount: 0, amount: 0, role: roleMap[creditId] || 'rep' };
+      }
+      repMap[creditId].dealCount++;
+      repMap[creditId].amount += parseAmount(c.buyerFinal);
+    });
+
+    return Object.entries(repMap)
+      .map(([id, data]) => ({ id, ...data }))
+      .filter(r => r.dealCount > 0 || r.role === 'rep')
+      .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
+  })();
 
   return (
     <div className="min-h-screen bg-gray-900">
 
       {/* HEADER */}
       <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-bold text-blue-400">DSS Portal</h1>
             <span className="text-xs text-gray-500 bg-gray-700 px-2.5 py-1 rounded-full border border-gray-600">
@@ -246,118 +382,221 @@ export default function PublicDealsPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      <main className="max-w-5xl mx-auto px-4 py-6 space-y-5">
 
-        {/* KPI CARDS */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Deals Today</p>
-            <p className="text-3xl font-bold text-green-400">{dealCount}</p>
-            <p className="text-xs text-gray-500 mt-1">team total</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Total Amount</p>
-            <p className="text-2xl font-bold text-green-400">{formatCurrency(totalAmount)}</p>
-            <p className="text-xs text-gray-500 mt-1">deals only</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Entries</p>
-            <p className="text-3xl font-bold text-blue-400">{todayDeals.length}</p>
-            <p className="text-xs text-gray-500 mt-1">all statuses</p>
-          </div>
-        </div>
+        {/* TOP ROW: KPIs + Leaderboard */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-start">
 
-        {/* FORM */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-700">
-            <h2 className="text-sm font-semibold text-gray-200">Log a deal</h2>
-          </div>
-          <div className="p-5 space-y-4">
-
-            {success && (
-              <div className="bg-green-900 border border-green-700 text-green-300 px-4 py-3 rounded-lg text-sm">
-                {success}
-              </div>
-            )}
-            {error && (
-              <div className="bg-red-900 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* Name selector */}
-            <div>
-              <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Your name *</label>
-              <select
-                value={selectedUser}
-                onChange={e => setSelectedUser(e.target.value)}
-                className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="">Select your name…</option>
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Row 1 */}
+          <div className="space-y-4">
+            {/* KPI CARDS */}
             <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
-                <input type="text" value={form.appId}
-                  onChange={e => setForm({ ...form, appId: e.target.value })}
-                  placeholder="e.g. DTBFE001"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Deals Today</p>
+                <p className="text-3xl font-bold text-green-400">{totalDealCount}</p>
+                {callDealCount > 0 && <p className="text-xs text-gray-500 mt-1">+{callDealCount} from calls</p>}
               </div>
-              <div>
-                <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
-                <input type="text" value={form.dealerName}
-                  onChange={e => setForm({ ...form, dealerName: e.target.value })}
-                  placeholder="Dealer name"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Total Amount</p>
+                <p className="text-2xl font-bold text-green-400">{formatCurrency(totalAmount)}</p>
+                {callDealAmount > 0 && <p className="text-xs text-gray-500 mt-1">+{formatCurrency(callDealAmount)} from calls</p>}
               </div>
-              <div>
-                <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer *</label>
-                <input type="text" value={form.customerName}
-                  onChange={e => setForm({ ...form, customerName: e.target.value })}
-                  placeholder="Customer name"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Entries</p>
+                <p className="text-3xl font-bold text-blue-400">{todayDeals.length}</p>
+                <p className="text-xs text-gray-500 mt-1">all statuses</p>
               </div>
             </div>
 
-            {/* Row 2 */}
-            <div className="grid grid-cols-4 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Amount *</label>
-                <input type="text" value={form.amount}
-                  onChange={e => setForm({ ...form, amount: e.target.value })}
-                  placeholder="$0"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            {/* FORM */}
+            <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+              <div className="px-5 py-3.5 border-b border-gray-700">
+                <h2 className="text-sm font-semibold text-gray-200">Log a deal</h2>
               </div>
-              <div>
-                <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">State *</label>
-                <input type="text" value={form.state}
-                  onChange={e => setForm({ ...form, state: e.target.value.toUpperCase() })}
-                  placeholder="IL" maxLength={2}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">FU Status *</label>
-                <select value={form.fuStatus}
-                  onChange={e => setForm({ ...form, fuStatus: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                  {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col justify-end">
-                <button onClick={handleSubmit} disabled={submitting}
-                  className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
-                  {submitting ? 'Saving…' : 'Add Deal'}
-                </button>
+              <div className="p-5 space-y-4">
+
+                {success && (
+                  <div className="bg-green-900 border border-green-700 text-green-300 px-4 py-3 rounded-lg text-sm">
+                    {success}
+                  </div>
+                )}
+                {error && (
+                  <div className="bg-red-900 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">
+                    {error}
+                  </div>
+                )}
+
+                {/* App ID Search */}
+                <div className="bg-gray-750 border border-gray-600 rounded-lg p-3">
+                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">
+                    Search existing app (optional)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults([]); }}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
+                      placeholder="Type App ID to search…"
+                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button onClick={handleSearch} disabled={searching}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+                      {searching ? 'Searching…' : 'Search'}
+                    </button>
+                    {linkedCall && (
+                      <button onClick={clearLinkedCall}
+                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-400 rounded-lg text-sm transition">
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {searchResults.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {searchResults.map((call: any) => (
+                        <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-blue-400 font-medium">{call.application_id}</span>
+                            <span className="text-xs text-gray-300">{call.dealer_name}</span>
+                            <span className="text-xs text-gray-500">{call.state}</span>
+                            <span className="text-xs text-gray-400">{call.buyer_final}</span>
+                          </div>
+                          <button onClick={() => handleSelectCall(call)}
+                            className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">
+                            Use this app →
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {searchResults.length === 0 && searchQuery && !linkedCall && !searching && (
+                    <p className="text-xs text-gray-500 mt-2">No match found — fill in the details manually below.</p>
+                  )}
+
+                  {linkedCall && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-green-400">✓ Linked to existing call:</span>
+                      <span className="text-xs text-blue-400 font-medium">{linkedCall.application_id}</span>
+                      <span className="text-xs text-gray-400">— {linkedCall.dealer_name}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Name selector */}
+                <div>
+                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Your name *</label>
+                  <select
+                    value={selectedUser}
+                    onChange={e => setSelectedUser(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">Select your name…</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Row 1 */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
+                    <input type="text" value={form.appId}
+                      onChange={e => setForm({ ...form, appId: e.target.value })}
+                      placeholder="e.g. DTBFE001"
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
+                    <input type="text" value={form.dealerName}
+                      onChange={e => setForm({ ...form, dealerName: e.target.value })}
+                      placeholder="Dealer name"
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer *</label>
+                    <input type="text" value={form.customerName}
+                      onChange={e => setForm({ ...form, customerName: e.target.value })}
+                      placeholder="Customer name"
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                </div>
+
+                {/* Row 2 */}
+                <div className="grid grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Amount *</label>
+                    <input type="text" value={form.amount}
+                      onChange={e => setForm({ ...form, amount: e.target.value })}
+                      placeholder="$0"
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">State *</label>
+                    <input type="text" value={form.state}
+                      onChange={e => setForm({ ...form, state: e.target.value.toUpperCase() })}
+                      placeholder="IL" maxLength={2}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">FU Status *</label>
+                    <select value={form.fuStatus}
+                      onChange={e => setForm({ ...form, fuStatus: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                      {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    <button onClick={handleSubmit} disabled={submitting}
+                      className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+                      {submitting ? 'Saving…' : 'Add Deal'}
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-500">Counts toward today's team goal. Resets at midnight.</p>
               </div>
             </div>
+          </div>
 
-            <p className="text-xs text-gray-500">Counts toward today's team goal. Resets at midnight.</p>
+          {/* LEADERBOARD */}
+          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
+              <span className="text-base">🏆</span>
+              <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
+            </div>
+            <div className="divide-y divide-gray-700">
+              {leaderboard.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm text-gray-500">No entries yet today</p>
+              ) : (
+                leaderboard.map((rep, idx) => {
+                  const m = medal(idx);
+                  const isMe = rep.id === selectedUser;
+                  return (
+                    <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
+                      <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm">
+                        {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${isMe ? 'text-blue-300' : 'text-gray-200'}`}>
+                          {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className={`text-xl font-bold leading-none ${rep.dealCount > 0 ? 'text-green-400' : 'text-gray-600'}`}>
+                          {rep.dealCount}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">deals</p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
 
@@ -414,7 +653,6 @@ export default function PublicDealsPage() {
                             <td className="px-4 py-3 text-sm text-gray-200">{deal.dealerName}</td>
                             <td className="px-4 py-3 text-sm text-gray-200">{deal.customerName}</td>
 
-                            {/* Amount — editable */}
                             <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                               {isEditing ? (
                                 <input type="text" value={editAmount}
@@ -439,7 +677,6 @@ export default function PublicDealsPage() {
                               </span>
                             </td>
 
-                            {/* FU Status — editable */}
                             <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                               {isEditing ? (
                                 <select value={editFuStatus}
@@ -465,7 +702,6 @@ export default function PublicDealsPage() {
 
                             <td className="px-4 py-3 text-sm text-gray-400">{deal.addedByName}</td>
 
-                            {/* Note button */}
                             <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                               <button
                                 onClick={e => toggleNotes(e, deal.id)}
@@ -479,7 +715,6 @@ export default function PublicDealsPage() {
                               </button>
                             </td>
 
-                            {/* Save/Cancel */}
                             <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                               {isEditing && (
                                 <div className="flex items-center gap-1">
@@ -517,7 +752,7 @@ export default function PublicDealsPage() {
                                   )}
                                   <div className="flex gap-2">
                                     <input type="text"
-                                      placeholder={selectedUser ? "Add a note…" : "Select your name above to add a note…"}
+                                      placeholder={selectedUser ? 'Add a note…' : 'Select your name above to add a note…'}
                                       value={newNoteText[deal.id] || ''}
                                       onChange={e => setNewNoteText(prev => ({ ...prev, [deal.id]: e.target.value }))}
                                       onKeyDown={e => { if (e.key === 'Enter') handleAddNote(deal.id); }}
