@@ -70,7 +70,6 @@ interface DailyDealsTabProps {
   users?: User[];
 }
 
-// Unified type for combined table
 interface CombinedEntry {
   id: string;
   source: 'manual' | 'call';
@@ -109,10 +108,7 @@ const getFuStatusStyle = (status: string) => {
 };
 
 const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency', currency: 'USD',
-    minimumFractionDigits: 0, maximumFractionDigits: 0,
-  }).format(amount);
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 
 const parseAmount = (str: string) =>
   parseFloat((str || '0').replace(/[^0-9.-]+/g, '')) || 0;
@@ -138,14 +134,19 @@ export default function DailyDealsTab({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Inline editing state — all fields
   const [editingDeal, setEditingDeal] = useState<string | null>(null);
+  const [editAppId, setEditAppId] = useState('');
+  const [editDealerName, setEditDealerName] = useState('');
+  const [editCustomerName, setEditCustomerName] = useState('');
   const [editAmount, setEditAmount] = useState('');
+  const [editState, setEditState] = useState('');
   const [editFuStatus, setEditFuStatus] = useState('');
+  const [editCreditId, setEditCreditId] = useState('');
+  const [editCreditName, setEditCreditName] = useState('');
 
-  // Local overrides for call entries so edits reflect immediately
   const [callOverrides, setCallOverrides] = useState<{ [id: string]: { amount?: string; fuStatus?: string } }>({});
 
-  // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Call[]>([]);
   const [linkedCall, setLinkedCall] = useState<Call | null>(null);
@@ -244,7 +245,17 @@ export default function DailyDealsTab({
     })));
   };
 
-  // ── SEARCH ──────────────────────────────────────────────────────
+  const startEditing = (entry: CombinedEntry) => {
+    setEditingDeal(entry.id);
+    setEditAppId(entry.appId);
+    setEditDealerName(entry.dealerName);
+    setEditCustomerName(entry.customerName === '—' ? '' : entry.customerName);
+    setEditAmount(entry.amount);
+    setEditState(entry.state);
+    setEditFuStatus(entry.fuStatus);
+    setEditCreditId(entry.creditId || '');
+    setEditCreditName(entry.creditName);
+  };
 
   const handleSearch = () => {
     if (!searchQuery.trim()) return;
@@ -275,8 +286,6 @@ export default function DailyDealsTab({
     setForm(prev => ({ ...prev, appId: '', dealerName: '', amount: '', state: '' }));
   };
 
-  // ── HANDLERS ────────────────────────────────────────────────────
-
   const handleAddDeal = async () => {
     if (!form.appId || !form.dealerName || !form.customerName || !form.amount || !form.state) {
       setFormError('All fields are required'); return;
@@ -290,7 +299,6 @@ export default function DailyDealsTab({
         added_by: currentUser.id, added_by_name: currentUser.name, deal_date: today,
       });
       if (err) throw err;
-
       if (linkedCall) {
         await supabase.from('calls').update({
           fu_status: form.fuStatus,
@@ -301,7 +309,6 @@ export default function DailyDealsTab({
         }).eq('id', linkedCall.id);
         setLinkedCall(null);
       }
-
       setSuccess('Deal added!');
       setTimeout(() => setSuccess(''), 3000);
       setForm({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
@@ -313,20 +320,26 @@ export default function DailyDealsTab({
   const handleUpdateCombined = async (entry: CombinedEntry) => {
     try {
       if (entry.source === 'manual') {
-        const { error: err } = await supabase.from('daily_deals')
-          .update({ amount: editAmount.trim(), fu_status: editFuStatus })
-          .eq('id', entry.id);
+        const creditUser = allUsers.find(u => u.id === editCreditId);
+        const { error: err } = await supabase.from('daily_deals').update({
+          app_id: editAppId.trim(),
+          dealer_name: editDealerName.trim(),
+          customer_name: editCustomerName.trim(),
+          amount: editAmount.trim(),
+          state: editState.trim().toUpperCase(),
+          fu_status: editFuStatus,
+          added_by: editCreditId || null,
+          added_by_name: creditUser?.name || editCreditName,
+        }).eq('id', entry.id);
         if (err) throw err;
         await fetchTodayDeals();
       } else {
-        const { error: err } = await supabase.from('calls')
-          .update({
-            buyer_final: editAmount.trim(),
-            fu_status: editFuStatus,
-            updated_at: new Date().toISOString(),
-          }).eq('id', entry.id);
+        const { error: err } = await supabase.from('calls').update({
+          buyer_final: editAmount.trim(),
+          fu_status: editFuStatus,
+          updated_at: new Date().toISOString(),
+        }).eq('id', entry.id);
         if (err) throw err;
-        // Update local override for immediate UI feedback
         setCallOverrides(prev => ({
           ...prev,
           [entry.id]: { amount: editAmount.trim(), fuStatus: editFuStatus },
@@ -384,27 +397,18 @@ export default function DailyDealsTab({
 
   const isToday = (date: Date) => {
     const t = new Date();
-    return date.getDate() === t.getDate() &&
-      date.getMonth() === t.getMonth() &&
-      date.getFullYear() === t.getFullYear();
+    return date.getDate() === t.getDate() && date.getMonth() === t.getMonth() && date.getFullYear() === t.getFullYear();
   };
 
-  // ── KPIs ─────────────────────────────────────────────────────────
-
   const ddDealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
-  const ddTotalAmount = todayDeals
-    .filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
-    .reduce((s, d) => s + parseAmount(d.amount), 0);
-
+  const ddTotalAmount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').reduce((s, d) => s + parseAmount(d.amount), 0);
   const callDealsToday = calls.filter(c => {
     if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
     if (!c.dealDate) return false;
     return isToday(new Date(c.dealDate));
   });
-
   const callDealCount = callDealsToday.length;
   const callDealAmount = callDealsToday.reduce((s, c) => s + parseAmount(c.buyerFinal || '0'), 0);
-
   const totalDealCount = ddDealCount + callDealCount;
   const totalAmount = ddTotalAmount + callDealAmount;
   const goalPct = goals.team > 0 ? Math.min((totalDealCount / goals.team) * 100, 100) : 0;
@@ -415,28 +419,17 @@ export default function DailyDealsTab({
   ]);
   const activeReps = activeRepNames.size;
 
-  // ── COMBINED TODAY'S ENTRIES ─────────────────────────────────────
-
   const combinedEntries: CombinedEntry[] = [
     ...todayDeals.map(d => ({
-      id: d.id,
-      source: 'manual' as const,
-      appId: d.appId,
-      dealerName: d.dealerName,
-      customerName: d.customerName,
-      amount: d.amount,
-      state: d.state,
-      fuStatus: d.fuStatus,
-      creditName: d.addedByName,
-      creditId: d.addedBy,
+      id: d.id, source: 'manual' as const,
+      appId: d.appId, dealerName: d.dealerName, customerName: d.customerName,
+      amount: d.amount, state: d.state, fuStatus: d.fuStatus,
+      creditName: d.addedByName, creditId: d.addedBy,
       sortTime: new Date(d.createdAt).getTime(),
     })),
     ...callDealsToday.map(c => ({
-      id: c.id,
-      source: 'call' as const,
-      appId: c.applicationId,
-      dealerName: c.dealerName,
-      customerName: '—',
+      id: c.id, source: 'call' as const,
+      appId: c.applicationId, dealerName: c.dealerName, customerName: '—',
       amount: callOverrides[c.id]?.amount ?? (c.buyerFinal || '0'),
       state: c.state,
       fuStatus: callOverrides[c.id]?.fuStatus ?? (c.fuStatus || 'Deal'),
@@ -446,47 +439,32 @@ export default function DailyDealsTab({
     })),
   ].sort((a, b) => b.sortTime - a.sortTime);
 
-  // ── LEADERBOARD ──────────────────────────────────────────────────
-
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
     const roleMap: { [id: string]: string } = {};
     allUsers.forEach(u => { nameMap[u.id] = u.name; roleMap[u.id] = u.role; });
     users.forEach(u => { nameMap[u.id] = u.name; roleMap[u.id] = u.role; });
-
     const repMap: { [id: string]: { name: string; dealCount: number; amount: number; role: string } } = {};
-    Object.entries(nameMap).forEach(([id, name]) => {
-      repMap[id] = { name, dealCount: 0, amount: 0, role: roleMap[id] || 'rep' };
-    });
-
+    Object.entries(nameMap).forEach(([id, name]) => { repMap[id] = { name, dealCount: 0, amount: 0, role: roleMap[id] || 'rep' }; });
     todayDeals.forEach(d => {
       if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
-      if (!repMap[d.addedBy]) {
-        repMap[d.addedBy] = { name: d.addedByName, dealCount: 0, amount: 0, role: roleMap[d.addedBy] || 'rep' };
-      }
+      if (!repMap[d.addedBy]) repMap[d.addedBy] = { name: d.addedByName, dealCount: 0, amount: 0, role: roleMap[d.addedBy] || 'rep' };
       repMap[d.addedBy].dealCount++;
       repMap[d.addedBy].amount += parseAmount(d.amount);
     });
-
     callDealsToday.forEach(c => {
       const creditId = c.dealBy || c.assignedTo;
       const creditName = c.dealByName || c.assignedToName || nameMap[creditId || ''] || 'Unknown';
       if (!creditId) return;
-      const role = roleMap[creditId] || 'rep';
-      if (!repMap[creditId]) {
-        repMap[creditId] = { name: creditName, dealCount: 0, amount: 0, role };
-      }
+      if (!repMap[creditId]) repMap[creditId] = { name: creditName, dealCount: 0, amount: 0, role: roleMap[creditId] || 'rep' };
       repMap[creditId].dealCount++;
       repMap[creditId].amount += parseAmount(c.buyerFinal || '0');
     });
-
-    return Object.entries(repMap)
-      .map(([id, data]) => ({ id, ...data }))
+    return Object.entries(repMap).map(([id, data]) => ({ id, ...data }))
       .filter(r => r.dealCount > 0 || r.role === 'rep')
       .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
   })();
 
-  // Calendar
   const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
   const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
   const calendarDays: (number | null)[] = [];
@@ -494,35 +472,26 @@ export default function DailyDealsTab({
   for (let d = 1; d <= daysInMonth; d++) calendarDays.push(d);
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
+  const inputCls = 'px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500';
+
   return (
     <div className="space-y-5">
-
-      {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-100">Daily Deals</h2>
           <p className="text-sm text-gray-400 mt-0.5">{formatDateLabel(today)} &nbsp;·&nbsp; Resets at midnight</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setShowHistory(true); fetchDatesWithDeals(calendarYear, calendarMonth); }}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-lg text-sm transition"
-          >
+          <button onClick={() => { setShowHistory(true); fetchDatesWithDeals(calendarYear, calendarMonth); }}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-lg text-sm transition">
             📅 View History
           </button>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText('https://dss-portal-delta.vercel.app/deals');
-              alert('Link copied to clipboard!');
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-gray-300 rounded-lg text-sm transition"
-          >
+          <button onClick={() => { navigator.clipboard.writeText('https://dss-portal-delta.vercel.app/deals'); alert('Link copied to clipboard!'); }}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-gray-300 rounded-lg text-sm transition">
             🔗 Share Link
           </button>
-          <button
-            onClick={() => setShowForm(f => !f)}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition"
-          >
+          <button onClick={() => setShowForm(f => !f)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
             + Log Deal
           </button>
         </div>
@@ -531,9 +500,7 @@ export default function DailyDealsTab({
       {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">{error}</div>}
       {success && <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm">{success}</div>}
 
-      {/* TOP ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
-
         <div className="space-y-4">
           <div className="grid grid-cols-4 gap-3">
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
@@ -564,7 +531,6 @@ export default function DailyDealsTab({
             </div>
           </div>
 
-          {/* Form */}
           <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
             <button onClick={() => setShowForm(f => !f)}
               className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-700 transition border-b border-gray-700">
@@ -576,29 +542,16 @@ export default function DailyDealsTab({
             {showForm && (
               <div className="p-5">
                 {formError && <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded text-sm mb-4">{formError}</div>}
-
-                {/* Search */}
                 <div className="bg-gray-750 border border-gray-600 rounded-lg p-3 mb-4">
                   <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={searchQuery}
+                    <input type="text" value={searchQuery}
                       onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults([]); }}
                       onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
                       placeholder="Type App ID to search…"
-                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <button onClick={handleSearch}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
-                      Search
-                    </button>
-                    {linkedCall && (
-                      <button onClick={clearLinkedCall}
-                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-400 rounded-lg text-sm transition">
-                        Clear
-                      </button>
-                    )}
+                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                    <button onClick={handleSearch} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Search</button>
+                    {linkedCall && <button onClick={clearLinkedCall} className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-400 rounded-lg text-sm transition">Clear</button>}
                   </div>
                   {searchResults.length > 0 && (
                     <div className="mt-2 space-y-1">
@@ -610,17 +563,12 @@ export default function DailyDealsTab({
                             <span className="text-xs text-gray-500">{call.state}</span>
                             <span className="text-xs text-gray-400">${parseAmount(call.buyerFinal).toLocaleString()}</span>
                           </div>
-                          <button onClick={() => handleSelectCall(call)}
-                            className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">
-                            Use this app →
-                          </button>
+                          <button onClick={() => handleSelectCall(call)} className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Use this app →</button>
                         </div>
                       ))}
                     </div>
                   )}
-                  {searchResults.length === 0 && searchQuery && !linkedCall && (
-                    <p className="text-xs text-gray-500 mt-2">No match found — fill in the details manually below.</p>
-                  )}
+                  {searchResults.length === 0 && searchQuery && !linkedCall && <p className="text-xs text-gray-500 mt-2">No match found — fill in the details manually below.</p>}
                   {linkedCall && (
                     <div className="mt-2 flex items-center gap-2">
                       <span className="text-xs text-green-400">✓ Linked to existing call:</span>
@@ -629,38 +577,32 @@ export default function DailyDealsTab({
                     </div>
                   )}
                 </div>
-
                 <div className="grid grid-cols-3 gap-3 mb-3">
                   <div>
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
-                    <input type="text" value={form.appId} onChange={e => setForm({ ...form, appId: e.target.value })}
-                      placeholder="e.g. DTBFE001"
+                    <input type="text" value={form.appId} onChange={e => setForm({ ...form, appId: e.target.value })} placeholder="e.g. DTBFE001"
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
-                    <input type="text" value={form.dealerName} onChange={e => setForm({ ...form, dealerName: e.target.value })}
-                      placeholder="Dealer name"
+                    <input type="text" value={form.dealerName} onChange={e => setForm({ ...form, dealerName: e.target.value })} placeholder="Dealer name"
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer *</label>
-                    <input type="text" value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })}
-                      placeholder="Customer name"
+                    <input type="text" value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })} placeholder="Customer name"
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   </div>
                 </div>
                 <div className="grid grid-cols-4 gap-3">
                   <div>
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Amount *</label>
-                    <input type="text" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })}
-                      placeholder="$0"
+                    <input type="text" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="$0"
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">State *</label>
-                    <input type="text" value={form.state} onChange={e => setForm({ ...form, state: e.target.value.toUpperCase() })}
-                      placeholder="IL" maxLength={2}
+                    <input type="text" value={form.state} onChange={e => setForm({ ...form, state: e.target.value.toUpperCase() })} placeholder="IL" maxLength={2}
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   </div>
                   <div>
@@ -671,10 +613,7 @@ export default function DailyDealsTab({
                     </select>
                   </div>
                   <div className="flex items-end">
-                    <button onClick={handleAddDeal}
-                      className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
-                      Add Deal
-                    </button>
+                    <button onClick={handleAddDeal} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">Add Deal</button>
                   </div>
                 </div>
                 <p className="text-xs text-gray-500 mt-3">Counts toward today's goal only. Expand each row to add notes.</p>
@@ -683,7 +622,6 @@ export default function DailyDealsTab({
           </div>
         </div>
 
-        {/* Leaderboard */}
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
             <span className="text-base">🏆</span>
@@ -692,44 +630,38 @@ export default function DailyDealsTab({
           <div className="divide-y divide-gray-700">
             {leaderboard.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-gray-500">No entries yet today</p>
-            ) : (
-              leaderboard.map((rep, idx) => {
-                const m = medal(idx);
-                const isMe = rep.id === currentUser.id;
-                return (
-                  <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
-                    <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm">
-                      {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate ${isMe ? 'text-blue-300' : 'text-gray-200'}`}>
-                        {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className={`text-xl font-bold leading-none ${rep.dealCount > 0 ? 'text-green-400' : 'text-gray-600'}`}>
-                        {rep.dealCount}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">deals</p>
-                    </div>
+            ) : leaderboard.map((rep, idx) => {
+              const m = medal(idx);
+              const isMe = rep.id === currentUser.id;
+              return (
+                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
+                  <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm">
+                    {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
                   </div>
-                );
-              })
-            )}
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium truncate ${isMe ? 'text-blue-300' : 'text-gray-200'}`}>
+                      {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={`text-xl font-bold leading-none ${rep.dealCount > 0 ? 'text-green-400' : 'text-gray-600'}`}>{rep.dealCount}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">deals</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* TODAY'S ENTRIES — combined */}
+      {/* TODAY'S ENTRIES */}
       <div>
         <h3 className="text-base font-semibold text-gray-100 mb-3">
-          Today's entries
-          <span className="ml-2 text-sm font-normal text-gray-400">({combinedEntries.length} total)</span>
+          Today's entries <span className="ml-2 text-sm font-normal text-gray-400">({combinedEntries.length} total)</span>
         </h3>
-
         {loading ? (
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-400">Loading...</div>
         ) : combinedEntries.length === 0 ? (
@@ -738,21 +670,21 @@ export default function DailyDealsTab({
             <p className="text-sm text-gray-500 mt-1">Use the form above to log the first deal.</p>
           </div>
         ) : (
-          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-700">
-                  <th className="w-10 px-4 py-3"></th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">State</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Source</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">By</th>
-                  <th className="w-10 px-4 py-3"></th>
-                  <th className="w-10 px-4 py-3"></th>
+                  <th className="w-8 px-3 py-3"></th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">State</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Source</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">By</th>
+                  <th className="w-8 px-3 py-3"></th>
+                  <th className="w-16 px-3 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
@@ -767,56 +699,68 @@ export default function DailyDealsTab({
                   return (
                     <>
                       <tr key={entry.id}
-                        className={`hover:bg-gray-750 transition-colors ${!isEditing ? 'cursor-pointer' : ''}`}
+                        className={`hover:bg-gray-750 transition-colors ${!isEditing && entry.source === 'manual' ? 'cursor-pointer' : ''}`}
                         onClick={() => { if (!isEditing && entry.source === 'manual') toggleRow(entry.id); }}>
-                        <td className="px-4 py-3 text-center">
-                          {entry.source === 'manual' && (
-                            isExpanded
-                              ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
-                              : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-blue-400 font-medium">{entry.appId}</td>
-                        <td className="px-4 py-3 text-sm text-gray-200">{entry.dealerName}</td>
-                        <td className="px-4 py-3 text-sm text-gray-400">{entry.customerName}</td>
 
-                        {/* Amount — editable */}
-                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                          {isEditing ? (
-                            <input type="text" value={editAmount} onChange={e => setEditAmount(e.target.value)}
-                              className="w-24 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
-                              autoFocus />
-                          ) : (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-semibold text-gray-100">{entry.amount}</span>
-                              <button onClick={() => { setEditingDeal(entry.id); setEditAmount(entry.amount); setEditFuStatus(entry.fuStatus); }}
-                                className="text-gray-600 hover:text-gray-400 transition">
-                                <Edit2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
+                        <td className="px-3 py-3 text-center">
+                          {entry.source === 'manual' && (isExpanded
+                            ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
+                            : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />)}
                         </td>
 
-                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                          <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{entry.state}</span>
+                        {/* App ID */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          {isEditing && entry.source === 'manual'
+                            ? <input value={editAppId} onChange={e => setEditAppId(e.target.value)} className={`${inputCls} w-28`} />
+                            : <span className="text-sm text-blue-400 font-medium">{entry.appId}</span>}
                         </td>
 
-                        {/* FU Status — editable */}
-                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                          {isEditing ? (
-                            <select value={editFuStatus} onChange={e => setEditFuStatus(e.target.value)}
-                              className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none">
-                              {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                          ) : (
-                            <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(entry.fuStatus)}`}>
-                              {entry.fuStatus}
-                            </span>
-                          )}
+                        {/* Dealer */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          {isEditing && entry.source === 'manual'
+                            ? <input value={editDealerName} onChange={e => setEditDealerName(e.target.value)} className={`${inputCls} w-32`} />
+                            : <span className="text-sm text-gray-200">{entry.dealerName}</span>}
+                        </td>
+
+                        {/* Customer */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          {isEditing && entry.source === 'manual'
+                            ? <input value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)} className={`${inputCls} w-32`} />
+                            : <span className="text-sm text-gray-400">{entry.customerName}</span>}
+                        </td>
+
+                        {/* Amount */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          {isEditing
+                            ? <input value={editAmount} onChange={e => setEditAmount(e.target.value)} className={`${inputCls} w-24`} autoFocus={entry.source === 'call'} />
+                            : (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-semibold text-gray-100">{entry.amount}</span>
+                                <button onClick={() => startEditing(entry)} className="text-gray-600 hover:text-gray-400 transition">
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                        </td>
+
+                        {/* State */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          {isEditing && entry.source === 'manual'
+                            ? <input value={editState} onChange={e => setEditState(e.target.value.toUpperCase())} maxLength={2} className={`${inputCls} w-14`} />
+                            : <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{entry.state}</span>}
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          {isEditing
+                            ? <select value={editFuStatus} onChange={e => setEditFuStatus(e.target.value)} className={inputCls}>
+                                {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            : <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(entry.fuStatus)}`}>{entry.fuStatus}</span>}
                         </td>
 
                         {/* Source badge */}
-                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                             entry.source === 'call'
                               ? 'bg-purple-900 text-purple-300 border border-purple-700'
@@ -826,68 +770,61 @@ export default function DailyDealsTab({
                           </span>
                         </td>
 
-                        <td className="px-4 py-3 text-sm text-gray-400">{entry.creditName}</td>
+                        {/* By */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          {isEditing && entry.source === 'manual'
+                            ? <select value={editCreditId} onChange={e => {
+                                setEditCreditId(e.target.value);
+                                const u = allUsers.find(u => u.id === e.target.value);
+                                if (u) setEditCreditName(u.name);
+                              }} className={inputCls}>
+                                {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                              </select>
+                            : <span className="text-sm text-gray-400">{entry.creditName}</span>}
+                        </td>
 
-                        {/* Note button — manual entries only */}
+                        {/* Note button */}
                         <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                           {entry.source === 'manual' && (
-                            <button
-                              onClick={e => toggleNotes(e, entry.id)}
-                              title="Add note"
+                            <button onClick={e => toggleNotes(e, entry.id)} title="Notes"
                               className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${
-                                notes.length > 0
-                                  ? 'bg-blue-600 text-white hover:bg-blue-500'
-                                  : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
-                              }`}
-                            >
+                                notes.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
+                              }`}>
                               <MessageSquare className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </td>
 
-                        {/* Save/Cancel or Delete */}
-                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        {/* Save/Cancel/Delete */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <div className="flex items-center gap-1">
-                              <button onClick={() => handleUpdateCombined(entry)} className="text-green-400 hover:text-green-300">
-                                <Check className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => setEditingDeal(null)} className="text-red-400 hover:text-red-300">
-                                <X className="w-4 h-4" />
-                              </button>
+                              <button onClick={() => handleUpdateCombined(entry)} className="text-green-400 hover:text-green-300"><Check className="w-4 h-4" /></button>
+                              <button onClick={() => setEditingDeal(null)} className="text-red-400 hover:text-red-300"><X className="w-4 h-4" /></button>
                             </div>
-                          ) : (
-                            canDelete && manualDeal && (
-                              <button onClick={() => handleDeleteDeal(manualDeal)} className="text-gray-600 hover:text-red-400 transition">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )
-                          )}
+                          ) : canDelete && manualDeal ? (
+                            <button onClick={() => handleDeleteDeal(manualDeal)} className="text-gray-600 hover:text-red-400 transition">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          ) : null}
                         </td>
                       </tr>
 
-                      {/* Expanded notes — manual entries only */}
                       {isExpanded && !isEditing && entry.source === 'manual' && (
-                        <tr key={`${entry.id}-expanded`}>
-                          <td colSpan={11} className="px-4 py-4 pl-14 bg-gray-750">
+                        <tr key={`${entry.id}-exp`}>
+                          <td colSpan={11} className="px-4 py-4 pl-12 bg-gray-750">
                             <div className="space-y-3 max-w-2xl">
-                              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                                Notes ({notes.length})
-                              </p>
-                              {notes.length === 0 ? (
-                                <p className="text-sm text-gray-500 italic">No notes yet.</p>
-                              ) : (
-                                <div className="space-y-2">
-                                  {notes.map(note => (
-                                    <div key={note.id} className="bg-gray-700 px-4 py-3 rounded-lg border border-gray-600">
-                                      <p className="text-sm text-gray-200">{note.noteText}</p>
-                                      <p className="text-xs text-gray-500 mt-1.5">
-                                        {note.createdByName} · {new Date(note.createdAt).toLocaleString()}
-                                      </p>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({notes.length})</p>
+                              {notes.length === 0
+                                ? <p className="text-sm text-gray-500 italic">No notes yet.</p>
+                                : <div className="space-y-2">
+                                    {notes.map(note => (
+                                      <div key={note.id} className="bg-gray-700 px-4 py-3 rounded-lg border border-gray-600">
+                                        <p className="text-sm text-gray-200">{note.noteText}</p>
+                                        <p className="text-xs text-gray-500 mt-1.5">{note.createdByName} · {new Date(note.createdAt).toLocaleString()}</p>
+                                      </div>
+                                    ))}
+                                  </div>}
                               <div className="flex gap-2">
                                 <input type="text" placeholder="Add a note..."
                                   value={newNoteText[entry.id] || ''}
@@ -895,10 +832,7 @@ export default function DailyDealsTab({
                                   onKeyDown={e => { if (e.key === 'Enter') handleAddNote(entry.id); }}
                                   className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                   autoFocus />
-                                <button onClick={() => handleAddNote(entry.id)}
-                                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
-                                  Save
-                                </button>
+                                <button onClick={() => handleAddNote(entry.id)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Save</button>
                               </div>
                             </div>
                           </td>
@@ -917,12 +851,10 @@ export default function DailyDealsTab({
       {showHistory && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-16 z-50 px-4"
           onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
               <h3 className="text-lg font-semibold text-gray-100">Deal History</h3>
-              <button onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}
-                className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              <button onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
             </div>
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -933,9 +865,7 @@ export default function DailyDealsTab({
                   className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">›</button>
               </div>
               <div className="grid grid-cols-7 gap-1 mb-2">
-                {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                  <div key={d} className="text-center text-xs text-gray-500 py-1">{d}</div>
-                ))}
+                {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="text-center text-xs text-gray-500 py-1">{d}</div>)}
               </div>
               <div className="grid grid-cols-7 gap-1 mb-4">
                 {calendarDays.map((day, i) => {
@@ -954,9 +884,7 @@ export default function DailyDealsTab({
                   return (
                     <div key={i} className={cls} onClick={() => handleCalendarClick(day)}>
                       {day}
-                      {hasDeals && !isTodayDate && !isSelected && (
-                        <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-green-400 block" />
-                      )}
+                      {hasDeals && !isTodayDate && !isSelected && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-green-400 block" />}
                     </div>
                   );
                 })}
@@ -968,19 +896,13 @@ export default function DailyDealsTab({
               {selectedDate && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold text-gray-200">
-                      {formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}
-                    </p>
+                    <p className="text-sm font-semibold text-gray-200">{formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}</p>
                     <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-gray-400 hover:text-gray-200">clear</button>
                   </div>
                   <div className="rounded-lg border border-gray-700 overflow-hidden">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-700">
-                        <tr>
-                          {['App ID','Dealer','Customer','Amount','State','Status','By'].map(h => (
-                            <th key={h} className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{h}</th>
-                          ))}
-                        </tr>
+                        <tr>{['App ID','Dealer','Customer','Amount','State','Status','By'].map(h => <th key={h} className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{h}</th>)}</tr>
                       </thead>
                       <tbody className="divide-y divide-gray-700 bg-gray-800">
                         {selectedDateDeals.map(deal => (
