@@ -394,6 +394,15 @@ export default function DailyDealsTab({
             📅 View History
           </button>
           <button
+            onClick={() => {
+              navigator.clipboard.writeText('https://dss-portal-delta.vercel.app/deals');
+              alert('Link copied to clipboard!');
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-gray-300 rounded-lg text-sm transition"
+          >
+            🔗 Share Link
+          </button>
+          <button
             onClick={() => setShowForm(f => !f)}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition"
           >
