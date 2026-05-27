@@ -70,6 +70,21 @@ interface DailyDealsTabProps {
   users?: User[];
 }
 
+// Unified type for combined table
+interface CombinedEntry {
+  id: string;
+  source: 'manual' | 'call';
+  appId: string;
+  dealerName: string;
+  customerName: string;
+  amount: string;
+  state: string;
+  fuStatus: string;
+  creditName: string;
+  creditId?: string;
+  sortTime: number;
+}
+
 const FU_STATUSES = ['Deal', 'Confirmed Deal', 'Pending', 'No Answer', 'No Deal'];
 
 const getTodayString = () => {
@@ -126,6 +141,9 @@ export default function DailyDealsTab({
   const [editingDeal, setEditingDeal] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState('');
   const [editFuStatus, setEditFuStatus] = useState('');
+
+  // Local overrides for call entries so edits reflect immediately
+  const [callOverrides, setCallOverrides] = useState<{ [id: string]: { amount?: string; fuStatus?: string } }>({});
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -226,7 +244,7 @@ export default function DailyDealsTab({
     })));
   };
 
-  // ── SEARCH HANDLERS ─────────────────────────────────────────────
+  // ── SEARCH ──────────────────────────────────────────────────────
 
   const handleSearch = () => {
     if (!searchQuery.trim()) return;
@@ -257,7 +275,7 @@ export default function DailyDealsTab({
     setForm(prev => ({ ...prev, appId: '', dealerName: '', amount: '', state: '' }));
   };
 
-  // ── DEAL HANDLERS ────────────────────────────────────────────────
+  // ── HANDLERS ────────────────────────────────────────────────────
 
   const handleAddDeal = async () => {
     if (!form.appId || !form.dealerName || !form.customerName || !form.amount || !form.state) {
@@ -273,7 +291,6 @@ export default function DailyDealsTab({
       });
       if (err) throw err;
 
-      // If linked to an existing call, update its FU status and credit
       if (linkedCall) {
         await supabase.from('calls').update({
           fu_status: form.fuStatus,
@@ -293,14 +310,29 @@ export default function DailyDealsTab({
     }
   };
 
-  const handleUpdateDeal = async (dealId: string) => {
+  const handleUpdateCombined = async (entry: CombinedEntry) => {
     try {
-      const { error: err } = await supabase.from('daily_deals')
-        .update({ amount: editAmount.trim(), fu_status: editFuStatus })
-        .eq('id', dealId);
-      if (err) throw err;
+      if (entry.source === 'manual') {
+        const { error: err } = await supabase.from('daily_deals')
+          .update({ amount: editAmount.trim(), fu_status: editFuStatus })
+          .eq('id', entry.id);
+        if (err) throw err;
+        await fetchTodayDeals();
+      } else {
+        const { error: err } = await supabase.from('calls')
+          .update({
+            buyer_final: editAmount.trim(),
+            fu_status: editFuStatus,
+            updated_at: new Date().toISOString(),
+          }).eq('id', entry.id);
+        if (err) throw err;
+        // Update local override for immediate UI feedback
+        setCallOverrides(prev => ({
+          ...prev,
+          [entry.id]: { amount: editAmount.trim(), fuStatus: editFuStatus },
+        }));
+      }
       setEditingDeal(null);
-      await fetchTodayDeals();
       onRefresh();
     } catch (e: any) {
       setError('Failed to update: ' + e.message);
@@ -350,13 +382,6 @@ export default function DailyDealsTab({
     fetchDealsByDate(dateStr);
   };
 
-  const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
-  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
-  const calendarDays: (number | null)[] = [];
-  for (let i = 0; i < firstDay; i++) calendarDays.push(null);
-  for (let d = 1; d <= daysInMonth; d++) calendarDays.push(d);
-  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
   const isToday = (date: Date) => {
     const t = new Date();
     return date.getDate() === t.getDate() &&
@@ -389,6 +414,37 @@ export default function DailyDealsTab({
     ...callDealsToday.filter(c => c.assignedToName).map(c => c.assignedToName as string),
   ]);
   const activeReps = activeRepNames.size;
+
+  // ── COMBINED TODAY'S ENTRIES ─────────────────────────────────────
+
+  const combinedEntries: CombinedEntry[] = [
+    ...todayDeals.map(d => ({
+      id: d.id,
+      source: 'manual' as const,
+      appId: d.appId,
+      dealerName: d.dealerName,
+      customerName: d.customerName,
+      amount: d.amount,
+      state: d.state,
+      fuStatus: d.fuStatus,
+      creditName: d.addedByName,
+      creditId: d.addedBy,
+      sortTime: new Date(d.createdAt).getTime(),
+    })),
+    ...callDealsToday.map(c => ({
+      id: c.id,
+      source: 'call' as const,
+      appId: c.applicationId,
+      dealerName: c.dealerName,
+      customerName: '—',
+      amount: callOverrides[c.id]?.amount ?? (c.buyerFinal || '0'),
+      state: c.state,
+      fuStatus: callOverrides[c.id]?.fuStatus ?? (c.fuStatus || 'Deal'),
+      creditName: c.dealByName || c.assignedToName || 'Unknown',
+      creditId: c.dealBy || c.assignedTo,
+      sortTime: c.dealDate ? new Date(c.dealDate).getTime() : Date.now(),
+    })),
+  ].sort((a, b) => b.sortTime - a.sortTime);
 
   // ── LEADERBOARD ──────────────────────────────────────────────────
 
@@ -430,6 +486,14 @@ export default function DailyDealsTab({
       .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
   })();
 
+  // Calendar
+  const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const calendarDays: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) calendarDays.push(null);
+  for (let d = 1; d <= daysInMonth; d++) calendarDays.push(d);
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
   return (
     <div className="space-y-5">
 
@@ -470,7 +534,6 @@ export default function DailyDealsTab({
       {/* TOP ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
 
-        {/* LEFT: KPIs + form */}
         <div className="space-y-4">
           <div className="grid grid-cols-4 gap-3">
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
@@ -514,11 +577,9 @@ export default function DailyDealsTab({
               <div className="p-5">
                 {formError && <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded text-sm mb-4">{formError}</div>}
 
-                {/* App ID Search */}
+                {/* Search */}
                 <div className="bg-gray-750 border border-gray-600 rounded-lg p-3 mb-4">
-                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">
-                    Search existing app (optional)
-                  </label>
+                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -539,8 +600,6 @@ export default function DailyDealsTab({
                       </button>
                     )}
                   </div>
-
-                  {/* Search results */}
                   {searchResults.length > 0 && (
                     <div className="mt-2 space-y-1">
                       {searchResults.map(call => (
@@ -559,11 +618,9 @@ export default function DailyDealsTab({
                       ))}
                     </div>
                   )}
-
                   {searchResults.length === 0 && searchQuery && !linkedCall && (
                     <p className="text-xs text-gray-500 mt-2">No match found — fill in the details manually below.</p>
                   )}
-
                   {linkedCall && (
                     <div className="mt-2 flex items-center gap-2">
                       <span className="text-xs text-green-400">✓ Linked to existing call:</span>
@@ -626,7 +683,7 @@ export default function DailyDealsTab({
           </div>
         </div>
 
-        {/* RIGHT: Leaderboard */}
+        {/* Leaderboard */}
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
             <span className="text-base">🏆</span>
@@ -666,16 +723,16 @@ export default function DailyDealsTab({
         </div>
       </div>
 
-      {/* TODAY'S DEALS TABLE */}
+      {/* TODAY'S ENTRIES — combined */}
       <div>
         <h3 className="text-base font-semibold text-gray-100 mb-3">
           Today's entries
-          <span className="ml-2 text-sm font-normal text-gray-400">({todayDeals.length} deals)</span>
+          <span className="ml-2 text-sm font-normal text-gray-400">({combinedEntries.length} total)</span>
         </h3>
 
         {loading ? (
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-400">Loading...</div>
-        ) : todayDeals.length === 0 ? (
+        ) : combinedEntries.length === 0 ? (
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-10 text-center">
             <p className="text-base font-medium text-gray-400">No deals logged yet today.</p>
             <p className="text-sm text-gray-500 mt-1">Use the form above to log the first deal.</p>
@@ -692,34 +749,38 @@ export default function DailyDealsTab({
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">State</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Source</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">By</th>
                   <th className="w-10 px-4 py-3"></th>
                   <th className="w-10 px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
-                {todayDeals.map(deal => {
-                  const isExpanded = expandedRows.has(deal.id);
-                  const isEditing = editingDeal === deal.id;
-                  const notes = dealNotes[deal.id] || [];
-                  const canDelete = currentUser.role === 'admin' || currentUser.role === 'manager' || deal.addedBy === currentUser.id;
-                  const canEdit = currentUser.role === 'admin' || currentUser.role === 'manager' || deal.addedBy === currentUser.id;
+                {combinedEntries.map(entry => {
+                  const isExpanded = expandedRows.has(entry.id);
+                  const isEditing = editingDeal === entry.id;
+                  const notes = entry.source === 'manual' ? (dealNotes[entry.id] || []) : [];
+                  const manualDeal = entry.source === 'manual' ? todayDeals.find(d => d.id === entry.id) : null;
+                  const canDelete = entry.source === 'manual' && manualDeal &&
+                    (currentUser.role === 'admin' || currentUser.role === 'manager' || manualDeal.addedBy === currentUser.id);
 
                   return (
                     <>
-                      <tr key={deal.id}
+                      <tr key={entry.id}
                         className={`hover:bg-gray-750 transition-colors ${!isEditing ? 'cursor-pointer' : ''}`}
-                        onClick={() => { if (!isEditing) toggleRow(deal.id); }}>
+                        onClick={() => { if (!isEditing && entry.source === 'manual') toggleRow(entry.id); }}>
                         <td className="px-4 py-3 text-center">
-                          {isExpanded
-                            ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
-                            : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />}
+                          {entry.source === 'manual' && (
+                            isExpanded
+                              ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
+                              : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />
+                          )}
                         </td>
-                        <td className="px-4 py-3 text-sm text-blue-400 font-medium">{deal.appId}</td>
-                        <td className="px-4 py-3 text-sm text-gray-200">{deal.dealerName}</td>
-                        <td className="px-4 py-3 text-sm text-gray-200">{deal.customerName}</td>
+                        <td className="px-4 py-3 text-sm text-blue-400 font-medium">{entry.appId}</td>
+                        <td className="px-4 py-3 text-sm text-gray-200">{entry.dealerName}</td>
+                        <td className="px-4 py-3 text-sm text-gray-400">{entry.customerName}</td>
 
+                        {/* Amount — editable */}
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <input type="text" value={editAmount} onChange={e => setEditAmount(e.target.value)}
@@ -727,21 +788,20 @@ export default function DailyDealsTab({
                               autoFocus />
                           ) : (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-semibold text-gray-100">{deal.amount}</span>
-                              {canEdit && (
-                                <button onClick={() => { setEditingDeal(deal.id); setEditAmount(deal.amount); setEditFuStatus(deal.fuStatus); }}
-                                  className="text-gray-600 hover:text-gray-400 transition">
-                                  <Edit2 className="w-3 h-3" />
-                                </button>
-                              )}
+                              <span className="text-sm font-semibold text-gray-100">{entry.amount}</span>
+                              <button onClick={() => { setEditingDeal(entry.id); setEditAmount(entry.amount); setEditFuStatus(entry.fuStatus); }}
+                                className="text-gray-600 hover:text-gray-400 transition">
+                                <Edit2 className="w-3 h-3" />
+                              </button>
                             </div>
                           )}
                         </td>
 
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                          <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{deal.state}</span>
+                          <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{entry.state}</span>
                         </td>
 
+                        {/* FU Status — editable */}
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <select value={editFuStatus} onChange={e => setEditFuStatus(e.target.value)}
@@ -749,41 +809,47 @@ export default function DailyDealsTab({
                               {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                           ) : (
-                            <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>
-                              {deal.fuStatus}
+                            <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(entry.fuStatus)}`}>
+                              {entry.fuStatus}
                             </span>
                           )}
                         </td>
 
+                        {/* Source badge */}
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                          {notes.length > 0 && (
-                            <div className="flex items-center gap-1.5 text-blue-400">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            entry.source === 'call'
+                              ? 'bg-purple-900 text-purple-300 border border-purple-700'
+                              : 'bg-gray-700 text-gray-400 border border-gray-600'
+                          }`}>
+                            {entry.source === 'call' ? 'Calls' : 'Manual'}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3 text-sm text-gray-400">{entry.creditName}</td>
+
+                        {/* Note button — manual entries only */}
+                        <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                          {entry.source === 'manual' && (
+                            <button
+                              onClick={e => toggleNotes(e, entry.id)}
+                              title="Add note"
+                              className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${
+                                notes.length > 0
+                                  ? 'bg-blue-600 text-white hover:bg-blue-500'
+                                  : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
+                              }`}
+                            >
                               <MessageSquare className="w-3.5 h-3.5" />
-                              <span className="text-xs font-bold">{notes.length}</span>
-                            </div>
+                            </button>
                           )}
                         </td>
 
-                        <td className="px-4 py-3 text-sm text-gray-400">{deal.addedByName}</td>
-
-                        <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
-                          <button
-                            onClick={e => toggleNotes(e, deal.id)}
-                            title="Add note"
-                            className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${
-                              notes.length > 0
-                                ? 'bg-blue-600 text-white hover:bg-blue-500'
-                                : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
-                            }`}
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-
+                        {/* Save/Cancel or Delete */}
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <div className="flex items-center gap-1">
-                              <button onClick={() => handleUpdateDeal(deal.id)} className="text-green-400 hover:text-green-300">
+                              <button onClick={() => handleUpdateCombined(entry)} className="text-green-400 hover:text-green-300">
                                 <Check className="w-4 h-4" />
                               </button>
                               <button onClick={() => setEditingDeal(null)} className="text-red-400 hover:text-red-300">
@@ -791,8 +857,8 @@ export default function DailyDealsTab({
                               </button>
                             </div>
                           ) : (
-                            canDelete && (
-                              <button onClick={() => handleDeleteDeal(deal)} className="text-gray-600 hover:text-red-400 transition">
+                            canDelete && manualDeal && (
+                              <button onClick={() => handleDeleteDeal(manualDeal)} className="text-gray-600 hover:text-red-400 transition">
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             )
@@ -800,8 +866,9 @@ export default function DailyDealsTab({
                         </td>
                       </tr>
 
-                      {isExpanded && !isEditing && (
-                        <tr key={`${deal.id}-expanded`}>
+                      {/* Expanded notes — manual entries only */}
+                      {isExpanded && !isEditing && entry.source === 'manual' && (
+                        <tr key={`${entry.id}-expanded`}>
                           <td colSpan={11} className="px-4 py-4 pl-14 bg-gray-750">
                             <div className="space-y-3 max-w-2xl">
                               <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
@@ -823,12 +890,12 @@ export default function DailyDealsTab({
                               )}
                               <div className="flex gap-2">
                                 <input type="text" placeholder="Add a note..."
-                                  value={newNoteText[deal.id] || ''}
-                                  onChange={e => setNewNoteText(prev => ({ ...prev, [deal.id]: e.target.value }))}
-                                  onKeyDown={e => { if (e.key === 'Enter') handleAddNote(deal.id); }}
+                                  value={newNoteText[entry.id] || ''}
+                                  onChange={e => setNewNoteText(prev => ({ ...prev, [entry.id]: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === 'Enter') handleAddNote(entry.id); }}
                                   className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                   autoFocus />
-                                <button onClick={() => handleAddNote(deal.id)}
+                                <button onClick={() => handleAddNote(entry.id)}
                                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
                                   Save
                                 </button>
