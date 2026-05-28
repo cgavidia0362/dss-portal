@@ -294,7 +294,7 @@ function App() {
           assignedToName: c.assigned_to_name || undefined,
           fuStatus: c.fu_status || undefined,
           fiType: c.fi_type || undefined,
-          updatedAt: new Date(c.updated_at),
+          createdAt: c.created_at ? new Date(c.created_at) : undefined,
           dealDate: c.deal_date ? new Date(c.deal_date) : undefined,
           isDuplicate: c.is_duplicate || false,
           dealBy: c.deal_by || undefined,

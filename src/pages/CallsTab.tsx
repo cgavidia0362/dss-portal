@@ -17,6 +17,7 @@ interface Call {
   fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
+  createdAt?: Date;
   dealDate?: Date;
   isDuplicate?: boolean;
   dealBy?: string;
@@ -85,6 +86,7 @@ export default function CallsTab({
   const [filterFuStatus, setFilterFuStatus] = useState('');
   const [filterState, setFilterState] = useState('');
   const [filterStatusLast, setFilterStatusLast] = useState<Set<string>>(new Set());
+  const [dealerFilter, setDealerFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -110,6 +112,20 @@ export default function CallsTab({
     if (currentUserRole === 'rep' && currentUser?.state) fetchRepStateGoal(currentUser.state);
   }, [currentUser?.state, currentUserRole]);
 
+  // ── ESCAPE KEY ───────────────────────────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setExpandedRows(new Set());
+        setEditingStatusLast(null);
+        setEditingAmount(null);
+        setDealerFilter('');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const fetchRepStateGoal = async (stateStr: string) => {
     const stateList = stateStr.split(',').map(s => s.trim()).filter(Boolean);
     if (!stateList.length) return;
@@ -120,9 +136,7 @@ export default function CallsTab({
         .in('state', stateList).eq('month', currentMonth).eq('year', currentYear);
       if (data) {
         const goals: { [state: string]: number } = {};
-        data.forEach((d: any) => {
-          goals[d.state] = Math.round(d.monthly_goal / d.funding_days);
-        });
+        data.forEach((d: any) => { goals[d.state] = Math.round(d.monthly_goal / d.funding_days); });
         setStateGoals(goals);
       }
     } catch { setStateGoals({}); }
@@ -130,7 +144,15 @@ export default function CallsTab({
 
   const isToday = (date: Date) => {
     const t = new Date();
-    return date.getDate() === t.getDate() && date.getMonth() === t.getMonth() && date.getFullYear() === t.getFullYear();
+    return date.getDate() === t.getDate() &&
+      date.getMonth() === t.getMonth() &&
+      date.getFullYear() === t.getFullYear();
+  };
+
+  // ── NEW UPLOAD DETECTION ─────────────────────────────────────────
+  const isNewUpload = (call: Call): boolean => {
+    if (!call.createdAt) return false;
+    return isToday(new Date(call.createdAt));
   };
 
   useEffect(() => {
@@ -184,9 +206,10 @@ export default function CallsTab({
     if (searchQuery && !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.state.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      if (filterFuStatus === 'No Call' && !!call.fuStatus) return false;
-      if (filterFuStatus && filterFuStatus !== 'No Call' && call.fuStatus !== filterFuStatus) return false;
+    if (filterFuStatus === 'No Call' && !!call.fuStatus) return false;
+    if (filterFuStatus && filterFuStatus !== 'No Call' && call.fuStatus !== filterFuStatus) return false;
     if (filterState && call.state !== filterState) return false;
+    if (dealerFilter && call.dealerName !== dealerFilter) return false;
     if (filterStatusLast.size > 0 && !filterStatusLast.has(call.statusLast)) return false;
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
     if (dateTo && new Date(call.submittedDate) > new Date(dateTo)) return false;
@@ -209,28 +232,23 @@ export default function CallsTab({
   const totalPages = Math.ceil(sortedCalls.length / itemsPerPage);
   const paginatedCalls = sortedCalls.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  useEffect(() => { setCurrentPage(1); }, [searchQuery, filterFuStatus, filterState, filterStatusLast, dateFrom, dateTo, showCompleted]);
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, filterFuStatus, filterState, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
 
   // KPI calculations
   const csvDealsToday = filteredCalls.filter(c =>
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))
   ).length;
-
   const myDailyDealsToday = (todayDailyDeals || []).filter(d =>
     (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal') &&
     (currentUserRole !== 'rep' || d.addedBy === currentUserId)
   ).length;
-
   const dealsToday = csvDealsToday + myDailyDealsToday;
-
   const csvTeamDealsToday = calls.filter(c =>
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))
   ).length;
-
   const allDailyDealsToday = (todayDailyDeals || []).filter(d =>
     d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal'
   ).length;
-
   const teamDealsToday = csvTeamDealsToday + allDailyDealsToday;
   const goalPct = dailyGoal > 0 ? Math.min((dealsToday / dailyGoal) * 100, 100) : 0;
   const teamGoalPct = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
@@ -241,14 +259,12 @@ export default function CallsTab({
 
   const getStateDealsToday = (state: string) => {
     const csvDeals = calls.filter(c =>
-      c.state === state &&
-      c.assignedTo === currentUserId &&
+      c.state === state && c.assignedTo === currentUserId &&
       (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') &&
       c.dealDate && isToday(new Date(c.dealDate))
     ).length;
     const dailyDeals = (todayDailyDeals || []).filter(d =>
-      d.addedBy === currentUserId &&
-      d.state === state &&
+      d.addedBy === currentUserId && d.state === state &&
       (d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
     ).length;
     return csvDeals + dailyDeals;
@@ -259,7 +275,6 @@ export default function CallsTab({
     return c.fuStatus === 'No Deal' || c.fuStatus === 'Closed' || c.fuStatus === 'Duplicates';
   }).length;
 
-  // Status breakdown — No Call = not yet called (blank fuStatus)
   const noCallCount = filteredCalls.filter(c => !c.fuStatus).length;
   const pendingCount = filteredCalls.filter(c => c.fuStatus === 'Pending').length;
   const noAnswerCount = filteredCalls.filter(c => c.fuStatus === 'No Answer').length;
@@ -268,45 +283,33 @@ export default function CallsTab({
   const breakdownTotal = filteredCalls.length || 1;
   const pct = (n: number) => `${Math.round((n / breakdownTotal) * 100)}%`;
 
-  // Leaderboard
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
     calls.forEach(c => { if (c.assignedTo && c.assignedToName) nameMap[c.assignedTo] = c.assignedToName; });
     (users || []).forEach(u => { nameMap[u.id] = u.name; });
     if (currentUser) nameMap[currentUser.id] = currentUser.name;
-
     const repMap: { [id: string]: { name: string; dealCount: number; amount: number; isRep: boolean } } = {};
-
     Object.entries(nameMap).forEach(([id, name]) => {
       const userObj = (users || []).find(u => u.id === id);
-      const isRep = userObj?.role === 'rep';
-      repMap[id] = { name, dealCount: 0, amount: 0, isRep };
+      repMap[id] = { name, dealCount: 0, amount: 0, isRep: userObj?.role === 'rep' };
     });
-
     calls.forEach(c => {
       if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return;
       if (!c.dealDate || !isToday(new Date(c.dealDate))) return;
       const creditId = c.dealBy || c.assignedTo;
       const creditName = c.dealByName || c.assignedToName;
       if (!creditId || !creditName) return;
-      if (!repMap[creditId]) {
-        repMap[creditId] = { name: creditName, dealCount: 0, amount: 0, isRep: false };
-      }
+      if (!repMap[creditId]) repMap[creditId] = { name: creditName, dealCount: 0, amount: 0, isRep: false };
       repMap[creditId].dealCount++;
       repMap[creditId].amount += parseAmount(c.buyerFinal);
     });
-
     (todayDailyDeals || []).forEach(d => {
       if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
-      if (!repMap[d.addedBy]) {
-        repMap[d.addedBy] = { name: nameMap[d.addedBy] || 'Unknown', dealCount: 0, amount: 0, isRep: false };
-      }
+      if (!repMap[d.addedBy]) repMap[d.addedBy] = { name: nameMap[d.addedBy] || 'Unknown', dealCount: 0, amount: 0, isRep: false };
       repMap[d.addedBy].dealCount++;
       repMap[d.addedBy].amount += parseAmount(d.amount || '0');
     });
-
-    return Object.entries(repMap)
-      .map(([id, data]) => ({ id, ...data }))
+    return Object.entries(repMap).map(([id, data]) => ({ id, ...data }))
       .filter(r => r.isRep || r.dealCount > 0)
       .sort((a, b) => b.dealCount - a.dealCount || b.amount - a.amount);
   })();
@@ -316,24 +319,15 @@ export default function CallsTab({
   const handleStatusChange = async (callId: string, newStatus: Call['fuStatus']) => {
     const existingDealDate = calls.find(c => c.id === callId)?.dealDate;
     const dealDate = newStatus === 'Deal' ? new Date() : existingDealDate;
-
     setCalls(prev => prev.map(c => c.id === callId
-      ? {
-          ...c,
-          fuStatus: newStatus,
-          updatedAt: new Date(),
-          dealDate,
+      ? { ...c, fuStatus: newStatus, updatedAt: new Date(), dealDate,
           dealBy: newStatus === 'Deal' ? currentUserId : undefined,
-          dealByName: newStatus === 'Deal' ? (currentUser?.name || undefined) : undefined,
-        }
+          dealByName: newStatus === 'Deal' ? (currentUser?.name || undefined) : undefined }
       : c
     ));
-
     await supabase.from('calls').update({
       fu_status: newStatus || null,
-      deal_date: newStatus === 'Deal'
-        ? new Date().toISOString()
-        : (existingDealDate ? new Date(existingDealDate).toISOString() : null),
+      deal_date: newStatus === 'Deal' ? new Date().toISOString() : (existingDealDate ? new Date(existingDealDate).toISOString() : null),
       deal_by: newStatus === 'Deal' ? currentUserId : null,
       deal_by_name: newStatus === 'Deal' ? (currentUser?.name || null) : null,
       updated_at: new Date().toISOString(),
@@ -343,19 +337,13 @@ export default function CallsTab({
   const handleSaveStatusLast = async (callId: string) => {
     setCalls(prev => prev.map(c => c.id === callId ? { ...c, statusLast: tempStatusLast } : c));
     setEditingStatusLast(null);
-    await supabase.from('calls').update({
-      status_last: tempStatusLast,
-      updated_at: new Date().toISOString(),
-    }).eq('id', callId);
+    await supabase.from('calls').update({ status_last: tempStatusLast, updated_at: new Date().toISOString() }).eq('id', callId);
   };
 
   const handleSaveAmount = async (callId: string) => {
     setCalls(prev => prev.map(c => c.id === callId ? { ...c, buyerFinal: tempAmount } : c));
     setEditingAmount(null);
-    await supabase.from('calls').update({
-      buyer_final: tempAmount,
-      updated_at: new Date().toISOString(),
-    }).eq('id', callId);
+    await supabase.from('calls').update({ buyer_final: tempAmount, updated_at: new Date().toISOString() }).eq('id', callId);
   };
 
   const toggleRow = (id: string) => {
@@ -377,9 +365,7 @@ export default function CallsTab({
     const text = newNoteText[callId]?.trim();
     if (!text) return;
     const call = calls.find(c => c.id === callId);
-
     setNewNoteText(prev => ({ ...prev, [callId]: '' }));
-
     const { data, error } = await supabase.from('call_notes').insert({
       call_id: callId,
       application_id: call?.applicationId || '',
@@ -388,14 +374,10 @@ export default function CallsTab({
       created_by: currentUserId,
       created_by_name: currentUser?.name || 'User',
     }).select().single();
-
     if (!error && data) {
       setNotes(prev => [...prev, {
-        id: data.id,
-        callId,
-        noteText: text,
-        createdBy: currentUserId,
-        createdByName: currentUser?.name || 'User',
+        id: data.id, callId, noteText: text,
+        createdBy: currentUserId, createdByName: currentUser?.name || 'User',
         createdAt: new Date(data.created_at),
       }]);
     }
@@ -422,39 +404,28 @@ export default function CallsTab({
 
       {/* KPI CARDS + LEADERBOARD */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-stretch">
-
         <div className="flex flex-col gap-3">
-
-          {/* Row 1: 3 goal cards */}
           <div className="grid grid-cols-3 gap-3">
-
-            {/* Daily Goal */}
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
               <p className="text-xs text-gray-400 uppercase tracking-wider">Daily Goal</p>
               <p className="text-2xl font-bold text-purple-400">
-                {dealsToday}
-                <span className="text-sm font-normal text-gray-500 ml-1">/ {dailyGoal}</span>
+                {dealsToday}<span className="text-sm font-normal text-gray-500 ml-1">/ {dailyGoal}</span>
               </p>
               <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
                 <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
               </div>
               <p className="text-xs text-gray-600">{goalPct.toFixed(0)}% complete</p>
             </div>
-
-            {/* Team Goal */}
             <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
               <p className="text-xs text-gray-400 uppercase tracking-wider">Team Goal</p>
               <p className="text-2xl font-bold text-cyan-400">
-                {teamDealsToday}
-                <span className="text-sm font-normal text-gray-500 ml-1">/ {teamGoal}</span>
+                {teamDealsToday}<span className="text-sm font-normal text-gray-500 ml-1">/ {teamGoal}</span>
               </p>
               <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
                 <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
               </div>
               <p className="text-xs text-gray-600">{teamGoalPct.toFixed(0)}% complete</p>
             </div>
-
-            {/* State Goal (rep) or No Answer (admin/manager) */}
             {currentUserRole === 'rep' ? (
               <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
                 <p className="text-xs text-gray-400 uppercase tracking-wider">State Goal</p>
@@ -471,18 +442,13 @@ export default function CallsTab({
                           <div className="flex items-baseline justify-between mb-1">
                             <span className="text-xs text-gray-400 font-medium">{state}</span>
                             <span className="text-sm font-bold text-teal-400">
-                              {deals}
-                              <span className="text-xs font-normal text-gray-500 ml-1">
-                                / {goal > 0 ? goal : '—'}
-                              </span>
+                              {deals}<span className="text-xs font-normal text-gray-500 ml-1">/ {goal > 0 ? goal : '—'}</span>
                             </span>
                           </div>
                           <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
                             <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${pctVal}%` }} />
                           </div>
-                          {goal > 0 && (
-                            <p className="text-xs text-gray-600 mt-0.5">{pctVal.toFixed(0)}% complete</p>
-                          )}
+                          {goal > 0 && <p className="text-xs text-gray-600 mt-0.5">{pctVal.toFixed(0)}% complete</p>}
                         </div>
                       );
                     })}
@@ -501,7 +467,6 @@ export default function CallsTab({
             )}
           </div>
 
-          {/* Row 2: Call status breakdown */}
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex-1">
             <div className="flex items-baseline justify-between mb-4">
               <p className="text-sm font-semibold text-gray-200">Call Status Breakdown</p>
@@ -511,53 +476,25 @@ export default function CallsTab({
               </div>
             </div>
             <div className="space-y-3">
-
-              {/* No Call — not yet called */}
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 w-20 flex-shrink-0">No Call</span>
-                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-gray-500 rounded-full transition-all" style={{ width: `${pct(noCallCount)}` }} />
+              {[
+                { label: 'No Call', count: noCallCount, color: 'bg-gray-500', textColor: 'text-gray-400' },
+                { label: 'Pending', count: pendingCount, color: 'bg-yellow-400', textColor: 'text-yellow-400' },
+                { label: 'No Answer', count: noAnswerCount, color: 'bg-orange-400', textColor: 'text-orange-400' },
+                { label: 'Deal', count: dealTotalCount, color: 'bg-green-400', textColor: 'text-green-400' },
+                { label: 'No Deal', count: noDealCount, color: 'bg-red-400', textColor: 'text-red-400' },
+              ].map(({ label, count, color, textColor }) => (
+                <div key={label} className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400 w-20 flex-shrink-0">{label}</span>
+                  <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div className={`h-full ${color} rounded-full transition-all`} style={{ width: pct(count) }} />
+                  </div>
+                  <span className={`text-xs font-semibold ${textColor} w-8 text-right flex-shrink-0`}>{count}</span>
                 </div>
-                <span className="text-xs font-semibold text-gray-400 w-8 text-right flex-shrink-0">{noCallCount}</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 w-20 flex-shrink-0">Pending</span>
-                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-yellow-400 rounded-full transition-all" style={{ width: `${pct(pendingCount)}` }} />
-                </div>
-                <span className="text-xs font-semibold text-yellow-400 w-8 text-right flex-shrink-0">{pendingCount}</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 w-20 flex-shrink-0">No Answer</span>
-                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-400 rounded-full transition-all" style={{ width: `${pct(noAnswerCount)}` }} />
-                </div>
-                <span className="text-xs font-semibold text-orange-400 w-8 text-right flex-shrink-0">{noAnswerCount}</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 w-20 flex-shrink-0">Deal</span>
-                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${pct(dealTotalCount)}` }} />
-                </div>
-                <span className="text-xs font-semibold text-green-400 w-8 text-right flex-shrink-0">{dealTotalCount}</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 w-20 flex-shrink-0">No Deal</span>
-                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-red-400 rounded-full transition-all" style={{ width: `${pct(noDealCount)}` }} />
-                </div>
-                <span className="text-xs font-semibold text-red-400 w-8 text-right flex-shrink-0">{noDealCount}</span>
-              </div>
-
+              ))}
             </div>
           </div>
         </div>
 
-        {/* RIGHT: Leaderboard */}
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
             <span className="text-base">🏆</span>
@@ -566,34 +503,29 @@ export default function CallsTab({
           <div className="divide-y divide-gray-700 flex-1">
             {leaderboard.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-gray-500">No deals logged today</p>
-            ) : (
-              leaderboard.map((rep, idx) => {
-                const m = medal(idx);
-                const isMe = rep.id === currentUserId;
-                return (
-                  <div key={rep.id}
-                    className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
-                    <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm">
-                      {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate ${isMe ? 'text-blue-300' : 'text-gray-200'}`}>
-                        {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className={`text-lg font-bold leading-none ${rep.dealCount > 0 ? 'text-green-400' : 'text-gray-600'}`}>
-                        {rep.dealCount}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">deals</p>
-                    </div>
+            ) : leaderboard.map((rep, idx) => {
+              const m = medal(idx);
+              const isMe = rep.id === currentUserId;
+              return (
+                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
+                  <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm">
+                    {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
                   </div>
-                );
-              })
-            )}
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium truncate ${isMe ? 'text-blue-300' : 'text-gray-200'}`}>
+                      {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={`text-lg font-bold leading-none ${rep.dealCount > 0 ? 'text-green-400' : 'text-gray-600'}`}>{rep.dealCount}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">deals</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -606,13 +538,11 @@ export default function CallsTab({
             value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
-
         <select value={filterState} onChange={e => setFilterState(e.target.value)}
           className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
           <option value="">All States</option>
           {uniqueStates.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-
         <select value={filterFuStatus} onChange={e => setFilterFuStatus(e.target.value)}
           className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
           <option value="">All Statuses</option>
@@ -620,7 +550,6 @@ export default function CallsTab({
           <option>Deal</option><option>No Deal</option>
           <option>Pending</option><option>No Answer</option><option>Duplicates</option>
         </select>
-
         <div className="flex items-center border border-gray-600 rounded-lg overflow-hidden bg-gray-700">
           <div className="px-2 py-2 border-r border-gray-600">
             <Search className="w-3.5 h-3.5 text-gray-500" />
@@ -631,13 +560,32 @@ export default function CallsTab({
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
             className="px-2 py-2 bg-gray-700 text-xs text-gray-300 focus:outline-none w-[120px]" />
         </div>
-
         <button onClick={() => setShowCompleted(!showCompleted)}
           className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg text-sm text-gray-400 transition">
           {showCompleted ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
           <span className="text-xs">{showCompleted ? 'Hiding' : `Hidden (${completedCount})`}</span>
         </button>
       </div>
+
+      {/* DEALER FILTER BADGE */}
+      {dealerFilter && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-900 bg-opacity-30 border border-blue-700 rounded-lg">
+          <span className="text-xs text-blue-400 uppercase tracking-wider">Filtered by dealer</span>
+          <span className="text-xs text-blue-200 font-medium">{dealerFilter}</span>
+          <button onClick={() => setDealerFilter('')} className="ml-auto flex items-center gap-1 text-xs text-blue-400 hover:text-blue-200 transition">
+            <X className="w-3.5 h-3.5" />
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* NEW CALLS LEGEND */}
+      {calls.some(isNewUpload) && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-amber-900 bg-opacity-20 border border-amber-700 border-opacity-50 rounded-lg w-fit">
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 flex-shrink-0" />
+          <span className="text-xs text-amber-300">New today — uploaded in today's batch</span>
+        </div>
+      )}
 
       {/* STATUS CHIPS */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-2.5 flex items-center gap-2 flex-wrap">
@@ -656,8 +604,7 @@ export default function CallsTab({
           );
         })}
         {filterStatusLast.size > 0 && (
-          <button onClick={() => setFilterStatusLast(new Set())}
-            className="ml-auto text-xs text-blue-400 hover:text-blue-300">
+          <button onClick={() => setFilterStatusLast(new Set())} className="ml-auto text-xs text-blue-400 hover:text-blue-300">
             Clear all
           </button>
         )}
@@ -665,7 +612,6 @@ export default function CallsTab({
 
       {/* TABLE */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-
         <div className="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
           <p className="text-sm font-semibold text-gray-200">
             {sortedCalls.length} calls
@@ -723,16 +669,26 @@ export default function CallsTab({
               {paginatedCalls.map(call => {
                 const callNotes = getCallNotes(call.id);
                 const isExpanded = expandedRows.has(call.id);
+                const isNew = isNewUpload(call);
+                const isFilteredDealer = dealerFilter === call.dealerName;
+
+                // Row background: duplicate > new > default
+                const rowCls = call.isDuplicate
+                  ? 'cursor-pointer transition-colors bg-yellow-900 bg-opacity-10 hover:bg-yellow-900 hover:bg-opacity-20'
+                  : isNew
+                    ? 'cursor-pointer transition-colors bg-amber-950 border-l-2 border-l-amber-500 hover:bg-amber-900 hover:bg-opacity-20'
+                    : 'cursor-pointer transition-colors hover:bg-gray-750';
+
                 return (
                   <>
-                    <tr key={call.id}
-                      className={`cursor-pointer transition-colors ${call.isDuplicate ? 'bg-yellow-900 bg-opacity-10 hover:bg-yellow-900 hover:bg-opacity-20' : 'hover:bg-gray-750'}`}
-                      onClick={() => toggleRow(call.id)}>
+                    <tr key={call.id} className={rowCls} onClick={() => toggleRow(call.id)}>
                       <td className="px-4 py-3 text-center">
                         {isExpanded
                           ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
                           : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />}
                       </td>
+
+                      {/* App ID */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span
@@ -743,30 +699,41 @@ export default function CallsTab({
                             {call.applicationId}
                           </span>
                           {call.isDuplicate && (
-                            <span className="px-1.5 py-0.5 bg-yellow-900 text-yellow-300 text-xs rounded border border-yellow-700 font-medium flex-shrink-0">
-                              DUPE
-                            </span>
+                            <span className="px-1.5 py-0.5 bg-yellow-900 text-yellow-300 text-xs rounded border border-yellow-700 font-medium flex-shrink-0">DUPE</span>
+                          )}
+                          {isNew && (
+                            <span className="px-1.5 py-0.5 bg-amber-900 text-amber-300 text-xs rounded border border-amber-700 font-medium flex-shrink-0">NEW</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-200 max-w-[180px] truncate">{call.dealerName}</td>
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                        <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">
-                          {call.state}
-                        </span>
+
+                      {/* Dealer — click to filter */}
+                      <td className="px-4 py-3 max-w-[180px]" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => setDealerFilter(prev => prev === call.dealerName ? '' : call.dealerName)}
+                          title={`Filter by ${call.dealerName}`}
+                          className={`text-sm text-left truncate max-w-[160px] transition hover:text-blue-300 ${
+                            isFilteredDealer ? 'text-blue-400 font-medium' : 'text-gray-200'
+                          }`}
+                        >
+                          {call.dealerName}
+                        </button>
                       </td>
+
+                      {/* State */}
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{call.state}</span>
+                      </td>
+
+                      {/* Amount */}
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {editingAmount === call.id ? (
                           <div className="flex items-center gap-1">
                             <input type="text" value={tempAmount} onChange={e => setTempAmount(e.target.value)}
                               className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
                               autoFocus />
-                            <button onClick={() => handleSaveAmount(call.id)} className="text-green-400 hover:text-green-300">
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => setEditingAmount(null)} className="text-red-400 hover:text-red-300">
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                            <button onClick={() => handleSaveAmount(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => setEditingAmount(null)} className="text-red-400 hover:text-red-300"><X className="w-3.5 h-3.5" /></button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5">
@@ -780,7 +747,11 @@ export default function CallsTab({
                           </div>
                         )}
                       </td>
+
+                      {/* Date */}
                       <td className="px-4 py-3 text-xs text-gray-400">{call.submittedDate}</td>
+
+                      {/* Status Last */}
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {editingStatusLast === call.id ? (
                           <div className="flex items-center gap-1">
@@ -789,12 +760,8 @@ export default function CallsTab({
                               autoFocus>
                               {allStatusLastOptions.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
-                            <button onClick={() => handleSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300">
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => setEditingStatusLast(null)} className="text-red-400 hover:text-red-300">
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                            <button onClick={() => handleSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => setEditingStatusLast(null)} className="text-red-400 hover:text-red-300"><X className="w-3.5 h-3.5" /></button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5">
@@ -808,15 +775,19 @@ export default function CallsTab({
                           </div>
                         )}
                       </td>
+
+                      {/* FU Status */}
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <select value={call.fuStatus || ''}
                           onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
                           className="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
-<option value="">Select…</option>
+                          <option value="">Select…</option>
                           <option>Deal</option><option>No Deal</option>
                           <option>Pending</option><option>No Answer</option><option>Duplicates</option>
                         </select>
                       </td>
+
+                      {/* Notes count */}
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {callNotes.length > 0 && (
                           <div className="flex items-center gap-1 text-blue-400">
@@ -825,17 +796,15 @@ export default function CallsTab({
                           </div>
                         )}
                       </td>
+
                       {/* Note button */}
                       <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
-                        <button
-                          onClick={e => openNotes(e, call.id)}
-                          title="Add note"
+                        <button onClick={e => openNotes(e, call.id)} title="Add note"
                           className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${
                             callNotes.length > 0
                               ? 'bg-blue-600 text-white hover:bg-blue-500'
                               : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
-                          }`}
-                        >
+                          }`}>
                           <MessageSquare className="w-3.5 h-3.5" />
                         </button>
                       </td>
@@ -845,9 +814,7 @@ export default function CallsTab({
                       <tr key={`${call.id}-exp`}>
                         <td colSpan={10} className="px-4 py-4 pl-12 bg-gray-750">
                           <div className="space-y-3 max-w-2xl">
-                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                              Notes ({callNotes.length})
-                            </p>
+                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
                             {callNotes.length === 0 ? (
                               <p className="text-sm text-gray-500 italic">No notes yet.</p>
                             ) : (
@@ -855,23 +822,18 @@ export default function CallsTab({
                                 {callNotes.map(note => (
                                   <div key={note.id} className="bg-gray-700 px-4 py-3 rounded-lg border border-gray-600">
                                     <p className="text-sm text-gray-200">{note.noteText}</p>
-                                    <p className="text-xs text-gray-500 mt-1.5">
-                                      {note.createdByName} · {note.createdAt.toLocaleString()}
-                                    </p>
+                                    <p className="text-xs text-gray-500 mt-1.5">{note.createdByName} · {note.createdAt.toLocaleString()}</p>
                                   </div>
                                 ))}
                               </div>
                             )}
                             <div className="flex gap-2">
-                              <input
-                                type="text"
-                                placeholder="Add a note…"
+                              <input type="text" placeholder="Add a note…"
                                 value={newNoteText[call.id] || ''}
                                 onChange={e => setNewNoteText(prev => ({ ...prev, [call.id]: e.target.value }))}
                                 onKeyDown={e => { if (e.key === 'Enter') handleAddNote(call.id); }}
                                 className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                autoFocus
-                              />
+                                autoFocus />
                               <button onClick={() => handleAddNote(call.id)}
                                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
                                 Save
@@ -888,7 +850,6 @@ export default function CallsTab({
           </table>
         </div>
 
-        {/* Table footer */}
         <div className="px-5 py-3 border-t border-gray-700 flex items-center justify-between">
           <p className="text-xs text-gray-500">
             Showing {Math.min((currentPage - 1) * itemsPerPage + 1, sortedCalls.length)}–{Math.min(currentPage * itemsPerPage, sortedCalls.length)} of {sortedCalls.length} calls
