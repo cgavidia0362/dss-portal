@@ -35,6 +35,7 @@ interface Call {
   fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
+  createdAt?: Date;
   dealDate?: Date;
   isDuplicate?: boolean;
 }
@@ -294,6 +295,7 @@ function App() {
           assignedToName: c.assigned_to_name || undefined,
           fuStatus: c.fu_status || undefined,
           fiType: c.fi_type || undefined,
+          updatedAt: c.updated_at ? new Date(c.updated_at) : new Date(),
           createdAt: c.created_at ? new Date(c.created_at) : undefined,
           dealDate: c.deal_date ? new Date(c.deal_date) : undefined,
           isDuplicate: c.is_duplicate || false,
