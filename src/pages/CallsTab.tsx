@@ -85,6 +85,7 @@ export default function CallsTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterFuStatus, setFilterFuStatus] = useState('');
   const [filterState, setFilterState] = useState('');
+  const [filterRep, setFilterRep] = useState('');
   const [filterStatusLast, setFilterStatusLast] = useState<Set<string>>(new Set());
   const [dealerFilter, setDealerFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -107,6 +108,8 @@ export default function CallsTab({
     'Pending Approval', 'Document Received', 'Funded', 'Funding Pending',
     'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
   ];
+
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
 
   useEffect(() => {
     if (currentUserRole === 'rep' && currentUser?.state) fetchRepStateGoal(currentUser.state);
@@ -149,10 +152,25 @@ export default function CallsTab({
       date.getFullYear() === t.getFullYear();
   };
 
-  // ── NEW UPLOAD DETECTION ─────────────────────────────────────────
   const isNewUpload = (call: Call): boolean => {
     if (!call.createdAt) return false;
     return isToday(new Date(call.createdAt));
+  };
+
+  // ── LAST ACTIVITY ────────────────────────────────────────────────
+  const formatLastActivity = (call: Call): { text: string; isToday: boolean } => {
+    if (!call.updatedAt) return { text: '—', isToday: false };
+    // If updatedAt is within 5 min of createdAt, call was never worked on
+    if (call.createdAt) {
+      const diffMs = Math.abs(call.updatedAt.getTime() - new Date(call.createdAt).getTime());
+      if (diffMs < 5 * 60 * 1000) return { text: '—', isToday: false };
+    }
+    const date = new Date(call.updatedAt);
+    const todayFlag = isToday(date);
+    const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    if (todayFlag) return { text: `Today ${timeStr}`, isToday: true };
+    const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return { text: `${dateStr}, ${timeStr}`, isToday: false };
   };
 
   useEffect(() => {
@@ -176,7 +194,8 @@ export default function CallsTab({
 
   const getStatusLastStyle = (status: string) => {
     const s = status.toLowerCase();
-    if (s.includes('approved') || s.includes('approval')) return 'bg-green-900 text-green-300 border-green-700';
+    if (s.includes('approved') || s === 'approval') return 'bg-green-900 text-green-300 border-green-700';
+    if (s === 'pending approval' || s.includes('pending approval')) return 'bg-purple-900 text-purple-300 border-purple-700';
     if (s.includes('counter')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
     if (s.includes('denial') || s.includes('declined')) return 'bg-red-900 text-red-300 border-red-700';
     if (s.includes('accepted')) return 'bg-blue-900 text-blue-300 border-blue-700';
@@ -189,11 +208,23 @@ export default function CallsTab({
 
   const roleFilteredCalls = calls.filter(c =>
     currentUserRole === 'rep' || currentUserRole === 'buying_assistant'
-      ? c.assignedTo === currentUserId
-      : true
+      ? c.assignedTo === currentUserId : true
   );
   const uniqueStatusLast = Array.from(new Set(roleFilteredCalls.map(c => c.statusLast).filter(Boolean))).sort();
   const uniqueStates = Array.from(new Set(roleFilteredCalls.map(c => c.state))).sort();
+
+  // Build unique reps list for admin/manager filter
+  const uniqueReps = (() => {
+    const repMap: { [id: string]: string } = {};
+    calls.forEach(c => { if (c.assignedTo && c.assignedToName) repMap[c.assignedTo] = c.assignedToName; });
+    (users || []).forEach(u => { repMap[u.id] = u.name; });
+    return Object.entries(repMap)
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
+  const selectedRepName = uniqueReps.find(r => r.id === filterRep)?.name || '';
+  const repCallCount = filterRep ? calls.filter(c => c.assignedTo === filterRep).length : 0;
 
   const toggleStatusLastFilter = (status: string) => {
     const n = new Set(filterStatusLast);
@@ -209,6 +240,7 @@ export default function CallsTab({
     if (filterFuStatus === 'No Call' && !!call.fuStatus) return false;
     if (filterFuStatus && filterFuStatus !== 'No Call' && call.fuStatus !== filterFuStatus) return false;
     if (filterState && call.state !== filterState) return false;
+    if (filterRep && call.assignedTo !== filterRep) return false;
     if (dealerFilter && call.dealerName !== dealerFilter) return false;
     if (filterStatusLast.size > 0 && !filterStatusLast.has(call.statusLast)) return false;
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
@@ -232,7 +264,9 @@ export default function CallsTab({
   const totalPages = Math.ceil(sortedCalls.length / itemsPerPage);
   const paginatedCalls = sortedCalls.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  useEffect(() => { setCurrentPage(1); }, [searchQuery, filterFuStatus, filterState, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterFuStatus, filterState, filterRep, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
 
   // KPI calculations
   const csvDealsToday = filteredCalls.filter(c =>
@@ -254,8 +288,7 @@ export default function CallsTab({
   const teamGoalPct = teamGoal > 0 ? Math.min((teamDealsToday / teamGoal) * 100, 100) : 0;
 
   const repStates = currentUser?.state
-    ? currentUser.state.split(',').map(s => s.trim()).filter(Boolean)
-    : [];
+    ? currentUser.state.split(',').map(s => s.trim()).filter(Boolean) : [];
 
   const getStateDealsToday = (state: string) => {
     const csvDeals = calls.filter(c =>
@@ -335,15 +368,21 @@ export default function CallsTab({
   };
 
   const handleSaveStatusLast = async (callId: string) => {
-    setCalls(prev => prev.map(c => c.id === callId ? { ...c, statusLast: tempStatusLast } : c));
+    setCalls(prev => prev.map(c => c.id === callId ? { ...c, statusLast: tempStatusLast, updatedAt: new Date() } : c));
     setEditingStatusLast(null);
-    await supabase.from('calls').update({ status_last: tempStatusLast, updated_at: new Date().toISOString() }).eq('id', callId);
+    await supabase.from('calls').update({
+      status_last: tempStatusLast,
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
   };
 
   const handleSaveAmount = async (callId: string) => {
-    setCalls(prev => prev.map(c => c.id === callId ? { ...c, buyerFinal: tempAmount } : c));
+    setCalls(prev => prev.map(c => c.id === callId ? { ...c, buyerFinal: tempAmount, updatedAt: new Date() } : c));
     setEditingAmount(null);
-    await supabase.from('calls').update({ buyer_final: tempAmount, updated_at: new Date().toISOString() }).eq('id', callId);
+    await supabase.from('calls').update({
+      buyer_final: tempAmount,
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
   };
 
   const toggleRow = (id: string) => {
@@ -366,6 +405,8 @@ export default function CallsTab({
     if (!text) return;
     const call = calls.find(c => c.id === callId);
     setNewNoteText(prev => ({ ...prev, [callId]: '' }));
+    // Update updatedAt locally when note is added
+    setCalls(prev => prev.map(c => c.id === callId ? { ...c, updatedAt: new Date() } : c));
     const { data, error } = await supabase.from('call_notes').insert({
       call_id: callId,
       application_id: call?.applicationId || '',
@@ -396,9 +437,7 @@ export default function CallsTab({
       <div>
         <h2 className="text-2xl font-bold text-gray-100">Calls</h2>
         <p className="text-sm text-gray-400 mt-0.5">
-          {currentUserRole === 'admin' || currentUserRole === 'manager'
-            ? 'View and manage all calls'
-            : 'View and manage your assigned calls'}
+          {isAdmin ? 'View and manage all calls' : 'View and manage your assigned calls'}
         </p>
       </div>
 
@@ -460,7 +499,7 @@ export default function CallsTab({
                 <p className="text-xs text-gray-400 uppercase tracking-wider">No Answer</p>
                 <p className="text-2xl font-bold text-orange-400">{noAnswerCount}</p>
                 <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-500 rounded-full" style={{ width: `${pct(noAnswerCount)}` }} />
+                  <div className="h-full bg-orange-500 rounded-full" style={{ width: pct(noAnswerCount) }} />
                 </div>
                 <p className="text-xs text-gray-600">of {filteredCalls.length} calls</p>
               </div>
@@ -550,6 +589,16 @@ export default function CallsTab({
           <option>Deal</option><option>No Deal</option>
           <option>Pending</option><option>No Answer</option><option>Duplicates</option>
         </select>
+
+        {/* Rep filter — admin/manager only */}
+        {isAdmin && (
+          <select value={filterRep} onChange={e => setFilterRep(e.target.value)}
+            className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="">All Reps</option>
+            {uniqueReps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        )}
+
         <div className="flex items-center border border-gray-600 rounded-lg overflow-hidden bg-gray-700">
           <div className="px-2 py-2 border-r border-gray-600">
             <Search className="w-3.5 h-3.5 text-gray-500" />
@@ -567,14 +616,27 @@ export default function CallsTab({
         </button>
       </div>
 
+      {/* ACTIVE REP FILTER BADGE */}
+      {filterRep && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-900 bg-opacity-30 border border-blue-700 rounded-lg">
+          <span className="text-xs text-blue-400 uppercase tracking-wider">Viewing rep</span>
+          <span className="text-xs text-blue-200 font-medium">{selectedRepName}</span>
+          <span className="text-xs text-gray-500">— {repCallCount} calls assigned</span>
+          <button onClick={() => setFilterRep('')}
+            className="ml-auto flex items-center gap-1 text-xs text-blue-400 hover:text-blue-200 transition">
+            <X className="w-3.5 h-3.5" /> Clear
+          </button>
+        </div>
+      )}
+
       {/* DEALER FILTER BADGE */}
       {dealerFilter && (
         <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-900 bg-opacity-30 border border-blue-700 rounded-lg">
           <span className="text-xs text-blue-400 uppercase tracking-wider">Filtered by dealer</span>
           <span className="text-xs text-blue-200 font-medium">{dealerFilter}</span>
-          <button onClick={() => setDealerFilter('')} className="ml-auto flex items-center gap-1 text-xs text-blue-400 hover:text-blue-200 transition">
-            <X className="w-3.5 h-3.5" />
-            Clear
+          <button onClick={() => setDealerFilter('')}
+            className="ml-auto flex items-center gap-1 text-xs text-blue-400 hover:text-blue-200 transition">
+            <X className="w-3.5 h-3.5" /> Clear
           </button>
         </div>
       )}
@@ -660,6 +722,7 @@ export default function CallsTab({
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Last Activity</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
                 <th className="w-12 px-4 py-3"></th>
@@ -671,8 +734,8 @@ export default function CallsTab({
                 const isExpanded = expandedRows.has(call.id);
                 const isNew = isNewUpload(call);
                 const isFilteredDealer = dealerFilter === call.dealerName;
+                const activity = formatLastActivity(call);
 
-                // Row background: duplicate > new > default
                 const rowCls = call.isDuplicate
                   ? 'cursor-pointer transition-colors bg-yellow-900 bg-opacity-10 hover:bg-yellow-900 hover:bg-opacity-20'
                   : isNew
@@ -776,6 +839,18 @@ export default function CallsTab({
                         )}
                       </td>
 
+                      {/* Last Activity */}
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <span className={`text-xs flex items-center gap-1.5 ${activity.isToday ? 'text-emerald-400' : 'text-gray-500'}`}>
+                          {activity.text !== '—' && (
+                            <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
+                            </svg>
+                          )}
+                          {activity.text}
+                        </span>
+                      </td>
+
                       {/* FU Status */}
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <select value={call.fuStatus || ''}
@@ -812,7 +887,7 @@ export default function CallsTab({
 
                     {isExpanded && (
                       <tr key={`${call.id}-exp`}>
-                        <td colSpan={10} className="px-4 py-4 pl-12 bg-gray-750">
+                        <td colSpan={11} className="px-4 py-4 pl-12 bg-gray-750">
                           <div className="space-y-3 max-w-2xl">
                             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
                             {callNotes.length === 0 ? (
