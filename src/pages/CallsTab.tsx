@@ -86,6 +86,7 @@ export default function CallsTab({
   const [filterFuStatus, setFilterFuStatus] = useState('');
   const [filterState, setFilterState] = useState('');
   const [filterRep, setFilterRep] = useState('');
+  const [filterNewOnly, setFilterNewOnly] = useState(false);
   const [filterStatusLast, setFilterStatusLast] = useState<Set<string>>(new Set());
   const [dealerFilter, setDealerFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -119,15 +120,32 @@ export default function CallsTab({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setExpandedRows(new Set());
-        setEditingStatusLast(null);
-        setEditingAmount(null);
-        setDealerFilter('');
+        // Layer 1: cancel any active inline edit first
+        if (editingStatusLast || editingAmount) {
+          setEditingStatusLast(null);
+          setEditingAmount(null);
+          return;
+        }
+        // Layer 2: close expanded note rows, keep filters
+        if (expandedRows.size > 0) {
+          setExpandedRows(new Set());
+          return;
+        }
+        // Layer 3: clear dealer filter, keep rep filter
+        if (dealerFilter) {
+          setDealerFilter('');
+          return;
+        }
+        // Layer 4: clear rep filter
+        if (filterRep) {
+          setFilterRep('');
+          return;
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [editingStatusLast, editingAmount, expandedRows, dealerFilter, filterRep]);
 
   const fetchRepStateGoal = async (stateStr: string) => {
     const stateList = stateStr.split(',').map(s => s.trim()).filter(Boolean);
@@ -242,6 +260,7 @@ export default function CallsTab({
     if (filterState && call.state !== filterState) return false;
     if (filterRep && call.assignedTo !== filterRep) return false;
     if (dealerFilter && call.dealerName !== dealerFilter) return false;
+    if (filterNewOnly && !isNewUpload(call)) return false;
     if (filterStatusLast.size > 0 && !filterStatusLast.has(call.statusLast)) return false;
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
     if (dateTo && new Date(call.submittedDate) > new Date(dateTo)) return false;
@@ -266,7 +285,7 @@ export default function CallsTab({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterFuStatus, filterState, filterRep, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
+  }, [searchQuery, filterFuStatus, filterState, filterRep, filterNewOnly, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
 
   // KPI calculations
   const csvDealsToday = filteredCalls.filter(c =>
@@ -613,6 +632,16 @@ export default function CallsTab({
           className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg text-sm text-gray-400 transition">
           {showCompleted ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
           <span className="text-xs">{showCompleted ? 'Hiding' : `Hidden (${completedCount})`}</span>
+        </button>
+
+        <button onClick={() => setFilterNewOnly(f => !f)}
+          className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition ${
+            filterNewOnly
+              ? 'bg-amber-900 bg-opacity-40 border-amber-700 text-amber-300'
+              : 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-gray-400'
+          }`}>
+          <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
+          <span className="text-xs">New Only</span>
         </button>
       </div>
 
