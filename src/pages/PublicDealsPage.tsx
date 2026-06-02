@@ -146,6 +146,7 @@ export default function PublicDealsPage() {
   const [searching, setSearching] = useState(false);
 
   const [dealerPopup, setDealerPopup] = useState<string | null>(null);
+  const [showAllPopupStatuses, setShowAllPopupStatuses] = useState(false);
   const [dealerPopupCalls, setDealerPopupCalls] = useState<any[]>([]);
   const [dealerPopupLoading, setDealerPopupLoading] = useState(false);
   const [popupNotes, setPopupNotes] = useState<{ [callId: string]: any[] }>({});
@@ -276,6 +277,7 @@ export default function PublicDealsPage() {
     setPopupFuOverrides({});
     setPopupStatusLastOverrides({});
     setPopupAmountOverrides({});
+    setShowAllPopupStatuses(false);
   };
 
   const handlePopupFuStatus = async (callId: string, newStatus: string) => {
@@ -330,10 +332,11 @@ export default function PublicDealsPage() {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setSearching(true);
+    const q = searchQuery.trim();
     const { data } = await supabase.from('calls')
       .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
-      .or(`application_id.ilike.%${searchQuery.trim()}%,customer_full_name.ilike.%${searchQuery.trim()}%`)
-      .limit(5);
+      .or(`application_id.ilike.%${q}%,customer_full_name.ilike.%${q}%,dealer_name.ilike.%${q}%`)
+      .limit(8);
     setSearchResults(data || []);
     setSearching(false);
   };
@@ -583,7 +586,12 @@ export default function PublicDealsPage() {
                           <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
                             <div className="flex items-center gap-3 flex-wrap">
                               <span className="text-sm text-blue-400 font-medium">{call.application_id}</span>
-                              <span className="text-xs text-gray-300">{call.dealer_name}</span>
+                              <button
+                                onClick={() => openDealerPopup(call.dealer_name)}
+                                className="text-xs text-gray-300 hover:text-blue-300 underline underline-offset-2 transition"
+                                title={`View all calls for ${call.dealer_name}`}>
+                                {call.dealer_name}
+                              </button>
                               <span className="text-xs text-gray-500">{call.state}</span>
                               <span className="text-xs text-gray-400">{formatCurrency(parseAmount(call.buyer_final))}</span>
                               {call.customer_full_name && <span className="text-xs text-gray-400 italic">{call.customer_full_name}</span>}
@@ -919,11 +927,22 @@ export default function PublicDealsPage() {
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-100">{dealerPopup}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">{dealerPopupCalls.length} call{dealerPopupCalls.length !== 1 ? 's' : ''} · press Escape to close</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {dealerPopupCalls.length} call{dealerPopupCalls.length !== 1 ? 's' : ''} · press Escape to close
+                  </p>
                 </div>
-                <button onClick={closeDealerPopup} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setShowAllPopupStatuses(f => !f)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                      showAllPopupStatuses
+                        ? 'bg-gray-700 border-gray-500 text-gray-300 hover:bg-gray-600'
+                        : 'bg-blue-900 bg-opacity-40 border-blue-700 text-blue-300 hover:bg-opacity-60'
+                    }`}>
+                    {showAllPopupStatuses ? 'Showing all' : 'Active only'}
+                  </button>
+                  <button onClick={closeDealerPopup} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+                </div>
               </div>
-
               <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
                 {dealerPopupLoading ? (
                   <div className="p-8 text-center text-gray-500 text-sm">Loading calls…</div>
@@ -956,9 +975,19 @@ export default function PublicDealsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-700">
-                      {dealerPopupCalls.length === 0 ? (
-                        <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">No calls found for this dealer</td></tr>
-                      ) : dealerPopupCalls.map((call: any) => {
+                    {(() => {
+                        const filteredPopupCalls = showAllPopupStatuses
+                          ? dealerPopupCalls
+                          : dealerPopupCalls.filter((c: any) => {
+                              const sl = (c.status_last || '').toLowerCase();
+                              const fu = (c.fu_status || '').toLowerCase();
+                              if (sl.includes('denial') || sl.includes('declined') || sl.includes('duplicate')) return false;
+                              if (fu === 'no deal' || fu === 'duplicates') return false;
+                              return true;
+                            });
+                        return filteredPopupCalls.length === 0 ? (
+                          <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">No active calls found for this dealer</td></tr>
+                        ) : filteredPopupCalls.map((call: any) => {
                         const isNew = isPopupCallNew(call);
                         const callNotes = popupNotes[call.id] || [];
                         const isExpanded = popupExpandedNotes.has(call.id);
@@ -1090,7 +1119,8 @@ export default function PublicDealsPage() {
                             )}
                           </>
                         );
-                      })}
+                      })();
+                      })()}
                     </tbody>
                   </table>
                 )}

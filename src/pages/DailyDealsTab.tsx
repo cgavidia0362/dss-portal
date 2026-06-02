@@ -175,6 +175,7 @@ export default function DailyDealsTab({
 
   // Dealer popup state
   const [dealerPopup, setDealerPopup] = useState<string | null>(null);
+  const [showAllPopupStatuses, setShowAllPopupStatuses] = useState(false);
   const [popupNotes, setPopupNotes] = useState<{ [callId: string]: any[] }>({});
   const [popupNewNoteText, setPopupNewNoteText] = useState<{ [callId: string]: string }>({});
   const [popupExpandedNotes, setPopupExpandedNotes] = useState<Set<string>>(new Set());
@@ -327,6 +328,7 @@ export default function DailyDealsTab({
     setPopupFuOverrides({});
     setPopupStatusLastOverrides({});
     setPopupAmountOverrides({});
+    setShowAllPopupStatuses(false);
   };
 
   const handlePopupFuStatus = async (callId: string, newStatus: string) => {
@@ -384,9 +386,12 @@ export default function DailyDealsTab({
 
   const handleSearch = () => {
     if (!searchQuery.trim()) return;
+    const q = searchQuery.toLowerCase().trim();
     const results = calls.filter(c =>
-      c.applicationId.toLowerCase().includes(searchQuery.toLowerCase().trim())
-    ).slice(0, 5);
+      c.applicationId.toLowerCase().includes(q) ||
+      c.dealerName.toLowerCase().includes(q) ||
+      (c.customerName || '').toLowerCase().includes(q)
+    ).slice(0, 8);
     setSearchResults(results);
   };
 
@@ -617,9 +622,19 @@ export default function DailyDealsTab({
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
   const inputCls = 'px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500';
-  const dealerCalls = dealerPopup
+  const allDealerCalls = dealerPopup
     ? calls.filter(c => c.dealerName === dealerPopup).sort((a, b) => new Date(b.submittedDate).getTime() - new Date(a.submittedDate).getTime())
     : [];
+
+  const dealerCalls = showAllPopupStatuses
+    ? allDealerCalls
+    : allDealerCalls.filter(c => {
+        const sl = (c.statusLast || '').toLowerCase();
+        const fu = (c.fuStatus || '').toLowerCase();
+        if (sl.includes('denial') || sl.includes('declined') || sl.includes('duplicate')) return false;
+        if (fu === 'no deal' || fu === 'duplicates') return false;
+        return true;
+      });
 
   return (
     <div className="space-y-5">
@@ -710,15 +725,20 @@ export default function DailyDealsTab({
                       <div className="mt-2 space-y-1">
                         {searchResults.map(call => (
                           <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
- <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 flex-wrap">
                               <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
-                              <span className="text-xs text-gray-300">{call.dealerName}</span>
+                              <button
+                                onClick={() => openDealerPopup(call.dealerName)}
+                                className="text-xs text-gray-300 hover:text-blue-300 underline underline-offset-2 transition"
+                                title={`View all calls for ${call.dealerName}`}>
+                                {call.dealerName}
+                              </button>
                               <span className="text-xs text-gray-500">{call.state}</span>
                               <span className="text-xs text-gray-400">{formatCurrency(parseAmount(call.buyerFinal))}</span>
                               {call.customerName && <span className="text-xs text-gray-400 italic">{call.customerName}</span>}
                             </div>
                             <button onClick={() => handleSelectCall(call)}
-                              className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">
+                              className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex-shrink-0">
                               Use this app →
                             </button>
                           </div>
@@ -1010,12 +1030,28 @@ export default function DailyDealsTab({
           <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-5xl overflow-hidden"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-100">{dealerPopup}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">{dealerCalls.length} call{dealerCalls.length !== 1 ? 's' : ''} · press Escape to close</p>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-100">{dealerPopup}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {dealerCalls.length} call{dealerCalls.length !== 1 ? 's' : ''}
+                    {!showAllPopupStatuses && allDealerCalls.length !== dealerCalls.length && (
+                      <span className="text-gray-600"> · {allDealerCalls.length - dealerCalls.length} hidden</span>
+                    )}
+                    · press Escape to close
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setShowAllPopupStatuses(f => !f)}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                      showAllPopupStatuses
+                        ? 'bg-gray-700 border-gray-500 text-gray-300 hover:bg-gray-600'
+                        : 'bg-blue-900 bg-opacity-40 border-blue-700 text-blue-300 hover:bg-opacity-60'
+                    }`}>
+                    {showAllPopupStatuses ? 'Showing all' : 'Active only'}
+                  </button>
+                  <button onClick={closeDealerPopup} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+                </div>
               </div>
-              <button onClick={closeDealerPopup} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
-            </div>
             <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
             <table className="w-full" style={{ tableLayout: 'fixed' }}>
                       <colgroup>
