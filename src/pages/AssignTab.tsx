@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, X, Check, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { Search, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
@@ -10,6 +10,7 @@ interface Call {
   state: string;
   buyerFinal: string;
   statusLast: string;
+  timestampSubmit: Date;
   submittedDate: string;
   assignedTo?: string;
   assignedToName?: string;
@@ -63,7 +64,7 @@ const getStatusLastStyle = (status: string) => {
 
 const ITEMS_PER_PAGE = 10;
 
-export default function AssignTab({ currentUserRole, calls, setCalls, users, goals, setGoals }: AssignTabProps) {
+export default function AssignTab({ calls, setCalls, users, goals, setGoals }: AssignTabProps) {
   // ── ASSIGN STATE ─────────────────────────────────────────────────
   const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
   const [assignToId, setAssignToId] = useState('');
