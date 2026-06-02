@@ -510,6 +510,16 @@ export default function PublicDealsPage() {
 
   const inputCls = 'px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500';
 
+  const filteredDealerPopupCalls = showAllPopupStatuses
+    ? dealerPopupCalls
+    : dealerPopupCalls.filter((c: any) => {
+        const sl = (c.status_last || '').toLowerCase();
+        const fu = (c.fu_status || '').toLowerCase();
+        if (sl.includes('denial') || sl.includes('declined') || sl.includes('duplicate')) return false;
+        if (fu === 'no deal' || fu === 'duplicates') return false;
+        return true;
+      });
+
   return (
     <div className="min-h-screen bg-gray-900">
       <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
@@ -975,19 +985,9 @@ export default function PublicDealsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-700">
-                    {(() => {
-                        const filteredPopupCalls = showAllPopupStatuses
-                          ? dealerPopupCalls
-                          : dealerPopupCalls.filter((c: any) => {
-                              const sl = (c.status_last || '').toLowerCase();
-                              const fu = (c.fu_status || '').toLowerCase();
-                              if (sl.includes('denial') || sl.includes('declined') || sl.includes('duplicate')) return false;
-                              if (fu === 'no deal' || fu === 'duplicates') return false;
-                              return true;
-                            });
-                        return filteredPopupCalls.length === 0 ? (
-                          <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">No active calls found for this dealer</td></tr>
-                        ) : filteredPopupCalls.map((call: any) => {
+                    {filteredDealerPopupCalls.length === 0 ? (
+                        <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">No active calls found for this dealer</td></tr>
+                      ) : filteredDealerPopupCalls.map((call: any) => {
                         const isNew = isPopupCallNew(call);
                         const callNotes = popupNotes[call.id] || [];
                         const isExpanded = popupExpandedNotes.has(call.id);
@@ -1119,8 +1119,7 @@ export default function PublicDealsPage() {
                             )}
                           </>
                         );
-                      })();
-                      })()}
+                      })}
                     </tbody>
                   </table>
                 )}
