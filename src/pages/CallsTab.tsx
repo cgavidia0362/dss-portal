@@ -121,27 +121,14 @@ export default function CallsTab({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // Layer 1: cancel any active inline edit first
         if (editingStatusLast || editingAmount) {
           setEditingStatusLast(null);
           setEditingAmount(null);
           return;
         }
-        // Layer 2: close expanded note rows, keep filters
-        if (expandedRows.size > 0) {
-          setExpandedRows(new Set());
-          return;
-        }
-        // Layer 3: clear dealer filter, keep rep filter
-        if (dealerFilter) {
-          setDealerFilter('');
-          return;
-        }
-        // Layer 4: clear rep filter
-        if (filterRep) {
-          setFilterRep('');
-          return;
-        }
+        if (expandedRows.size > 0) { setExpandedRows(new Set()); return; }
+        if (dealerFilter) { setDealerFilter(''); return; }
+        if (filterRep) { setFilterRep(''); return; }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -176,20 +163,28 @@ export default function CallsTab({
     return isToday(new Date(call.createdAt));
   };
 
+  // ── SHORT DATE ───────────────────────────────────────────────────
+  const formatShortDate = (dateStr: string): string => {
+    if (!dateStr) return '—';
+    const parts = dateStr.split('-');
+    if (parts.length >= 3) return `${parts[1]}/${parts[2]}`;
+    return dateStr;
+  };
+
   // ── LAST ACTIVITY ────────────────────────────────────────────────
   const formatLastActivity = (call: Call): { text: string; isToday: boolean } => {
     if (!call.updatedAt) return { text: '—', isToday: false };
-    // If updatedAt is within 5 min of createdAt, call was never worked on
     if (call.createdAt) {
       const diffMs = Math.abs(call.updatedAt.getTime() - new Date(call.createdAt).getTime());
       if (diffMs < 5 * 60 * 1000) return { text: '—', isToday: false };
     }
     const date = new Date(call.updatedAt);
     const todayFlag = isToday(date);
-    const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+      .replace(' AM', 'am').replace(' PM', 'pm');
     if (todayFlag) return { text: `Today ${timeStr}`, isToday: true };
     const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    return { text: `${dateStr}, ${timeStr}`, isToday: false };
+    return { text: dateStr, isToday: false };
   };
 
   useEffect(() => {
@@ -232,14 +227,11 @@ export default function CallsTab({
   const uniqueStatusLast = Array.from(new Set(roleFilteredCalls.map(c => c.statusLast).filter(Boolean))).sort();
   const uniqueStates = Array.from(new Set(roleFilteredCalls.map(c => c.state))).sort();
 
-  // Build unique reps list for admin/manager filter
   const uniqueReps = (() => {
     const repMap: { [id: string]: string } = {};
     calls.forEach(c => { if (c.assignedTo && c.assignedToName) repMap[c.assignedTo] = c.assignedToName; });
     (users || []).forEach(u => { repMap[u.id] = u.name; });
-    return Object.entries(repMap)
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return Object.entries(repMap).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   })();
 
   const selectedRepName = uniqueReps.find(r => r.id === filterRep)?.name || '';
@@ -253,10 +245,11 @@ export default function CallsTab({
 
   const filteredCalls = calls.filter(call => {
     if ((currentUserRole === 'rep' || currentUserRole === 'buying_assistant') && call.assignedTo !== currentUserId) return false;
-    if (searchQuery && !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
-    !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
-    !call.state.toLowerCase().includes(searchQuery.toLowerCase()) &&
-    !(call.customerName || '').toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (searchQuery &&
+      !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
+      !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
+      !call.state.toLowerCase().includes(searchQuery.toLowerCase()) &&
+      !(call.customerName || '').toLowerCase().includes(searchQuery.toLowerCase())) return false;
     if (filterFuStatus === 'No Call' && !!call.fuStatus) return false;
     if (filterFuStatus && filterFuStatus !== 'No Call' && call.fuStatus !== filterFuStatus) return false;
     if (filterState && call.state !== filterState) return false;
@@ -289,7 +282,6 @@ export default function CallsTab({
     setCurrentPage(1);
   }, [searchQuery, filterFuStatus, filterState, filterRep, filterNewOnly, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
 
-  // KPI calculations
   const csvDealsToday = filteredCalls.filter(c =>
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))
   ).length;
@@ -426,7 +418,6 @@ export default function CallsTab({
     if (!text) return;
     const call = calls.find(c => c.id === callId);
     setNewNoteText(prev => ({ ...prev, [callId]: '' }));
-    // Update updatedAt locally when note is added
     setCalls(prev => prev.map(c => c.id === callId ? { ...c, updatedAt: new Date() } : c));
     const { data, error } = await supabase.from('call_notes').insert({
       call_id: callId,
@@ -594,7 +585,7 @@ export default function CallsTab({
       <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-3 flex gap-3 items-center flex-wrap">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <input type="text" placeholder="Search App ID, Dealer, State…"
+          <input type="text" placeholder="Search App ID, Dealer, Customer, State…"
             value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
@@ -610,8 +601,6 @@ export default function CallsTab({
           <option>Deal</option><option>No Deal</option>
           <option>Pending</option><option>No Answer</option><option>Duplicates</option>
         </select>
-
-        {/* Rep filter — admin/manager only */}
         {isAdmin && (
           <select value={filterRep} onChange={e => setFilterRep(e.target.value)}
             className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
@@ -619,7 +608,6 @@ export default function CallsTab({
             {uniqueReps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         )}
-
         <div className="flex items-center border border-gray-600 rounded-lg overflow-hidden bg-gray-700">
           <div className="px-2 py-2 border-r border-gray-600">
             <Search className="w-3.5 h-3.5 text-gray-500" />
@@ -704,7 +692,7 @@ export default function CallsTab({
 
       {/* TABLE */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
+        <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
           <p className="text-sm font-semibold text-gray-200">
             {sortedCalls.length} calls
             <span className="ml-2 font-normal text-gray-400">· Page {currentPage} of {totalPages || 1}</span>
@@ -722,41 +710,53 @@ export default function CallsTab({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '28px' }} />
+              <col style={{ width: '130px' }} />
+              <col style={{ width: '130px' }} />
+              <col style={{ width: '120px' }} />
+              <col style={{ width: '42px' }} />
+              <col style={{ width: '78px' }} />
+              <col style={{ width: '52px' }} />
+              <col style={{ width: '110px' }} />
+              <col style={{ width: '88px' }} />
+              <col style={{ width: '110px' }} />
+              <col style={{ width: '36px' }} />
+            </colgroup>
             <thead>
               <tr className="bg-gray-750 border-b border-gray-700">
-                <th className="w-10 px-4 py-3"></th>
-                <th className="px-4 py-3 text-left">
+                <th className="px-2 py-2"></th>
+                <th className="px-2 py-2 text-left">
                   <button onClick={() => handleSort('applicationId')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     App ID <SortIcon field="applicationId" />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left">
+                <th className="px-2 py-2 text-left">
                   <button onClick={() => handleSort('dealerName')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Dealer <SortIcon field="dealerName" />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
-                <th className="px-4 py-3 text-left">
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
+                <th className="px-2 py-2 text-left">
                   <button onClick={() => handleSort('state')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
-                    State <SortIcon field="state" />
+                    St <SortIcon field="state" />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left">
+                <th className="px-2 py-2 text-left">
                   <button onClick={() => handleSort('buyerFinal')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Amount <SortIcon field="buyerFinal" />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left">
+                <th className="px-2 py-2 text-left">
                   <button onClick={() => handleSort('submittedDate')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Date <SortIcon field="submittedDate" />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Last Activity</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap w-36">FU Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
-                <th className="w-12 px-4 py-3"></th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">Status Last</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">Activity</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">FU Status</th>
+                <th className="px-2 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
@@ -776,37 +776,39 @@ export default function CallsTab({
                 return (
                   <>
                     <tr key={call.id} className={rowCls} onClick={() => toggleRow(call.id)}>
-                      <td className="px-4 py-3 text-center">
+
+                      {/* Chevron */}
+                      <td className="px-2 py-2 text-center">
                         {isExpanded
-                          ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
-                          : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />}
+                          ? <ChevronDown className="w-3.5 h-3.5 text-blue-400 mx-auto" />
+                          : <ChevronRight className="w-3.5 h-3.5 text-gray-500 mx-auto" />}
                       </td>
 
                       {/* App ID */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-1 flex-wrap">
                           <span
-                            className="text-sm text-blue-400 font-medium hover:underline cursor-pointer"
+                            className="text-xs text-blue-400 font-medium hover:underline cursor-pointer truncate"
                             onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(call.applicationId); }}
                             title="Click to copy"
                           >
                             {call.applicationId}
                           </span>
                           {call.isDuplicate && (
-                            <span className="px-1.5 py-0.5 bg-yellow-900 text-yellow-300 text-xs rounded border border-yellow-700 font-medium flex-shrink-0">DUPE</span>
+                            <span className="px-1 bg-yellow-900 text-yellow-300 text-[9px] rounded border border-yellow-700 font-medium flex-shrink-0">DUPE</span>
                           )}
                           {isNew && (
-                            <span className="px-1.5 py-0.5 bg-amber-900 text-amber-300 text-xs rounded border border-amber-700 font-medium flex-shrink-0">NEW</span>
+                            <span className="px-1 bg-amber-900 text-amber-300 text-[9px] rounded border border-amber-700 font-medium flex-shrink-0">NEW</span>
                           )}
                         </div>
                       </td>
 
-                      {/* Dealer — click to filter */}
-                      <td className="px-4 py-3 max-w-[180px]" onClick={e => e.stopPropagation()}>
+                      {/* Dealer */}
+                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => setDealerFilter(prev => prev === call.dealerName ? '' : call.dealerName)}
-                          title={`Filter by ${call.dealerName}`}
-                          className={`text-sm text-left truncate max-w-[160px] transition hover:text-blue-300 ${
+                          title={call.dealerName}
+                          className={`text-xs text-left truncate block w-full transition hover:text-blue-300 ${
                             isFilteredDealer ? 'text-blue-400 font-medium' : 'text-gray-200'
                           }`}
                         >
@@ -815,73 +817,73 @@ export default function CallsTab({
                       </td>
 
                       {/* Customer */}
-                      <td className="px-4 py-3 max-w-[160px]">
+                      <td className="px-2 py-2">
                         {call.customerName
-                          ? <span className="text-sm text-gray-300 truncate block max-w-[150px]" title={call.customerName}>{call.customerName}</span>
-                          : <span className="text-xs text-gray-600 italic">—</span>}
+                          ? <span className="text-xs text-gray-400 truncate block w-full" title={call.customerName}>{call.customerName}</span>
+                          : <span className="text-xs text-gray-600">—</span>}
                       </td>
 
                       {/* State */}
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                        <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{call.state}</span>
+                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                        <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
                       </td>
 
                       {/* Amount */}
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                         {editingAmount === call.id ? (
                           <div className="flex items-center gap-1">
                             <input type="text" value={tempAmount} onChange={e => setTempAmount(e.target.value)}
-                              className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
+                              className="w-14 px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
                               autoFocus />
-                            <button onClick={() => handleSaveAmount(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => setEditingAmount(null)} className="text-red-400 hover:text-red-300"><X className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => handleSaveAmount(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3 h-3" /></button>
+                            <button onClick={() => setEditingAmount(null)} className="text-red-400 hover:text-red-300"><X className="w-3 h-3" /></button>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium text-gray-100">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs font-medium text-gray-100">
                               ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                             </span>
                             <button onClick={() => { setEditingAmount(call.id); setTempAmount(call.buyerFinal); }}
-                              className="text-gray-600 hover:text-gray-400 transition">
-                              <Edit2 className="w-3 h-3" />
+                              className="text-gray-600 hover:text-gray-400 transition flex-shrink-0">
+                              <Edit2 className="w-2.5 h-2.5" />
                             </button>
                           </div>
                         )}
                       </td>
 
                       {/* Date */}
-                      <td className="px-4 py-3 text-xs text-gray-400">{call.submittedDate}</td>
+                      <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{formatShortDate(call.submittedDate)}</td>
 
                       {/* Status Last */}
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                         {editingStatusLast === call.id ? (
                           <div className="flex items-center gap-1">
                             <select value={tempStatusLast} onChange={e => setTempStatusLast(e.target.value)}
-                              className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
+                              className="px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
                               autoFocus>
                               {allStatusLastOptions.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
-                            <button onClick={() => handleSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => setEditingStatusLast(null)} className="text-red-400 hover:text-red-300"><X className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => handleSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300 flex-shrink-0"><Check className="w-3 h-3" /></button>
+                            <button onClick={() => setEditingStatusLast(null)} className="text-red-400 hover:text-red-300 flex-shrink-0"><X className="w-3 h-3" /></button>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-1.5">
-                            <span className={`px-2.5 py-0.5 rounded-full text-xs border ${getStatusLastStyle(call.statusLast)}`}>
+                          <div className="flex items-center gap-1">
+                            <span className={`px-1.5 py-0 rounded-full text-[10px] border truncate ${getStatusLastStyle(call.statusLast)}`}>
                               {call.statusLast}
                             </span>
                             <button onClick={() => { setEditingStatusLast(call.id); setTempStatusLast(call.statusLast); }}
-                              className="text-gray-600 hover:text-gray-400 transition">
-                              <Edit2 className="w-3 h-3" />
+                              className="text-gray-600 hover:text-gray-400 transition flex-shrink-0">
+                              <Edit2 className="w-2.5 h-2.5" />
                             </button>
                           </div>
                         )}
                       </td>
 
                       {/* Last Activity */}
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                        <span className={`text-xs flex items-center gap-1.5 ${activity.isToday ? 'text-emerald-400' : 'text-gray-500'}`}>
+                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                        <span className={`text-[10px] flex items-center gap-1 whitespace-nowrap ${activity.isToday ? 'text-emerald-400' : 'text-gray-500'}`}>
                           {activity.text !== '—' && (
-                            <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
                             </svg>
                           )}
@@ -890,10 +892,10 @@ export default function CallsTab({
                       </td>
 
                       {/* FU Status */}
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      <select value={call.fuStatus || ''}
+                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                        <select value={call.fuStatus || ''}
                           onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
-                          className="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full min-w-[120px]">
+                          className="px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
                           <option value="">Select…</option>
                           <option>Deal</option>
                           <option>No Deal</option>
@@ -903,32 +905,27 @@ export default function CallsTab({
                         </select>
                       </td>
 
-                      {/* Notes count */}
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                        {callNotes.length > 0 && (
-                          <div className="flex items-center gap-1 text-blue-400">
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            <span className="text-xs font-bold">{callNotes.length}</span>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Note button */}
-                      <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
-                        <button onClick={e => openNotes(e, call.id)} title="Add note"
-                          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${
+                      {/* Note button with badge */}
+                      <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
+                        <button onClick={e => openNotes(e, call.id)} title="Notes"
+                          className={`relative inline-flex items-center justify-center w-6 h-6 rounded transition ${
                             callNotes.length > 0
                               ? 'bg-blue-600 text-white hover:bg-blue-500'
                               : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
                           }`}>
-                          <MessageSquare className="w-3.5 h-3.5" />
+                          <MessageSquare className="w-3 h-3" />
+                          {callNotes.length > 0 && (
+                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center leading-none">
+                              {callNotes.length}
+                            </span>
+                          )}
                         </button>
                       </td>
                     </tr>
 
                     {isExpanded && (
                       <tr key={`${call.id}-exp`}>
-                      <td colSpan={12} className="px-4 py-4 pl-12 bg-gray-750">
+                        <td colSpan={11} className="px-3 py-3 pl-10 bg-gray-750">
                           <div className="space-y-3 max-w-2xl">
                             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
                             {callNotes.length === 0 ? (
@@ -966,7 +963,7 @@ export default function CallsTab({
           </table>
         </div>
 
-        <div className="px-5 py-3 border-t border-gray-700 flex items-center justify-between">
+        <div className="px-3 py-2 border-t border-gray-700 flex items-center justify-between">
           <p className="text-xs text-gray-500">
             Showing {Math.min((currentPage - 1) * itemsPerPage + 1, sortedCalls.length)}–{Math.min(currentPage * itemsPerPage, sortedCalls.length)} of {sortedCalls.length} calls
           </p>
