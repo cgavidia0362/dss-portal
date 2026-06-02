@@ -65,6 +65,7 @@ const getStatusLastStyle = (status: string) => {
 const ITEMS_PER_PAGE = 10;
 
 export default function AssignTab({ calls, setCalls, users, goals, setGoals }: AssignTabProps) {
+
   // ── ASSIGN STATE ─────────────────────────────────────────────────
   const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
   const [assignToId, setAssignToId] = useState('');
@@ -76,6 +77,7 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
   // ── VIEW CALLS POPUP ─────────────────────────────────────────────
   const [viewCallsRep, setViewCallsRep] = useState<User | null>(null);
   const [viewSearchQuery, setViewSearchQuery] = useState('');
+  const [viewTab, setViewTab] = useState<'calls' | 'dealers'>('calls');
 
   // ── UNASSIGN MODAL ───────────────────────────────────────────────
   const [unassignRep, setUnassignRep] = useState<User | null>(null);
@@ -236,11 +238,30 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
 
   // ── VIEW CALLS DATA ───────────────────────────────────────────────
   const viewRepCalls = viewCallsRep ? getRepCalls(viewCallsRep.id) : [];
+
+  const viewRepDealers = useMemo(() => {
+    if (!viewCallsRep) return [];
+    const dealerMap: { [name: string]: { callCount: number; state: string; topStatus: string } } = {};
+    viewRepCalls.forEach(c => {
+      if (!dealerMap[c.dealerName]) dealerMap[c.dealerName] = { callCount: 0, state: c.state, topStatus: c.statusLast || '' };
+      dealerMap[c.dealerName].callCount++;
+    });
+    const maxCount = Math.max(...Object.values(dealerMap).map(d => d.callCount), 1);
+    return Object.entries(dealerMap)
+      .map(([name, data]) => ({ name, ...data, maxCount }))
+      .sort((a, b) => b.callCount - a.callCount);
+  }, [viewRepCalls, viewCallsRep]);
+
   const filteredViewCalls = viewRepCalls.filter(c => {
     const q = viewSearchQuery.toLowerCase();
     return !q || c.applicationId.toLowerCase().includes(q) ||
       c.dealerName.toLowerCase().includes(q) ||
       (c.customerName || '').toLowerCase().includes(q);
+  });
+
+  const filteredViewDealers = viewRepDealers.filter(d => {
+    const q = viewSearchQuery.toLowerCase();
+    return !q || d.name.toLowerCase().includes(q);
   });
 
   const initials = (name: string) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -283,10 +304,9 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
                       </p>
                     </div>
                   </div>
-                  {/* All 3 buttons on one line */}
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => { setViewCallsRep(rep); setViewSearchQuery(''); }}
+                      onClick={() => { setViewCallsRep(rep); setViewSearchQuery(''); setViewTab('calls'); }}
                       className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-900 bg-opacity-40 hover:bg-opacity-60 border border-blue-700 text-blue-300 rounded-lg text-xs transition">
                       <List className="w-3 h-3 flex-shrink-0" />
                       <span>View calls</span>
@@ -358,7 +378,7 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
           ) : (
             <>
               {/* Table header */}
-              <div className="grid grid-cols-[28px_1fr_130px_130px_42px_72px_100px] gap-0 px-3 py-2 bg-gray-750 border-b border-gray-700">
+              <div className="grid grid-cols-[28px_1fr_130px_130px_42px_72px_100px] gap-0 px-3 py-2 bg-gray-750 border-b border-gray-700 items-center">
                 <div className="flex items-center justify-center">
                   <input
                     type="checkbox"
@@ -382,12 +402,12 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
                     key={call.id}
                     className={`grid grid-cols-[28px_1fr_130px_130px_42px_72px_100px] gap-0 px-3 py-2 hover:bg-gray-750 transition-colors cursor-pointer items-center ${selectedCalls.has(call.id) ? 'bg-blue-900 bg-opacity-10' : ''}`}
                     onClick={() => toggleSelectCall(call.id)}>
-                    <div className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-center">
                       <input
                         type="checkbox"
                         checked={selectedCalls.has(call.id)}
-                        onChange={() => toggleSelectCall(call.id)}
-                        className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                        readOnly
+                        className="w-3.5 h-3.5 accent-blue-500 pointer-events-none"
                       />
                     </div>
                     <div className="px-2 text-xs text-blue-400 font-medium truncate">{call.applicationId}</div>
@@ -464,20 +484,39 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
           onClick={() => setViewCallsRep(null)}>
           <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-4xl overflow-hidden"
             onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
               <div>
                 <h3 className="text-lg font-semibold text-gray-100">{viewCallsRep.name}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">{viewRepCalls.length} calls assigned · press Escape to close</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {viewRepCalls.length} call{viewRepCalls.length !== 1 ? 's' : ''} · {viewRepDealers.length} dealer{viewRepDealers.length !== 1 ? 's' : ''} · press Escape to close
+                </p>
               </div>
               <button onClick={() => setViewCallsRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
             </div>
 
+            {/* Tabs */}
+            <div className="flex border-b border-gray-700">
+              <button
+                onClick={() => { setViewTab('calls'); setViewSearchQuery(''); }}
+                className={`flex-1 px-4 py-2.5 text-sm font-medium transition border-b-2 ${viewTab === 'calls' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-300'}`}>
+                Calls ({viewRepCalls.length})
+              </button>
+              <button
+                onClick={() => { setViewTab('dealers'); setViewSearchQuery(''); }}
+                className={`flex-1 px-4 py-2.5 text-sm font-medium transition border-b-2 ${viewTab === 'dealers' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-300'}`}>
+                Dealers ({viewRepDealers.length})
+              </button>
+            </div>
+
+            {/* Search */}
             <div className="px-4 py-3 border-b border-gray-700">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
                 <input
                   type="text"
-                  placeholder="Search App ID, dealer, customer…"
+                  placeholder={viewTab === 'calls' ? 'Search App ID, dealer, customer…' : 'Search dealer name…'}
                   value={viewSearchQuery}
                   onChange={e => setViewSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -486,54 +525,110 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
               </div>
             </div>
 
-            <div className="overflow-x-auto max-h-[55vh] overflow-y-auto">
-              <table className="w-full" style={{ tableLayout: 'fixed' }}>
-                <colgroup>
-                  <col style={{ width: '115px' }} />
-                  <col style={{ width: '120px' }} />
-                  <col style={{ width: '120px' }} />
-                  <col style={{ width: '38px' }} />
-                  <col style={{ width: '70px' }} />
-                  <col style={{ width: '62px' }} />
-                  <col style={{ width: '105px' }} />
-                  <col style={{ width: '88px' }} />
-                </colgroup>
-                <thead className="bg-gray-750 sticky top-0">
-                  <tr className="border-b border-gray-700">
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-700">
-                  {filteredViewCalls.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">No calls found</td></tr>
-                  ) : filteredViewCalls.map(call => (
-                    <tr key={call.id} className="hover:bg-gray-750 transition-colors">
-                      <td className="px-2 py-2 text-xs text-blue-400 font-medium truncate">{call.applicationId}</td>
-                      <td className="px-2 py-2 text-xs text-gray-200 truncate">{call.dealerName}</td>
-                      <td className="px-2 py-2 text-xs text-gray-400 truncate">{call.customerName || '—'}</td>
-                      <td className="px-2 py-2">
-                        <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
-                      </td>
-                      <td className="px-2 py-2 text-xs font-medium text-gray-100">
-                        ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                      </td>
-                      <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{call.submittedDate}</td>
-                      <td className="px-2 py-2">
-                        <span className={`px-1.5 py-0 rounded-full text-[10px] border truncate ${getStatusLastStyle(call.statusLast)}`}>{call.statusLast}</span>
-                      </td>
-                      <td className="px-2 py-2 text-xs text-gray-400">{call.fuStatus || '—'}</td>
+            {/* CALLS TAB */}
+            {viewTab === 'calls' && (
+              <div className="overflow-x-auto max-h-[55vh] overflow-y-auto">
+                <table className="w-full" style={{ tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '115px' }} />
+                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '38px' }} />
+                    <col style={{ width: '70px' }} />
+                    <col style={{ width: '62px' }} />
+                    <col style={{ width: '105px' }} />
+                    <col style={{ width: '88px' }} />
+                  </colgroup>
+                  <thead className="bg-gray-750 sticky top-0">
+                    <tr className="border-b border-gray-700">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-700">
+                    {filteredViewCalls.length === 0 ? (
+                      <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">No calls found</td></tr>
+                    ) : filteredViewCalls.map(call => (
+                      <tr key={call.id} className="hover:bg-gray-750 transition-colors">
+                        <td className="px-2 py-2 text-xs text-blue-400 font-medium truncate">{call.applicationId}</td>
+                        <td className="px-2 py-2 text-xs text-gray-200 truncate">{call.dealerName}</td>
+                        <td className="px-2 py-2 text-xs text-gray-400 truncate">{call.customerName || '—'}</td>
+                        <td className="px-2 py-2">
+                          <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
+                        </td>
+                        <td className="px-2 py-2 text-xs font-medium text-gray-100">
+                          ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                        </td>
+                        <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{call.submittedDate}</td>
+                        <td className="px-2 py-2">
+                          <span className={`px-1.5 py-0 rounded-full text-[10px] border truncate ${getStatusLastStyle(call.statusLast)}`}>{call.statusLast}</span>
+                        </td>
+                        <td className="px-2 py-2 text-xs text-gray-400">{call.fuStatus || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* DEALERS TAB */}
+            {viewTab === 'dealers' && (
+              <div className="overflow-y-auto max-h-[55vh]">
+                {filteredViewDealers.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-gray-500">No dealers found</div>
+                ) : (
+                  <table className="w-full" style={{ tableLayout: 'fixed' }}>
+                    <colgroup>
+                      <col style={{ width: '200px' }} />
+                      <col style={{ width: '50px' }} />
+                      <col style={{ width: '180px' }} />
+                      <col style={{ width: '115px' }} />
+                    </colgroup>
+                    <thead className="bg-gray-750 sticky top-0">
+                      <tr className="border-b border-gray-700">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Calls</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-700">
+                      {filteredViewDealers.map(dealer => (
+                        <tr key={dealer.name} className="hover:bg-gray-750 transition-colors">
+                          <td className="px-3 py-2.5 text-sm font-medium text-gray-100 truncate">{dealer.name}</td>
+                          <td className="px-3 py-2.5">
+                            <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{dealer.state}</span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-300 w-5 flex-shrink-0">{dealer.callCount}</span>
+                              <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-blue-500 rounded-full"
+                                  style={{ width: `${Math.round((dealer.callCount / dealer.maxCount) * 100)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`px-1.5 py-0 rounded-full text-[10px] border ${getStatusLastStyle(dealer.topStatus)}`}>
+                              {dealer.topStatus || '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
             <div className="px-6 py-3 border-t border-gray-700">
               <p className="text-xs text-gray-500">Press Escape to close</p>
             </div>
@@ -572,7 +667,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
             </div>
 
             <div className="p-5">
-
               {/* BY DEALER */}
               {unassignMode === 'dealer' && (
                 <div className="space-y-3">
@@ -653,8 +747,8 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
                         <input
                           type="checkbox"
                           checked={selectedUnassignCalls.has(call.id)}
-                          onChange={() => {}}
-                          className="w-3.5 h-3.5 accent-red-500 flex-shrink-0"
+                          readOnly
+                          className="w-3.5 h-3.5 accent-red-500 flex-shrink-0 pointer-events-none"
                         />
                         <span className="text-xs text-blue-400 font-medium w-28 flex-shrink-0">{call.applicationId}</span>
                         <span className="text-xs text-gray-200 flex-1 truncate">{call.dealerName}</span>
