@@ -62,15 +62,16 @@ const getStatusLastStyle = (status: string) => {
   return 'bg-gray-700 text-gray-300 border-gray-600';
 };
 
-const ITEMS_PER_PAGE = 10;
+const DEALERS_PER_PAGE = 10;
 
 export default function AssignTab({ calls, setCalls, users, goals, setGoals }: AssignTabProps) {
 
   // ── ASSIGN STATE ─────────────────────────────────────────────────
-  const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
+  const [filterState, setFilterState] = useState('');
+  const [selectedDealers, setSelectedDealers] = useState<Set<string>>(new Set());
   const [assignToId, setAssignToId] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [dealerSearch, setDealerSearch] = useState('');
+  const [dealerPage, setDealerPage] = useState(1);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
@@ -95,42 +96,65 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
 
   // ── COMPUTED ─────────────────────────────────────────────────────
   const reps = users.filter(u => u.role === 'rep');
+  const unassignedCalls = useMemo(() => calls.filter(c => !c.assignedTo), [calls]);
 
-  const unassignedCalls = useMemo(() =>
-    calls.filter(c => !c.assignedTo),
-    [calls]
+  const uniqueStates = useMemo(() =>
+    Array.from(new Set(unassignedCalls.map(c => c.state))).sort(),
+    [unassignedCalls]
   );
 
-  const filteredUnassigned = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return unassignedCalls;
-    return unassignedCalls.filter(c =>
-      c.applicationId.toLowerCase().includes(q) ||
-      c.dealerName.toLowerCase().includes(q) ||
-      c.state.toLowerCase().includes(q) ||
-      (c.customerName || '').toLowerCase().includes(q)
-    );
-  }, [unassignedCalls, searchQuery]);
+  const dealersInState = useMemo(() => {
+    if (!filterState) return [];
+    const dealerMap: { [name: string]: { callCount: number; cifNumber: string } } = {};
+    unassignedCalls
+      .filter(c => c.state === filterState)
+      .forEach(c => {
+        if (!dealerMap[c.dealerName]) dealerMap[c.dealerName] = { callCount: 0, cifNumber: c.dealerCifNumber };
+        dealerMap[c.dealerName].callCount++;
+      });
+    return Object.entries(dealerMap)
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.callCount - a.callCount);
+  }, [unassignedCalls, filterState]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredUnassigned.length / ITEMS_PER_PAGE));
-  const paginatedCalls = filteredUnassigned.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const filteredDealers = useMemo(() => {
+    const q = dealerSearch.toLowerCase().trim();
+    if (!q) return dealersInState;
+    return dealersInState.filter(d => d.name.toLowerCase().includes(q));
+  }, [dealersInState, dealerSearch]);
+
+  const totalDealerPages = Math.max(1, Math.ceil(filteredDealers.length / DEALERS_PER_PAGE));
+  const paginatedDealers = filteredDealers.slice((dealerPage - 1) * DEALERS_PER_PAGE, dealerPage * DEALERS_PER_PAGE);
+
+  const totalCallsInSelection = useMemo(() => {
+    if (selectedDealers.size === 0) return 0;
+    return unassignedCalls.filter(c =>
+      selectedDealers.has(c.dealerName) && c.state === filterState
+    ).length;
+  }, [selectedDealers, unassignedCalls, filterState]);
 
   const getRepCalls = (repId: string) => calls.filter(c => c.assignedTo === repId);
 
   // ── ASSIGN ───────────────────────────────────────────────────────
   const handleAssign = async () => {
-    if (!assignToId || selectedCalls.size === 0) return;
+    if (!assignToId || selectedDealers.size === 0) return;
     const rep = users.find(u => u.id === assignToId);
     if (!rep) return;
-    const callIds = Array.from(selectedCalls);
+    const callsToAssign = unassignedCalls.filter(c =>
+      selectedDealers.has(c.dealerName) && c.state === filterState
+    );
+    if (!callsToAssign.length) return;
+    const callIds = callsToAssign.map(c => c.id);
     setCalls(prev => prev.map(c => callIds.includes(c.id)
       ? { ...c, assignedTo: assignToId, assignedToName: rep.name }
       : c
     ));
-    setSelectedCalls(new Set());
+    const count = callIds.length;
+    const dealerCount = selectedDealers.size;
+    setSelectedDealers(new Set());
     setAssignToId('');
-    setSuccess(`${callIds.length} call${callIds.length !== 1 ? 's' : ''} assigned to ${rep.name}`);
-    setTimeout(() => setSuccess(''), 3000);
+    setSuccess(`${count} call${count !== 1 ? 's' : ''} from ${dealerCount} dealer${dealerCount !== 1 ? 's' : ''} assigned to ${rep.name}`);
+    setTimeout(() => setSuccess(''), 4000);
     await supabase.from('calls').update({
       assigned_to: assignToId,
       assigned_to_name: rep.name,
@@ -138,28 +162,27 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
     }).in('id', callIds);
   };
 
-  const toggleSelectCall = (id: string) => {
-    setSelectedCalls(prev => {
+  const toggleDealer = (dealerName: string) => {
+    setSelectedDealers(prev => {
       const n = new Set(prev);
-      if (n.has(id)) n.delete(id); else n.add(id);
+      if (n.has(dealerName)) n.delete(dealerName); else n.add(dealerName);
       return n;
     });
   };
 
-  const toggleSelectAll = () => {
-    if (paginatedCalls.every(c => selectedCalls.has(c.id))) {
-      setSelectedCalls(prev => {
-        const n = new Set(prev);
-        paginatedCalls.forEach(c => n.delete(c.id));
-        return n;
-      });
+  const toggleSelectAllDealers = () => {
+    if (dealersInState.every(d => selectedDealers.has(d.name))) {
+      setSelectedDealers(new Set());
     } else {
-      setSelectedCalls(prev => {
-        const n = new Set(prev);
-        paginatedCalls.forEach(c => n.add(c.id));
-        return n;
-      });
+      setSelectedDealers(new Set(dealersInState.map(d => d.name)));
     }
+  };
+
+  const handleStateChange = (state: string) => {
+    setFilterState(state);
+    setSelectedDealers(new Set());
+    setDealerSearch('');
+    setDealerPage(1);
   };
 
   // ── UNASSIGN ─────────────────────────────────────────────────────
@@ -268,6 +291,8 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
   const avatarColors = ['bg-blue-900 text-blue-300', 'bg-green-900 text-green-300', 'bg-purple-900 text-purple-300', 'bg-amber-900 text-amber-300', 'bg-cyan-900 text-cyan-300', 'bg-pink-900 text-pink-300'];
   const getAvatarColor = (idx: number) => avatarColors[idx % avatarColors.length];
 
+  const allDealersSelected = dealersInState.length > 0 && dealersInState.every(d => selectedDealers.has(d.name));
+
   return (
     <div className="space-y-6">
 
@@ -331,151 +356,197 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
         )}
       </div>
 
-      {/* ── UNASSIGNED CALLS ────────────────────────────────────── */}
+      {/* ── ASSIGN CALLS ────────────────────────────────────────── */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-gray-200">
-            Unassigned calls
-            <span className="ml-2 text-gray-400 font-normal">({filteredUnassigned.length})</span>
-          </h3>
-          <div className="flex items-center gap-2">
-            {selectedCalls.size > 0 && (
-              <span className="text-xs text-blue-400">{selectedCalls.size} selected</span>
+        <h3 className="text-sm font-semibold text-gray-200 mb-3">
+          Assign calls
+          <span className="ml-2 text-gray-400 font-normal">({unassignedCalls.length} unassigned)</span>
+        </h3>
+
+        {/* Step 1: Pick a state */}
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-3">
+          <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Step 1 — Select a state</p>
+          <div className="flex items-center gap-3 flex-wrap">
+            {uniqueStates.map(state => {
+              const count = unassignedCalls.filter(c => c.state === state).length;
+              return (
+                <button
+                  key={state}
+                  onClick={() => handleStateChange(filterState === state ? '' : state)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition ${
+                    filterState === state
+                      ? 'bg-blue-600 border-blue-500 text-white'
+                      : 'bg-gray-700 border-gray-600 text-gray-300 hover:border-blue-600 hover:text-blue-300'
+                  }`}>
+                  <span>{state}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterState === state ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-400'}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+            {uniqueStates.length === 0 && (
+              <p className="text-sm text-gray-500 italic">No unassigned calls found.</p>
             )}
-            <select
-              value={assignToId}
-              onChange={e => setAssignToId(e.target.value)}
-              className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-              <option value="">Assign to rep…</option>
-              {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-            <button
-              onClick={handleAssign}
-              disabled={!assignToId || selectedCalls.size === 0}
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition">
-              Assign {selectedCalls.size > 0 ? `(${selectedCalls.size})` : ''}
-            </button>
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <input
-            type="text"
-            placeholder="Search App ID, dealer, customer, state…"
-            value={searchQuery}
-            onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-            className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
+        {/* Step 2: Pick dealers + assign (only shown when state selected) */}
+        {filterState && (
+          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
 
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          {filteredUnassigned.length === 0 ? (
-            <div className="p-10 text-center">
-              <p className="text-sm text-gray-400">No unassigned calls match your search.</p>
-            </div>
-          ) : (
-            <>
-              {/* Table header */}
-              <div className="grid grid-cols-[28px_1fr_130px_130px_42px_72px_100px] gap-0 px-3 py-2 bg-gray-750 border-b border-gray-700 items-center">
-                <div className="flex items-center justify-center">
-                  <input
-                    type="checkbox"
-                    checked={paginatedCalls.length > 0 && paginatedCalls.every(c => selectedCalls.has(c.id))}
-                    onChange={toggleSelectAll}
-                    className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
-                  />
-                </div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">App ID</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Dealer</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Customer</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">St</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Amount</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Status Last</div>
+            {/* Header with assign controls */}
+            <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wider">Step 2 — Select dealers in <span className="text-gray-200 font-medium">{filterState}</span></p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {dealersInState.length} dealer{dealersInState.length !== 1 ? 's' : ''} · {unassignedCalls.filter(c => c.state === filterState).length} total calls
+                  {selectedDealers.size > 0 && (
+                    <span className="ml-2 text-blue-400 font-medium">· {selectedDealers.size} dealer{selectedDealers.size !== 1 ? 's' : ''} selected ({totalCallsInSelection} calls)</span>
+                  )}
+                </p>
               </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={assignToId}
+                  onChange={e => setAssignToId(e.target.value)}
+                  className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  <option value="">Assign to rep…</option>
+                  {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+                <button
+                  onClick={handleAssign}
+                  disabled={!assignToId || selectedDealers.size === 0}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition whitespace-nowrap">
+                  {selectedDealers.size > 0 && assignToId
+                    ? `Assign ${totalCallsInSelection} call${totalCallsInSelection !== 1 ? 's' : ''} →`
+                    : 'Assign'}
+                </button>
+              </div>
+            </div>
 
-              {/* Table rows */}
-              <div className="divide-y divide-gray-700">
-                {paginatedCalls.map(call => (
+            {/* Dealer search */}
+            <div className="px-4 py-2.5 border-b border-gray-700">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                <input
+                  type="text"
+                  placeholder="Search dealers…"
+                  value={dealerSearch}
+                  onChange={e => { setDealerSearch(e.target.value); setDealerPage(1); }}
+                  className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Dealer table header */}
+            <div className="grid grid-cols-[28px_1fr_60px_80px] gap-0 px-4 py-2 bg-gray-750 border-b border-gray-700 items-center">
+              <div className="flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={allDealersSelected}
+                  onChange={toggleSelectAllDealers}
+                  title="Select all dealers"
+                  className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                />
+              </div>
+              <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Dealer</div>
+              <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2 text-center">Calls</div>
+              <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2 text-right">
+                {selectedDealers.size > 0 && (
+                  <button
+                    onClick={() => setSelectedDealers(new Set())}
+                    className="text-blue-400 hover:text-blue-300 text-xs font-normal transition">
+                    Clear all
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Dealer rows */}
+            <div className="divide-y divide-gray-700">
+              {paginatedDealers.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-gray-500">No dealers match your search.</div>
+              ) : paginatedDealers.map(dealer => {
+                const isSelected = selectedDealers.has(dealer.name);
+                return (
                   <div
-                    key={call.id}
-                    className={`grid grid-cols-[28px_1fr_130px_130px_42px_72px_100px] gap-0 px-3 py-2 hover:bg-gray-750 transition-colors cursor-pointer items-center ${selectedCalls.has(call.id) ? 'bg-blue-900 bg-opacity-10' : ''}`}
-                    onClick={() => toggleSelectCall(call.id)}>
+                    key={dealer.name}
+                    className={`grid grid-cols-[28px_1fr_60px_80px] gap-0 px-4 py-3 cursor-pointer transition-colors items-center ${isSelected ? 'bg-blue-900 bg-opacity-15' : 'hover:bg-gray-750'}`}
+                    onClick={() => toggleDealer(dealer.name)}>
                     <div className="flex items-center justify-center">
                       <input
                         type="checkbox"
-                        checked={selectedCalls.has(call.id)}
-                        readOnly
-                        className="w-3.5 h-3.5 accent-blue-500 pointer-events-none"
+                        checked={isSelected}
+                        onChange={() => {}}
+                        onClick={e => { e.stopPropagation(); toggleDealer(dealer.name); }}
+                        className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
                       />
                     </div>
-                    <div className="px-2 text-xs text-blue-400 font-medium truncate">{call.applicationId}</div>
-                    <div className="px-2 text-xs text-gray-200 truncate">{call.dealerName}</div>
-                    <div className="px-2 text-xs text-gray-400 truncate">{call.customerName || '—'}</div>
                     <div className="px-2">
-                      <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
+                      <p className={`text-sm font-medium truncate ${isSelected ? 'text-blue-300' : 'text-gray-100'}`}>
+                        {dealer.name}
+                      </p>
+                      <p className="text-xs text-gray-500">{filterState}</p>
                     </div>
-                    <div className="px-2 text-xs font-medium text-gray-100">
-                      ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                    </div>
-                    <div className="px-2">
-                      <span className={`px-1.5 py-0 rounded-full text-[10px] border ${getStatusLastStyle(call.statusLast)}`}>
-                        {call.statusLast}
+                    <div className="px-2 text-center">
+                      <span className={`text-sm font-bold ${isSelected ? 'text-blue-300' : 'text-gray-300'}`}>
+                        {dealer.callCount}
                       </span>
+                      <p className="text-[10px] text-gray-600">call{dealer.callCount !== 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="px-2 text-right">
+                      <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden ml-auto" style={{ width: '60px' }}>
+                        <div
+                          className={`h-full rounded-full transition-all ${isSelected ? 'bg-blue-500' : 'bg-gray-500'}`}
+                          style={{ width: `${Math.round((dealer.callCount / Math.max(...dealersInState.map(d => d.callCount), 1)) * 100)}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
+            </div>
 
-              {/* Pagination */}
+            {/* Pagination */}
+            {totalDealerPages > 1 && (
               <div className="px-4 py-2.5 border-t border-gray-700 flex items-center justify-between bg-gray-750">
                 <p className="text-xs text-gray-500">
-                  Showing {Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, filteredUnassigned.length)}–{Math.min(currentPage * ITEMS_PER_PAGE, filteredUnassigned.length)} of {filteredUnassigned.length}
+                  Showing {Math.min((dealerPage - 1) * DEALERS_PER_PAGE + 1, filteredDealers.length)}–{Math.min(dealerPage * DEALERS_PER_PAGE, filteredDealers.length)} of {filteredDealers.length} dealers
                 </p>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
+                    onClick={() => setDealerPage(p => Math.max(1, p - 1))}
+                    disabled={dealerPage === 1}
                     className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
                     <ChevronLeft className="w-4 h-4 text-gray-400" />
                   </button>
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  {Array.from({ length: Math.min(5, totalDealerPages) }, (_, i) => {
                     let page: number;
-                    if (totalPages <= 5) page = i + 1;
-                    else if (currentPage <= 3) page = i + 1;
-                    else if (currentPage >= totalPages - 2) page = totalPages - 4 + i;
-                    else page = currentPage - 2 + i;
+                    if (totalDealerPages <= 5) page = i + 1;
+                    else if (dealerPage <= 3) page = i + 1;
+                    else if (dealerPage >= totalDealerPages - 2) page = totalDealerPages - 4 + i;
+                    else page = dealerPage - 2 + i;
                     return (
                       <button
                         key={page}
-                        onClick={() => setCurrentPage(page)}
-                        className={`w-7 h-7 rounded text-xs transition ${currentPage === page ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}>
+                        onClick={() => setDealerPage(page)}
+                        className={`w-7 h-7 rounded text-xs transition ${dealerPage === page ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}>
                         {page}
                       </button>
                     );
                   })}
-                  {totalPages > 5 && currentPage < totalPages - 2 && (
-                    <>
-                      <span className="text-xs text-gray-600 px-1">…</span>
-                      <button
-                        onClick={() => setCurrentPage(totalPages)}
-                        className="w-7 h-7 rounded text-xs hover:bg-gray-700 text-gray-400 transition">
-                        {totalPages}
-                      </button>
-                    </>
-                  )}
                   <button
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage >= totalPages}
+                    onClick={() => setDealerPage(p => Math.min(totalDealerPages, p + 1))}
+                    disabled={dealerPage >= totalDealerPages}
                     className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
                     <ChevronRightIcon className="w-4 h-4 text-gray-400" />
                   </button>
                 </div>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── VIEW CALLS POPUP ────────────────────────────────────── */}
@@ -485,7 +556,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
           <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-4xl overflow-hidden"
             onClick={e => e.stopPropagation()}>
 
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
               <div>
                 <h3 className="text-lg font-semibold text-gray-100">{viewCallsRep.name}</h3>
@@ -496,7 +566,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
               <button onClick={() => setViewCallsRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
             </div>
 
-            {/* Tabs */}
             <div className="flex border-b border-gray-700">
               <button
                 onClick={() => { setViewTab('calls'); setViewSearchQuery(''); }}
@@ -510,7 +579,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
               </button>
             </div>
 
-            {/* Search */}
             <div className="px-4 py-3 border-b border-gray-700">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
@@ -525,7 +593,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
               </div>
             </div>
 
-            {/* CALLS TAB */}
             {viewTab === 'calls' && (
               <div className="overflow-x-auto max-h-[55vh] overflow-y-auto">
                 <table className="w-full" style={{ tableLayout: 'fixed' }}>
@@ -577,7 +644,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
               </div>
             )}
 
-            {/* DEALERS TAB */}
             {viewTab === 'dealers' && (
               <div className="overflow-y-auto max-h-[55vh]">
                 {filteredViewDealers.length === 0 ? (
@@ -609,17 +675,12 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-gray-300 w-5 flex-shrink-0">{dealer.callCount}</span>
                               <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-blue-500 rounded-full"
-                                  style={{ width: `${Math.round((dealer.callCount / dealer.maxCount) * 100)}%` }}
-                                />
+                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.round((dealer.callCount / dealer.maxCount) * 100)}%` }} />
                               </div>
                             </div>
                           </td>
                           <td className="px-3 py-2.5">
-                            <span className={`px-1.5 py-0 rounded-full text-[10px] border ${getStatusLastStyle(dealer.topStatus)}`}>
-                              {dealer.topStatus || '—'}
-                            </span>
+                            <span className={`px-1.5 py-0 rounded-full text-[10px] border ${getStatusLastStyle(dealer.topStatus)}`}>{dealer.topStatus || '—'}</span>
                           </td>
                         </tr>
                       ))}
@@ -650,7 +711,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
               <button onClick={() => setUnassignRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
             </div>
 
-            {/* Mode tabs */}
             <div className="flex border-b border-gray-700">
               {(['dealer', 'state', 'individual'] as const).map(mode => (
                 <button
@@ -667,7 +727,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
             </div>
 
             <div className="p-5">
-              {/* BY DEALER */}
               {unassignMode === 'dealer' && (
                 <div className="space-y-3">
                   <p className="text-xs text-gray-400">Select a dealer to remove all their calls from {unassignRep.name}.</p>
@@ -691,7 +750,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
                 </div>
               )}
 
-              {/* BY STATE */}
               {unassignMode === 'state' && (
                 <div className="space-y-3">
                   <p className="text-xs text-gray-400">Select a state to remove all calls in that state from {unassignRep.name}.</p>
@@ -715,7 +773,6 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
                 </div>
               )}
 
-              {/* INDIVIDUAL */}
               {unassignMode === 'individual' && (
                 <div className="space-y-3">
                   <p className="text-xs text-gray-400">Select specific calls to unassign from {unassignRep.name}.</p>
