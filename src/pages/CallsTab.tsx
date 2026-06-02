@@ -22,6 +22,7 @@ interface Call {
   isDuplicate?: boolean;
   dealBy?: string;
   dealByName?: string;
+  customerName?: string;
 }
 
 interface CallNote {
@@ -253,8 +254,9 @@ export default function CallsTab({
   const filteredCalls = calls.filter(call => {
     if ((currentUserRole === 'rep' || currentUserRole === 'buying_assistant') && call.assignedTo !== currentUserId) return false;
     if (searchQuery && !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !call.state.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
+    !call.state.toLowerCase().includes(searchQuery.toLowerCase()) &&
+    !(call.customerName || '').toLowerCase().includes(searchQuery.toLowerCase())) return false;
     if (filterFuStatus === 'No Call' && !!call.fuStatus) return false;
     if (filterFuStatus && filterFuStatus !== 'No Call' && call.fuStatus !== filterFuStatus) return false;
     if (filterState && call.state !== filterState) return false;
@@ -734,6 +736,7 @@ export default function CallsTab({
                     Dealer <SortIcon field="dealerName" />
                   </button>
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
                 <th className="px-4 py-3 text-left">
                   <button onClick={() => handleSort('state')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     State <SortIcon field="state" />
@@ -809,6 +812,13 @@ export default function CallsTab({
                         >
                           {call.dealerName}
                         </button>
+                      </td>
+
+                      {/* Customer */}
+                      <td className="px-4 py-3 max-w-[160px]">
+                        {call.customerName
+                          ? <span className="text-sm text-gray-300 truncate block max-w-[150px]" title={call.customerName}>{call.customerName}</span>
+                          : <span className="text-xs text-gray-600 italic">—</span>}
                       </td>
 
                       {/* State */}
@@ -915,7 +925,7 @@ export default function CallsTab({
 
                     {isExpanded && (
                       <tr key={`${call.id}-exp`}>
-                        <td colSpan={11} className="px-4 py-4 pl-12 bg-gray-750">
+                      <td colSpan={12} className="px-4 py-4 pl-12 bg-gray-750">
                           <div className="space-y-3 max-w-2xl">
                             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
                             {callNotes.length === 0 ? (

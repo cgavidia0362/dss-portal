@@ -38,6 +38,9 @@ interface Call {
   createdAt?: Date;
   dealDate?: Date;
   isDuplicate?: boolean;
+  dealBy?: string;
+  dealByName?: string;
+  customerName?: string;
 }
 
 interface CallNote {
@@ -301,6 +304,7 @@ function App() {
           isDuplicate: c.is_duplicate || false,
           dealBy: c.deal_by || undefined,
           dealByName: c.deal_by_name || undefined,
+          customerName: c.customer_full_name || undefined,
         })));
       }
     } catch (err) {

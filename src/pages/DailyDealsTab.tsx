@@ -41,6 +41,7 @@ interface Call {
   dealDate?: Date;
   dealBy?: string;
   dealByName?: string;
+  customerName?: string;
   isDuplicate?: boolean;
 }
 
@@ -398,7 +399,7 @@ export default function DailyDealsTab({
       amount: call.buyerFinal || '',
       state: call.state,
       fuStatus: 'Deal',
-      customerName: '',
+      customerName: call.customerName || '',
     }));
     setSearchResults([]);
     setSearchQuery('');
@@ -709,11 +710,12 @@ export default function DailyDealsTab({
                       <div className="mt-2 space-y-1">
                         {searchResults.map(call => (
                           <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
-                            <div className="flex items-center gap-3">
+ <div className="flex items-center gap-3">
                               <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
                               <span className="text-xs text-gray-300">{call.dealerName}</span>
                               <span className="text-xs text-gray-500">{call.state}</span>
                               <span className="text-xs text-gray-400">{formatCurrency(parseAmount(call.buyerFinal))}</span>
+                              {call.customerName && <span className="text-xs text-gray-400 italic">{call.customerName}</span>}
                             </div>
                             <button onClick={() => handleSelectCall(call)}
                               className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">

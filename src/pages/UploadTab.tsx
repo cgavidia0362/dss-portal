@@ -4,6 +4,11 @@ import { supabase } from '../lib/supabase';
 
 declare const XLSX: any;
 
+const toTitleCase = (str: string): string => {
+  if (!str) return '';
+  return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+};
+
 interface Dealer {
   cifNumber: string;
   name: string;
@@ -28,6 +33,7 @@ interface Call {
   updatedAt: Date;
   dealDate?: Date;
   isDuplicate?: boolean;
+  customerName?: string;
 }
 
 interface FundingData {
@@ -245,6 +251,7 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
           updatedAt: new Date(),
           dealDate: initialDealDate,
           isDuplicate: false,
+          customerName: toTitleCase(String(row['customerFullName'] || '')),
         });
       });
 
@@ -269,8 +276,8 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
           updated_at: new Date().toISOString(),
           deal_date: c.dealDate ? c.dealDate.toISOString() : null,
           is_duplicate: c.isDuplicate || false,
+          customer_full_name: c.customerName || null,
         }));
-
         const { error: upsertError } = await supabase
         .from('calls')
         .upsert(callsToUpsert, { onConflict: 'application_id' });
@@ -528,7 +535,7 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
             <FileSpreadsheet className="w-4 h-4" /> Expected Columns
           </h4>
           <p className="text-sm text-blue-200">
-            Application Id, Dealer Name, Dealer State, Dealer Cifnumber, Status Last, Timestamp Submit, App Last AF
+          Application Id, Dealer Name, Dealer State, Dealer Cifnumber, customerFullName, Status Last, Timestamp Submit, App Last AF
           </p>
         </div>
       </div>

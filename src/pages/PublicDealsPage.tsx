@@ -336,15 +336,17 @@ export default function PublicDealsPage() {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setSearching(true);
-    const { data } = await supabase.from('calls').select('id, application_id, dealer_name, buyer_final, state')
-      .ilike('application_id', `%${searchQuery.trim()}%`).limit(5);
+    const { data } = await supabase.from('calls')
+    .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
+    .or(`application_id.ilike.%${searchQuery.trim()}%,customer_full_name.ilike.%${searchQuery.trim()}%`)
+    .limit(5);
     setSearchResults(data || []);
     setSearching(false);
   };
 
   const handleSelectCall = (call: any) => {
     setLinkedCall(call);
-    setForm(prev => ({ ...prev, appId: call.application_id, dealerName: call.dealer_name, amount: call.buyer_final || '', state: call.state, fuStatus: 'Deal', customerName: '' }));
+    setForm(prev => ({ ...prev, appId: call.application_id, dealerName: call.dealer_name, amount: call.buyer_final || '', state: call.state, fuStatus: 'Deal', customerName: call.customer_full_name || '' }));
     setSearchResults([]);
     setSearchQuery('');
   };
@@ -594,6 +596,7 @@ export default function PublicDealsPage() {
                               <span className="text-xs text-gray-300">{call.dealer_name}</span>
                               <span className="text-xs text-gray-500">{call.state}</span>
                               <span className="text-xs text-gray-400">{formatCurrency(parseAmount(call.buyer_final))}</span>
+                              {call.customer_full_name && <span className="text-xs text-gray-400 italic">{call.customer_full_name}</span>}
                             </div>
                             <button onClick={() => handleSelectCall(call)}
                               className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Use this app →</button>
