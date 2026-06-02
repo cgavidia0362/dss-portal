@@ -62,7 +62,7 @@ const getStatusLastStyle = (status: string) => {
   return 'bg-gray-700 text-gray-300 border-gray-600';
 };
 
-const DEALERS_PER_PAGE = 10;
+const DEALERS_PER_PAGE = 25;
 const CALLS_PER_PAGE = 25;
 const STATUS_FILTER_OPTIONS = [
   { label: 'Approved',           onCls: 'bg-green-900 bg-opacity-40 border-green-600 text-green-300',   offCls: 'bg-gray-800 border-green-800 text-green-700' },
@@ -165,7 +165,7 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
     });
     return Object.entries(dealerMap)
       .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => b.callCount - a.callCount);
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [unassignedCalls, filterState]);
 
   const filteredDealers = useMemo(() => {
