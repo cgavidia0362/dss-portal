@@ -145,7 +145,6 @@ export default function PublicDealsPage() {
   const [linkedCall, setLinkedCall] = useState<any | null>(null);
   const [searching, setSearching] = useState(false);
 
-  // Dealer popup state
   const [dealerPopup, setDealerPopup] = useState<string | null>(null);
   const [dealerPopupCalls, setDealerPopupCalls] = useState<any[]>([]);
   const [dealerPopupLoading, setDealerPopupLoading] = useState(false);
@@ -169,7 +168,6 @@ export default function PublicDealsPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // ── ESCAPE KEY ───────────────────────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -236,8 +234,6 @@ export default function PublicDealsPage() {
       setDealNotes(grouped);
     }
   };
-
-  // ── DEALER POPUP ─────────────────────────────────────────────────
 
   const openDealerPopup = async (dealerName: string) => {
     setDealerPopup(dealerName);
@@ -331,15 +327,13 @@ export default function PublicDealsPage() {
     return localDate === today;
   };
 
-  // ── SEARCH ───────────────────────────────────────────────────────
-
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setSearching(true);
     const { data } = await supabase.from('calls')
-    .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
-    .or(`application_id.ilike.%${searchQuery.trim()}%,customer_full_name.ilike.%${searchQuery.trim()}%`)
-    .limit(5);
+      .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
+      .or(`application_id.ilike.%${searchQuery.trim()}%,customer_full_name.ilike.%${searchQuery.trim()}%`)
+      .limit(5);
     setSearchResults(data || []);
     setSearching(false);
   };
@@ -357,8 +351,6 @@ export default function PublicDealsPage() {
     setSearchResults([]);
     setForm(prev => ({ ...prev, appId: '', dealerName: '', customerName: '', amount: '', state: '' }));
   };
-
-  // ── SUBMIT ───────────────────────────────────────────────────────
 
   const handleSubmit = async () => {
     if (!selectedUser) { setError('Please select your name.'); return; }
@@ -385,7 +377,7 @@ export default function PublicDealsPage() {
         setLinkedCall(null);
         await fetchCallDealsToday();
       }
-      await fetchTodayDeals(); // immediate refresh
+      await fetchTodayDeals();
       setSuccess(`Deal logged successfully for ${user?.name}!`);
       setForm({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
       setTimeout(() => setSuccess(''), 4000);
@@ -463,7 +455,6 @@ export default function PublicDealsPage() {
 
   const toggleNotes = (e: React.MouseEvent, id: string) => { e.stopPropagation(); toggleRow(id); };
 
-  // ── KPIs ─────────────────────────────────────────────────────────
   const ddDealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
   const ddTotalAmount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').reduce((s, d) => s + parseAmount(d.amount), 0);
   const callDealCount = callDealsToday.length;
@@ -572,7 +563,6 @@ export default function PublicDealsPage() {
                 {success && <div className="bg-green-900 border border-green-700 text-green-300 px-4 py-3 rounded-lg text-sm">{success}</div>}
                 {error && <div className="bg-red-900 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">{error}</div>}
 
-                {/* Search — only when no call linked */}
                 {!linkedCall && (
                   <div className="bg-gray-750 border border-gray-600 rounded-lg p-3">
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
@@ -580,7 +570,7 @@ export default function PublicDealsPage() {
                       <input type="text" value={searchQuery}
                         onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults([]); }}
                         onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-                        placeholder="Type App ID to search…"
+                        placeholder="Type App ID or customer name to search…"
                         className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                       <button onClick={handleSearch} disabled={searching}
                         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
@@ -591,7 +581,7 @@ export default function PublicDealsPage() {
                       <div className="mt-2 space-y-1">
                         {searchResults.map((call: any) => (
                           <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 flex-wrap">
                               <span className="text-sm text-blue-400 font-medium">{call.application_id}</span>
                               <span className="text-xs text-gray-300">{call.dealer_name}</span>
                               <span className="text-xs text-gray-500">{call.state}</span>
@@ -599,7 +589,7 @@ export default function PublicDealsPage() {
                               {call.customer_full_name && <span className="text-xs text-gray-400 italic">{call.customer_full_name}</span>}
                             </div>
                             <button onClick={() => handleSelectCall(call)}
-                              className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Use this app →</button>
+                              className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex-shrink-0">Use this app →</button>
                           </div>
                         ))}
                       </div>
@@ -608,7 +598,6 @@ export default function PublicDealsPage() {
                   </div>
                 )}
 
-                {/* Name */}
                 <div>
                   <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Your name *</label>
                   <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)}
@@ -618,7 +607,6 @@ export default function PublicDealsPage() {
                   </select>
                 </div>
 
-                {/* COMPACT FORM when call linked */}
                 {linkedCall ? (
                   <div className="border border-blue-700 rounded-lg overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 bg-blue-900 bg-opacity-20 border-b border-blue-800">
@@ -763,33 +751,35 @@ export default function PublicDealsPage() {
           ) : (
             <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
               <div className="overflow-x-auto">
-              <table className="w-full" style={{ tableLayout: 'fixed' }}>
-                    <colgroup>
-                      <col style={{ width: '24px' }} />
-                      <col style={{ width: '120px' }} />
-                      <col style={{ width: '115px' }} />
-                      <col style={{ width: '72px' }} />
-                      <col style={{ width: '38px' }} />
-                      <col style={{ width: '62px' }} />
-                      <col style={{ width: '108px' }} />
-                      <col style={{ width: '105px' }} />
-                      <col style={{ width: '38px' }} />
-                      <col style={{ width: '30px' }} />
-                    </colgroup>
-                    <thead className="bg-gray-750 sticky top-0 z-10">
-                      <tr className="border-b border-gray-700">
-                        <th className="px-2 py-2"></th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
-                        <th className="px-2 py-2"></th>
-                      </tr>
-                    </thead>
+                <table className="w-full" style={{ tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '28px' }} />
+                    <col style={{ width: '110px' }} />
+                    <col style={{ width: '115px' }} />
+                    <col style={{ width: '110px' }} />
+                    <col style={{ width: '75px' }} />
+                    <col style={{ width: '38px' }} />
+                    <col style={{ width: '88px' }} />
+                    <col style={{ width: '62px' }} />
+                    <col style={{ width: '90px' }} />
+                    <col style={{ width: '36px' }} />
+                    <col style={{ width: '44px' }} />
+                  </colgroup>
+                  <thead>
+                    <tr className="border-b border-gray-700">
+                      <th className="px-2 py-2"></th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Source</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">By</th>
+                      <th className="px-2 py-2"></th>
+                      <th className="px-2 py-2"></th>
+                    </tr>
+                  </thead>
                   <tbody className="divide-y divide-gray-700">
                     {combinedEntries.map(entry => {
                       const isExpanded = expandedRows.has(entry.id);
@@ -801,85 +791,101 @@ export default function PublicDealsPage() {
                           <tr key={entry.id}
                             className={`hover:bg-gray-750 transition-colors ${!isEditing && entry.source === 'manual' ? 'cursor-pointer' : ''}`}
                             onClick={() => { if (!isEditing && entry.source === 'manual') toggleRow(entry.id); }}>
-                            <td className="px-3 py-3 text-center">
+
+                            <td className="px-2 py-2 text-center">
                               {entry.source === 'manual' && (isExpanded
-                                ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
-                                : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />)}
+                                ? <ChevronDown className="w-3.5 h-3.5 text-blue-400 mx-auto" />
+                                : <ChevronRight className="w-3.5 h-3.5 text-gray-500 mx-auto" />)}
                             </td>
-                            <td className="px-3 py-3 text-sm text-blue-400 font-medium">{entry.appId}</td>
-                            <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+
+                            <td className="px-2 py-2 text-xs text-blue-400 font-medium truncate">{entry.appId}</td>
+
+                            <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                               <button onClick={() => openDealerPopup(entry.dealerName)}
-                                className="text-sm text-left hover:text-blue-300 transition text-gray-200 max-w-[150px] truncate"
-                                title={`View all calls for ${entry.dealerName}`}>
+                                className="text-xs text-left hover:text-blue-300 transition text-gray-200 truncate block w-full"
+                                title={entry.dealerName}>
                                 {entry.dealerName}
                               </button>
                             </td>
-                            <td className="px-3 py-3 text-sm text-gray-400">{entry.customerName}</td>
-                            <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+
+                            <td className="px-2 py-2">
+                              <span className="text-xs text-gray-400 truncate block w-full" title={entry.customerName}>{entry.customerName || '—'}</span>
+                            </td>
+
+                            <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                               {isEditing ? (
-                                <input value={editAmount} onChange={e => setEditAmount(e.target.value)} className={`${inputCls} w-24`} />
+                                <input value={editAmount} onChange={e => setEditAmount(e.target.value)} className={`${inputCls} w-full`} />
                               ) : (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-sm font-semibold text-gray-100">{formatCurrency(parseAmount(entry.amount))}</span>
-                                  <button onClick={() => startEditing(entry)} className="text-gray-600 hover:text-gray-400 transition"><Edit2 className="w-3 h-3" /></button>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs font-semibold text-gray-100">{formatCurrency(parseAmount(entry.amount))}</span>
+                                  <button onClick={() => startEditing(entry)} className="text-gray-600 hover:text-gray-400 transition flex-shrink-0"><Edit2 className="w-2.5 h-2.5" /></button>
                                 </div>
                               )}
                             </td>
-                            <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+
+                            <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                               {isEditing && entry.source === 'manual'
-                                ? <input value={editState} onChange={e => setEditState(e.target.value.toUpperCase())} maxLength={2} className={`${inputCls} w-14`} />
-                                : <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{entry.state}</span>}
+                                ? <input value={editState} onChange={e => setEditState(e.target.value.toUpperCase())} maxLength={2} className={`${inputCls} w-10`} />
+                                : <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{entry.state}</span>}
                             </td>
-                            <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+
+                            <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                               {isEditing
-                                ? <select value={editFuStatus} onChange={e => setEditFuStatus(e.target.value)} className={inputCls}>
+                                ? <select value={editFuStatus} onChange={e => setEditFuStatus(e.target.value)} className={`${inputCls} w-full`}>
                                     {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                                   </select>
-                                : <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(entry.fuStatus)}`}>{entry.fuStatus}</span>}
+                                : <span className={`px-2 py-0 rounded-full text-[10px] border ${getFuStatusStyle(entry.fuStatus)}`}>{entry.fuStatus}</span>}
                             </td>
-                            <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${entry.source === 'call' ? 'bg-purple-900 text-purple-300 border border-purple-700' : 'bg-gray-700 text-gray-400 border border-gray-600'}`}>
+
+                            <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                              <span className={`px-1.5 py-0 rounded text-[10px] font-medium ${entry.source === 'call' ? 'bg-purple-900 text-purple-300 border border-purple-700' : 'bg-gray-700 text-gray-400 border border-gray-600'}`}>
                                 {entry.source === 'call' ? 'Calls' : 'Manual'}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-sm text-gray-400">{entry.creditName}</td>
-                            <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+
+                            <td className="px-2 py-2">
+                              <span className="text-xs text-gray-400 truncate block w-full">{entry.creditName}</span>
+                            </td>
+
+                            <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
                               {entry.source === 'manual' && (
                                 <button onClick={e => toggleNotes(e, entry.id)} title="Notes"
-                                  className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${notes.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'}`}>
-                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  className={`inline-flex items-center justify-center w-6 h-6 rounded transition ${notes.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'}`}>
+                                  <MessageSquare className="w-3 h-3" />
                                 </button>
                               )}
                             </td>
-                            <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+
+                            <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                               {isEditing ? (
                                 <div className="flex items-center gap-1">
-                                  <button onClick={() => handleUpdateCombined(entry)} className="text-green-400 hover:text-green-300"><Check className="w-4 h-4" /></button>
-                                  <button onClick={() => setEditingDeal(null)} className="text-red-400 hover:text-red-300"><X className="w-4 h-4" /></button>
+                                  <button onClick={() => handleUpdateCombined(entry)} className="text-green-400 hover:text-green-300"><Check className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => setEditingDeal(null)} className="text-red-400 hover:text-red-300"><X className="w-3.5 h-3.5" /></button>
                                 </div>
                               ) : entry.source === 'manual' && manualDeal ? (
                                 <button onClick={() => handleDeleteDeal(manualDeal)} className="text-gray-600 hover:text-red-400 transition">
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               ) : null}
                             </td>
                           </tr>
+
                           {isExpanded && !isEditing && entry.source === 'manual' && (
                             <tr key={`${entry.id}-exp`}>
-                              <td colSpan={11} className="px-4 py-4 pl-12 bg-gray-750">
-                                <div className="space-y-3 max-w-2xl">
+                              <td colSpan={11} className="px-3 py-2 pl-8 bg-gray-750">
+                                <div className="space-y-2 max-w-lg">
                                   <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({notes.length})</p>
                                   {notes.length === 0 ? <p className="text-sm text-gray-500 italic">No notes yet.</p> : (
                                     <div className="space-y-2">
                                       {notes.map(note => (
-                                        <div key={note.id} className="bg-gray-700 px-4 py-3 rounded-lg border border-gray-600">
+                                        <div key={note.id} className="bg-gray-700 px-3 py-2 rounded-lg border border-gray-600">
                                           <p className="text-sm text-gray-200">{note.noteText}</p>
-                                          <p className="text-xs text-gray-500 mt-1.5">{note.createdByName} · {new Date(note.createdAt).toLocaleString()}</p>
+                                          <p className="text-xs text-gray-500 mt-1">{note.createdByName} · {new Date(note.createdAt).toLocaleString()}</p>
                                         </div>
                                       ))}
                                     </div>
                                   )}
-                                  <div className="flex gap-2">
+                                  <div className="flex gap-2 mt-1">
                                     <input type="text"
                                       placeholder={selectedUser ? 'Add a note…' : 'Select your name above to add a note…'}
                                       value={newNoteText[entry.id] || ''}
@@ -904,7 +910,7 @@ export default function PublicDealsPage() {
           )}
         </div>
 
-        {/* DEALER POPUP — fully editable */}
+        {/* DEALER POPUP */}
         {dealerPopup && (
           <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
             onClick={closeDealerPopup}>
@@ -917,22 +923,36 @@ export default function PublicDealsPage() {
                 </div>
                 <button onClick={closeDealerPopup} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
               </div>
+
               <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
                 {dealerPopupLoading ? (
                   <div className="p-8 text-center text-gray-500 text-sm">Loading calls…</div>
                 ) : (
-                  <table className="w-full">
+                  <table className="w-full" style={{ tableLayout: 'fixed' }}>
+                    <colgroup>
+                      <col style={{ width: '24px' }} />
+                      <col style={{ width: '118px' }} />
+                      <col style={{ width: '112px' }} />
+                      <col style={{ width: '72px' }} />
+                      <col style={{ width: '36px' }} />
+                      <col style={{ width: '68px' }} />
+                      <col style={{ width: '108px' }} />
+                      <col style={{ width: '105px' }} />
+                      <col style={{ width: '38px' }} />
+                      <col style={{ width: '30px' }} />
+                    </colgroup>
                     <thead className="bg-gray-750 sticky top-0 z-10">
                       <tr className="border-b border-gray-700">
-                        <th className="w-8 px-3 py-3"></th>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">State</th>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
-                        <th className="w-10 px-3 py-3"></th>
+                        <th className="px-2 py-2"></th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
+                        <th className="px-2 py-2"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-700">
@@ -951,14 +971,12 @@ export default function PublicDealsPage() {
                             <tr key={call.id}
                               className={`transition-colors ${isNew ? 'bg-amber-950 border-l-2 border-l-amber-500 hover:bg-amber-900 hover:bg-opacity-20' : 'hover:bg-gray-750'}`}>
 
-                              {/* Chevron */}
                               <td className="px-2 py-2 text-center cursor-pointer" onClick={() => togglePopupNotes(call.id)}>
                                 {isExpanded
                                   ? <ChevronDown className="w-3.5 h-3.5 text-blue-400 mx-auto" />
                                   : <ChevronRight className="w-3.5 h-3.5 text-gray-500 mx-auto" />}
                               </td>
 
-                              {/* App ID */}
                               <td className="px-2 py-2">
                                 <div className="flex items-center gap-1 flex-wrap">
                                   <span className="text-xs text-blue-400 font-medium truncate">{call.application_id}</span>
@@ -966,14 +984,12 @@ export default function PublicDealsPage() {
                                 </div>
                               </td>
 
-                              {/* Customer */}
                               <td className="px-2 py-2">
                                 {call.customer_full_name
                                   ? <span className="text-xs text-gray-400 truncate block" title={call.customer_full_name}>{call.customer_full_name}</span>
                                   : <span className="text-xs text-gray-600">—</span>}
                               </td>
 
-                              {/* Amount */}
                               <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                                 {popupEditingAmount === call.id ? (
                                   <div className="flex items-center gap-1">
@@ -991,15 +1007,12 @@ export default function PublicDealsPage() {
                                 )}
                               </td>
 
-                              {/* State */}
                               <td className="px-2 py-2">
                                 <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
                               </td>
 
-                              {/* Date */}
                               <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{call.submitted_date}</td>
 
-                              {/* Status Last */}
                               <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                                 {popupEditingStatusLast === call.id ? (
                                   <div className="flex items-center gap-1">
@@ -1019,7 +1032,6 @@ export default function PublicDealsPage() {
                                 )}
                               </td>
 
-                              {/* FU Status */}
                               <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                                 <select value={fuStatus} onChange={e => handlePopupFuStatus(call.id, e.target.value)}
                                   className="px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
@@ -1029,7 +1041,6 @@ export default function PublicDealsPage() {
                                 </select>
                               </td>
 
-                              {/* Notes count */}
                               <td className="px-2 py-2">
                                 {callNotes.length > 0 && (
                                   <div className="flex items-center gap-1 text-blue-400">
@@ -1039,7 +1050,6 @@ export default function PublicDealsPage() {
                                 )}
                               </td>
 
-                              {/* Note button */}
                               <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
                                 <button onClick={() => togglePopupNotes(call.id)}
                                   className={`inline-flex items-center justify-center w-6 h-6 rounded transition ${callNotes.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'}`}>
@@ -1048,7 +1058,6 @@ export default function PublicDealsPage() {
                               </td>
                             </tr>
 
-                            {/* Expanded notes */}
                             {isExpanded && (
                               <tr key={`${call.id}-popup-notes`}>
                                 <td colSpan={10} className="px-3 py-2 pl-8 bg-gray-750">
@@ -1086,6 +1095,7 @@ export default function PublicDealsPage() {
                   </table>
                 )}
               </div>
+
               <div className="px-6 py-3 border-t border-gray-700 flex items-center justify-between">
                 <p className="text-xs text-gray-500">Press Escape to close</p>
                 {dealerPopupCalls.some(isPopupCallNew) && (
