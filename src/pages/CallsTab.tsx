@@ -754,7 +754,7 @@ export default function CallsTab({
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Last Activity</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap w-36">FU Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
                 <th className="w-12 px-4 py-3"></th>
               </tr>
@@ -891,12 +891,15 @@ export default function CallsTab({
 
                       {/* FU Status */}
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                        <select value={call.fuStatus || ''}
+                      <select value={call.fuStatus || ''}
                           onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
-                          className="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
+                          className="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full min-w-[120px]">
                           <option value="">Select…</option>
-                          <option>Deal</option><option>No Deal</option>
-                          <option>Pending</option><option>No Answer</option><option>Duplicates</option>
+                          <option>Deal</option>
+                          <option>No Deal</option>
+                          <option>Pending</option>
+                          <option>No Answer</option>
+                          <option>Duplicates</option>
                         </select>
                       </td>
 
