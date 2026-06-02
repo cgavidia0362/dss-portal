@@ -28,9 +28,12 @@ interface DailyDealNote {
 interface Call {
   id: string;
   applicationId: string;
+  dealerCifNumber: string;
   dealerName: string;
-  buyerFinal: string;
   state: string;
+  buyerFinal: string;
+  statusLast: string;
+  submittedDate: string;
   fuStatus?: string;
   assignedTo?: string;
   assignedToName?: string;
@@ -107,6 +110,18 @@ const getFuStatusStyle = (status: string) => {
   return 'bg-gray-700 text-gray-300 border-gray-600';
 };
 
+const getStatusLastStyle = (status: string) => {
+  const s = (status || '').toLowerCase();
+  if (s.includes('approved') || s === 'approval') return 'bg-green-900 text-green-300 border-green-700';
+  if (s === 'pending approval' || s.includes('pending approval')) return 'bg-purple-900 text-purple-300 border-purple-700';
+  if (s.includes('counter')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
+  if (s.includes('denial') || s.includes('declined')) return 'bg-red-900 text-red-300 border-red-700';
+  if (s.includes('accepted')) return 'bg-blue-900 text-blue-300 border-blue-700';
+  if (s.includes('funded') || s.includes('funding')) return 'bg-emerald-900 text-emerald-300 border-emerald-700';
+  if (s.includes('new application')) return 'bg-cyan-900 text-cyan-300 border-cyan-700';
+  return 'bg-gray-700 text-gray-300 border-gray-600';
+};
+
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 
@@ -134,7 +149,6 @@ export default function DailyDealsTab({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Inline editing state — all fields
   const [editingDeal, setEditingDeal] = useState<string | null>(null);
   const [editAppId, setEditAppId] = useState('');
   const [editDealerName, setEditDealerName] = useState('');
@@ -150,6 +164,8 @@ export default function DailyDealsTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Call[]>([]);
   const [linkedCall, setLinkedCall] = useState<Call | null>(null);
+
+  const [dealerPopup, setDealerPopup] = useState<string | null>(null);
 
   const [showHistory, setShowHistory] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
@@ -172,6 +188,20 @@ export default function DailyDealsTab({
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [calendarYear, calendarMonth, showHistory]);
+
+  // ── ESCAPE KEY (layered) ─────────────────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (dealerPopup) { setDealerPopup(null); return; }
+        if (expandedRows.size > 0) { setExpandedRows(new Set()); return; }
+        if (editingDeal) { setEditingDeal(null); return; }
+        if (showHistory) { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); return; }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [dealerPopup, expandedRows, editingDeal, showHistory]);
 
   const fetchTodayDeals = async () => {
     try {
@@ -200,15 +230,13 @@ export default function DailyDealsTab({
   };
 
   const fetchAllUsers = async () => {
-    const { data } = await supabase
-      .from('profiles').select('id, name, role').eq('active', true).order('name');
+    const { data } = await supabase.from('profiles').select('id, name, role').eq('active', true).order('name');
     if (data) setAllUsers(data.map((r: any) => ({ id: r.id, name: r.name, role: r.role })));
   };
 
   const fetchNotesForDeals = async (dealIds: string[]) => {
     if (!dealIds.length) return;
-    const { data } = await supabase
-      .from('daily_deal_notes').select('*')
+    const { data } = await supabase.from('daily_deal_notes').select('*')
       .in('deal_id', dealIds).order('created_at', { ascending: true });
     if (data) {
       const grouped: { [id: string]: DailyDealNote[] } = {};
@@ -274,6 +302,7 @@ export default function DailyDealsTab({
       amount: call.buyerFinal || '',
       state: call.state,
       fuStatus: 'Deal',
+      customerName: '',
     }));
     setSearchResults([]);
     setSearchQuery('');
@@ -283,22 +312,33 @@ export default function DailyDealsTab({
     setLinkedCall(null);
     setSearchQuery('');
     setSearchResults([]);
-    setForm(prev => ({ ...prev, appId: '', dealerName: '', amount: '', state: '' }));
+    setForm(prev => ({ ...prev, appId: '', dealerName: '', customerName: '', amount: '', state: '' }));
   };
 
+  // ── HANDLERS ────────────────────────────────────────────────────
+
   const handleAddDeal = async () => {
-    if (!form.appId || !form.dealerName || !form.customerName || !form.amount || !form.state) {
-      setFormError('All fields are required'); return;
+    if (!form.appId || !form.dealerName || !form.amount || !form.state) {
+      setFormError('App ID, dealer, amount and state are required'); return;
+    }
+    if (!linkedCall && !form.customerName) {
+      setFormError('Customer name is required'); return;
     }
     try {
       setFormError('');
       const { error: err } = await supabase.from('daily_deals').insert({
-        app_id: form.appId.trim(), dealer_name: form.dealerName.trim(),
-        customer_name: form.customerName.trim(), amount: form.amount.trim(),
-        state: form.state.trim().toUpperCase(), fu_status: form.fuStatus,
-        added_by: currentUser.id, added_by_name: currentUser.name, deal_date: today,
+        app_id: form.appId.trim(),
+        dealer_name: form.dealerName.trim(),
+        customer_name: form.customerName.trim() || '',
+        amount: form.amount.trim(),
+        state: form.state.trim().toUpperCase(),
+        fu_status: form.fuStatus,
+        added_by: currentUser.id,
+        added_by_name: currentUser.name,
+        deal_date: today,
       });
       if (err) throw err;
+
       if (linkedCall) {
         await supabase.from('calls').update({
           fu_status: form.fuStatus,
@@ -309,6 +349,7 @@ export default function DailyDealsTab({
         }).eq('id', linkedCall.id);
         setLinkedCall(null);
       }
+
       setSuccess('Deal added!');
       setTimeout(() => setSuccess(''), 3000);
       setForm({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
@@ -357,7 +398,9 @@ export default function DailyDealsTab({
     if (!canDelete) { setError('You can only delete your own entries.'); return; }
     if (!confirm('Delete this deal entry?')) return;
     const { error: err } = await supabase.from('daily_deals').delete().eq('id', deal.id);
-    if (err) setError('Failed to delete: ' + err.message);
+    if (err) { setError('Failed to delete: ' + err.message); return; }
+    await fetchTodayDeals();
+    onRefresh();
   };
 
   const handleAddNote = async (dealId: string) => {
@@ -474,8 +517,12 @@ export default function DailyDealsTab({
 
   const inputCls = 'px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500';
 
+  const dealerCalls = dealerPopup ? calls.filter(c => c.dealerName === dealerPopup).sort((a, b) => new Date(b.submittedDate).getTime() - new Date(a.submittedDate).getTime()) : [];
+
   return (
     <div className="space-y-5">
+
+      {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-100">Daily Deals</h2>
@@ -500,6 +547,7 @@ export default function DailyDealsTab({
       {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">{error}</div>}
       {success && <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm">{success}</div>}
 
+      {/* TOP ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
         <div className="space-y-4">
           <div className="grid grid-cols-4 gap-3">
@@ -531,6 +579,7 @@ export default function DailyDealsTab({
             </div>
           </div>
 
+          {/* FORM */}
           <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
             <button onClick={() => setShowForm(f => !f)}
               className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-700 transition border-b border-gray-700">
@@ -542,86 +591,139 @@ export default function DailyDealsTab({
             {showForm && (
               <div className="p-5">
                 {formError && <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded text-sm mb-4">{formError}</div>}
-                <div className="bg-gray-750 border border-gray-600 rounded-lg p-3 mb-4">
-                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
-                  <div className="flex gap-2">
-                    <input type="text" value={searchQuery}
-                      onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults([]); }}
-                      onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-                      placeholder="Type App ID to search…"
-                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                    <button onClick={handleSearch} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Search</button>
-                    {linkedCall && <button onClick={clearLinkedCall} className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-400 rounded-lg text-sm transition">Clear</button>}
-                  </div>
-                  {searchResults.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {searchResults.map(call => (
-                        <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
-                            <span className="text-xs text-gray-300">{call.dealerName}</span>
-                            <span className="text-xs text-gray-500">{call.state}</span>
-                            <span className="text-xs text-gray-400">${parseAmount(call.buyerFinal).toLocaleString()}</span>
+
+                {/* Search box — always visible */}
+                {!linkedCall && (
+                  <div className="bg-gray-750 border border-gray-600 rounded-lg p-3 mb-4">
+                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
+                    <div className="flex gap-2">
+                      <input type="text" value={searchQuery}
+                        onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults([]); }}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
+                        placeholder="Type App ID to search…"
+                        className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                      <button onClick={handleSearch} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Search</button>
+                    </div>
+                    {searchResults.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {searchResults.map(call => (
+                          <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
+                              <span className="text-xs text-gray-300">{call.dealerName}</span>
+                              <span className="text-xs text-gray-500">{call.state}</span>
+                              <span className="text-xs text-gray-400">{formatCurrency(parseAmount(call.buyerFinal))}</span>
+                            </div>
+                            <button onClick={() => handleSelectCall(call)}
+                              className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">
+                              Use this app →
+                            </button>
                           </div>
-                          <button onClick={() => handleSelectCall(call)} className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Use this app →</button>
+                        ))}
+                      </div>
+                    )}
+                    {searchResults.length === 0 && searchQuery && <p className="text-xs text-gray-500 mt-2">No match found — fill in the details manually below.</p>}
+                  </div>
+                )}
+
+                {/* COMPACT FORM when call is linked */}
+                {linkedCall ? (
+                  <div className="border border-blue-700 rounded-lg overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 bg-blue-900 bg-opacity-20 border-b border-blue-800">
+                      <div>
+                        <span className="text-sm font-medium text-blue-400">{linkedCall.applicationId}</span>
+                        <span className="text-xs text-gray-400 ml-2">·</span>
+                        <span className="text-xs text-gray-300 ml-2">{linkedCall.dealerName}</span>
+                        <span className="text-xs text-gray-500 ml-2">· {formatCurrency(parseAmount(linkedCall.buyerFinal))} · {linkedCall.state}</span>
+                      </div>
+                      <button onClick={clearLinkedCall} className="text-gray-500 hover:text-gray-300 transition">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="p-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer name <span className="text-gray-600 normal-case">(optional)</span></label>
+                          <input type="text" value={form.customerName}
+                            onChange={e => setForm({ ...form, customerName: e.target.value })}
+                            placeholder="Leave blank if unknown"
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                         </div>
-                      ))}
+                        <div>
+                          <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">FU Status *</label>
+                          <select value={form.fuStatus} onChange={e => setForm({ ...form, fuStatus: e.target.value })}
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                            {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex items-end">
+                          <button onClick={handleAddDeal}
+                            className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
+                            Log Deal
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                  {searchResults.length === 0 && searchQuery && !linkedCall && <p className="text-xs text-gray-500 mt-2">No match found — fill in the details manually below.</p>}
-                  {linkedCall && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="text-xs text-green-400">✓ Linked to existing call:</span>
-                      <span className="text-xs text-blue-400 font-medium">{linkedCall.applicationId}</span>
-                      <span className="text-xs text-gray-400">— {linkedCall.dealerName}</span>
+                  </div>
+                ) : (
+                  /* FULL FORM when no call linked */
+                  <>
+                    <div className="grid grid-cols-3 gap-3 mb-3">
+                      <div>
+                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
+                        <input type="text" value={form.appId} onChange={e => setForm({ ...form, appId: e.target.value })}
+                          placeholder="e.g. DTBFE001"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
+                        <input type="text" value={form.dealerName} onChange={e => setForm({ ...form, dealerName: e.target.value })}
+                          placeholder="Dealer name"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer *</label>
+                        <input type="text" value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })}
+                          placeholder="Customer name"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                      </div>
                     </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-3 mb-3">
-                  <div>
-                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
-                    <input type="text" value={form.appId} onChange={e => setForm({ ...form, appId: e.target.value })} placeholder="e.g. DTBFE001"
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
-                    <input type="text" value={form.dealerName} onChange={e => setForm({ ...form, dealerName: e.target.value })} placeholder="Dealer name"
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer *</label>
-                    <input type="text" value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })} placeholder="Customer name"
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Amount *</label>
-                    <input type="text" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="$0"
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">State *</label>
-                    <input type="text" value={form.state} onChange={e => setForm({ ...form, state: e.target.value.toUpperCase() })} placeholder="IL" maxLength={2}
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">FU Status *</label>
-                    <select value={form.fuStatus} onChange={e => setForm({ ...form, fuStatus: e.target.value })}
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
-                      {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <button onClick={handleAddDeal} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">Add Deal</button>
-                  </div>
-                </div>
-                <p className="text-xs text-gray-500 mt-3">Counts toward today's goal only. Expand each row to add notes.</p>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Amount *</label>
+                        <input type="text" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })}
+                          placeholder="$0"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">State *</label>
+                        <input type="text" value={form.state} onChange={e => setForm({ ...form, state: e.target.value.toUpperCase() })}
+                          placeholder="IL" maxLength={2}
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">FU Status *</label>
+                        <select value={form.fuStatus} onChange={e => setForm({ ...form, fuStatus: e.target.value })}
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                          {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        <button onClick={handleAddDeal}
+                          className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
+                          Add Deal
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-3">Counts toward today's goal only. Expand each row to add notes.</p>
+                  </>
+                )}
               </div>
             )}
           </div>
         </div>
 
+        {/* Leaderboard */}
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
             <span className="text-base">🏆</span>
@@ -708,49 +810,41 @@ export default function DailyDealsTab({
                             : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />)}
                         </td>
 
-                        {/* App ID */}
+                        <td className="px-3 py-3 text-sm text-blue-400 font-medium">{entry.appId}</td>
+
+                        {/* Dealer — click to open popup */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          {isEditing && entry.source === 'manual'
-                            ? <input value={editAppId} onChange={e => setEditAppId(e.target.value)} className={`${inputCls} w-28`} />
-                            : <span className="text-sm text-blue-400 font-medium">{entry.appId}</span>}
+                          <button
+                            onClick={() => setDealerPopup(entry.dealerName)}
+                            className="text-sm text-left hover:text-blue-300 transition text-gray-200 max-w-[150px] truncate"
+                            title={`View all calls for ${entry.dealerName}`}
+                          >
+                            {entry.dealerName}
+                          </button>
                         </td>
 
-                        {/* Dealer */}
-                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          {isEditing && entry.source === 'manual'
-                            ? <input value={editDealerName} onChange={e => setEditDealerName(e.target.value)} className={`${inputCls} w-32`} />
-                            : <span className="text-sm text-gray-200">{entry.dealerName}</span>}
-                        </td>
-
-                        {/* Customer */}
-                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          {isEditing && entry.source === 'manual'
-                            ? <input value={editCustomerName} onChange={e => setEditCustomerName(e.target.value)} className={`${inputCls} w-32`} />
-                            : <span className="text-sm text-gray-400">{entry.customerName}</span>}
-                        </td>
+                        <td className="px-3 py-3 text-sm text-gray-400">{entry.customerName}</td>
 
                         {/* Amount */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          {isEditing
-                            ? <input value={editAmount} onChange={e => setEditAmount(e.target.value)} className={`${inputCls} w-24`} autoFocus={entry.source === 'call'} />
-                            : (
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-sm font-semibold text-gray-100">{entry.amount}</span>
-                                <button onClick={() => startEditing(entry)} className="text-gray-600 hover:text-gray-400 transition">
-                                  <Edit2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                            )}
+                          {isEditing ? (
+                            <input value={editAmount} onChange={e => setEditAmount(e.target.value)} className={`${inputCls} w-24`} />
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-semibold text-gray-100">{formatCurrency(parseAmount(entry.amount))}</span>
+                              <button onClick={() => startEditing(entry)} className="text-gray-600 hover:text-gray-400 transition">
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
                         </td>
 
-                        {/* State */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing && entry.source === 'manual'
                             ? <input value={editState} onChange={e => setEditState(e.target.value.toUpperCase())} maxLength={2} className={`${inputCls} w-14`} />
                             : <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{entry.state}</span>}
                         </td>
 
-                        {/* Status */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing
                             ? <select value={editFuStatus} onChange={e => setEditFuStatus(e.target.value)} className={inputCls}>
@@ -759,7 +853,6 @@ export default function DailyDealsTab({
                             : <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(entry.fuStatus)}`}>{entry.fuStatus}</span>}
                         </td>
 
-                        {/* Source badge */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                             entry.source === 'call'
@@ -770,18 +863,7 @@ export default function DailyDealsTab({
                           </span>
                         </td>
 
-                        {/* By */}
-                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          {isEditing && entry.source === 'manual'
-                            ? <select value={editCreditId} onChange={e => {
-                                setEditCreditId(e.target.value);
-                                const u = allUsers.find(u => u.id === e.target.value);
-                                if (u) setEditCreditName(u.name);
-                              }} className={inputCls}>
-                                {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                              </select>
-                            : <span className="text-sm text-gray-400">{entry.creditName}</span>}
-                        </td>
+                        <td className="px-3 py-3 text-sm text-gray-400">{entry.creditName}</td>
 
                         {/* Note button */}
                         <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
@@ -815,16 +897,16 @@ export default function DailyDealsTab({
                           <td colSpan={11} className="px-4 py-4 pl-12 bg-gray-750">
                             <div className="space-y-3 max-w-2xl">
                               <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({notes.length})</p>
-                              {notes.length === 0
-                                ? <p className="text-sm text-gray-500 italic">No notes yet.</p>
-                                : <div className="space-y-2">
-                                    {notes.map(note => (
-                                      <div key={note.id} className="bg-gray-700 px-4 py-3 rounded-lg border border-gray-600">
-                                        <p className="text-sm text-gray-200">{note.noteText}</p>
-                                        <p className="text-xs text-gray-500 mt-1.5">{note.createdByName} · {new Date(note.createdAt).toLocaleString()}</p>
-                                      </div>
-                                    ))}
-                                  </div>}
+                              {notes.length === 0 ? <p className="text-sm text-gray-500 italic">No notes yet.</p> : (
+                                <div className="space-y-2">
+                                  {notes.map(note => (
+                                    <div key={note.id} className="bg-gray-700 px-4 py-3 rounded-lg border border-gray-600">
+                                      <p className="text-sm text-gray-200">{note.noteText}</p>
+                                      <p className="text-xs text-gray-500 mt-1.5">{note.createdByName} · {new Date(note.createdAt).toLocaleString()}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                               <div className="flex gap-2">
                                 <input type="text" placeholder="Add a note..."
                                   value={newNoteText[entry.id] || ''}
@@ -832,7 +914,10 @@ export default function DailyDealsTab({
                                   onKeyDown={e => { if (e.key === 'Enter') handleAddNote(entry.id); }}
                                   className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                   autoFocus />
-                                <button onClick={() => handleAddNote(entry.id)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Save</button>
+                                <button onClick={() => handleAddNote(entry.id)}
+                                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                                  Save
+                                </button>
                               </div>
                             </div>
                           </td>
@@ -847,14 +932,72 @@ export default function DailyDealsTab({
         )}
       </div>
 
+      {/* DEALER POPUP */}
+      {dealerPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-16 z-50 px-4"
+          onClick={() => setDealerPopup(null)}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-4xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-100">{dealerPopup}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{dealerCalls.length} call{dealerCalls.length !== 1 ? 's' : ''} · press Escape to close</p>
+              </div>
+              <button onClick={() => setDealerPopup(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+            </div>
+            <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+              <table className="w-full">
+                <thead className="bg-gray-750 sticky top-0">
+                  <tr className="border-b border-gray-700">
+                    {['App ID', 'Amount', 'State', 'Date', 'Status Last', 'FU Status'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {dealerCalls.length === 0 ? (
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">No calls found for this dealer</td></tr>
+                  ) : dealerCalls.map(call => (
+                    <tr key={call.id} className="hover:bg-gray-750 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className="text-sm text-blue-400 font-medium cursor-pointer hover:underline"
+                          onClick={() => navigator.clipboard.writeText(call.applicationId)}
+                          title="Click to copy">
+                          {call.applicationId}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-100">{formatCurrency(parseAmount(call.buyerFinal))}</td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{call.state}</span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-400">{call.submittedDate}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs border ${getStatusLastStyle(call.statusLast)}`}>{call.statusLast}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {call.fuStatus
+                          ? <span className={`px-2 py-0.5 rounded-full text-xs border ${getFuStatusStyle(call.fuStatus)}`}>{call.fuStatus}</span>
+                          : <span className="text-gray-600 text-xs">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HISTORY MODAL */}
       {showHistory && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-16 z-50 px-4"
           onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
               <h3 className="text-lg font-semibold text-gray-100">Deal History</h3>
-              <button onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              <button onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}
+                className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
             </div>
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -902,7 +1045,9 @@ export default function DailyDealsTab({
                   <div className="rounded-lg border border-gray-700 overflow-hidden">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-700">
-                        <tr>{['App ID','Dealer','Customer','Amount','State','Status','By'].map(h => <th key={h} className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{h}</th>)}</tr>
+                        <tr>{['App ID','Dealer','Customer','Amount','State','Status','By'].map(h => (
+                          <th key={h} className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{h}</th>
+                        ))}</tr>
                       </thead>
                       <tbody className="divide-y divide-gray-700 bg-gray-800">
                         {selectedDateDeals.map(deal => (
@@ -910,7 +1055,7 @@ export default function DailyDealsTab({
                             <td className="px-3 py-2.5 text-blue-400 font-medium">{deal.appId}</td>
                             <td className="px-3 py-2.5 text-gray-200">{deal.dealerName}</td>
                             <td className="px-3 py-2.5 text-gray-200">{deal.customerName}</td>
-                            <td className="px-3 py-2.5 font-medium text-gray-100">{deal.amount}</td>
+                            <td className="px-3 py-2.5 font-medium text-gray-100">{formatCurrency(parseAmount(deal.amount))}</td>
                             <td className="px-3 py-2.5"><span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{deal.state}</span></td>
                             <td className="px-3 py-2.5"><span className={`px-2 py-0.5 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>{deal.fuStatus}</span></td>
                             <td className="px-3 py-2.5 text-gray-400">{deal.addedByName}</td>
