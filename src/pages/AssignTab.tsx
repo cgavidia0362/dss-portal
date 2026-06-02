@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import { UserPlus, CheckSquare, Square, Target, Users, X, Search, ChevronDown } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Search, X, Check, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
@@ -10,14 +10,14 @@ interface Call {
   state: string;
   buyerFinal: string;
   statusLast: string;
-  timestampSubmit: Date;
   submittedDate: string;
   assignedTo?: string;
   assignedToName?: string;
-  fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
-  fiType?: 'Independent' | 'Franchise';
+  fuStatus?: string;
+  customerName?: string;
   updatedAt: Date;
-  dealDate?: Date;
+  createdAt?: Date;
+  isDuplicate?: boolean;
 }
 
 interface User {
@@ -27,6 +27,7 @@ interface User {
   role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   active: boolean;
   allowedStatuses: string[];
+  state?: string;
 }
 
 interface Goals {
@@ -45,719 +46,691 @@ interface AssignTabProps {
   setGoals: React.Dispatch<React.SetStateAction<Goals>>;
 }
 
-type AssignMode = 'state' | 'dealer';
+const parseAmount = (str: string) =>
+  parseFloat((str || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
-const DEFAULT_SELECTED_STATUSES = new Set([
-  'Approved', 'Counter', 'New Application', 'Pending Approval', 'Reconsider',
-]);
+const getStatusLastStyle = (status: string) => {
+  const s = (status || '').toLowerCase();
+  if (s.includes('approved') || s === 'approval') return 'bg-green-900 text-green-300 border-green-700';
+  if (s === 'pending approval' || s.includes('pending approval')) return 'bg-purple-900 text-purple-300 border-purple-700';
+  if (s.includes('counter')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
+  if (s.includes('denial') || s.includes('declined')) return 'bg-red-900 text-red-300 border-red-700';
+  if (s.includes('accepted')) return 'bg-blue-900 text-blue-300 border-blue-700';
+  if (s.includes('funded') || s.includes('funding')) return 'bg-emerald-900 text-emerald-300 border-emerald-700';
+  if (s.includes('duplicate')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
+  return 'bg-gray-700 text-gray-300 border-gray-600';
+};
+
+const ITEMS_PER_PAGE = 10;
 
 export default function AssignTab({ currentUserRole, calls, setCalls, users, goals, setGoals }: AssignTabProps) {
+  // ── ASSIGN STATE ─────────────────────────────────────────────────
   const [selectedCalls, setSelectedCalls] = useState<Set<string>>(new Set());
-  const [selectedRep, setSelectedRep] = useState<string>('');
-  const [assignMode, setAssignMode] = useState<AssignMode>('state');
-  const [quickAssignValues, setQuickAssignValues] = useState<Set<string>>(new Set());
-  const [quickAssignRep, setQuickAssignRep] = useState('');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [dropdownSearch, setDropdownSearch] = useState('');
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [assignToId, setAssignToId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
 
-  // Dealer selection modal (state mode only)
-  const [showDealerModal, setShowDealerModal] = useState(false);
-  const [selectedDealers, setSelectedDealers] = useState<Set<string>>(new Set());
-  const [dealerModalSearch, setDealerModalSearch] = useState('');
+  // ── VIEW CALLS POPUP ─────────────────────────────────────────────
+  const [viewCallsRep, setViewCallsRep] = useState<User | null>(null);
+  const [viewSearchQuery, setViewSearchQuery] = useState('');
 
-  // Status filter modal
-  const [showStatusModal, setShowStatusModal] = useState(false);
-  const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set(DEFAULT_SELECTED_STATUSES));
+  // ── UNASSIGN MODAL ───────────────────────────────────────────────
+  const [unassignRep, setUnassignRep] = useState<User | null>(null);
+  const [unassignMode, setUnassignMode] = useState<'dealer' | 'state' | 'individual'>('dealer');
+  const [selectedUnassignDealer, setSelectedUnassignDealer] = useState('');
+  const [selectedUnassignState, setSelectedUnassignState] = useState('');
+  const [selectedUnassignCalls, setSelectedUnassignCalls] = useState<Set<string>>(new Set());
+  const [unassignSearch, setUnassignSearch] = useState('');
+  const [unassigning, setUnassigning] = useState(false);
 
-  // Unassigned calls search
-  const [unassignedSearch, setUnassignedSearch] = useState('');
+  // ── SET GOAL MODAL ───────────────────────────────────────────────
+  const [goalRep, setGoalRep] = useState<User | null>(null);
+  const [goalValue, setGoalValue] = useState('');
+  const [savingGoal, setSavingGoal] = useState(false);
 
-  // Goal editing
-  const [editingRepGoal, setEditingRepGoal] = useState<string | null>(null);
-  const [tempRepGoal, setTempRepGoal] = useState<number>(0);
-  const [editingTeamGoal, setEditingTeamGoal] = useState(false);
-  const [tempTeamGoal, setTempTeamGoal] = useState<number>(0);
+  // ── COMPUTED ─────────────────────────────────────────────────────
+  const reps = users.filter(u => u.role === 'rep');
 
-  const reps = users.filter(u => u.role === 'rep' && u.active);
+  const unassignedCalls = useMemo(() =>
+    calls.filter(c => !c.assignedTo),
+    [calls]
+  );
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') {
-    return (
-      <div className="p-8 text-center">
-        <p className="text-gray-400">This tab is only accessible to administrators.</p>
-      </div>
+  const filteredUnassigned = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return unassignedCalls;
+    return unassignedCalls.filter(c =>
+      c.applicationId.toLowerCase().includes(q) ||
+      c.dealerName.toLowerCase().includes(q) ||
+      c.state.toLowerCase().includes(q) ||
+      (c.customerName || '').toLowerCase().includes(q)
     );
-  }
+  }, [unassignedCalls, searchQuery]);
 
-  const unassignedCalls = calls.filter(call => !call.assignedTo);
-  const assignedCalls = calls.filter(call => call.assignedTo);
+  const totalPages = Math.max(1, Math.ceil(filteredUnassigned.length / ITEMS_PER_PAGE));
+  const paginatedCalls = filteredUnassigned.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
-  const uniqueStates = Array.from(new Set(unassignedCalls.map(c => c.state))).sort();
-  const uniqueDealers = Array.from(new Set(unassignedCalls.map(c => c.dealerName))).sort();
-  const uniqueStatuses = Array.from(new Set(unassignedCalls.map(c => c.statusLast).filter(Boolean))).sort();
+  const getRepCalls = (repId: string) => calls.filter(c => c.assignedTo === repId);
 
-  const filteredUnassigned = unassignedCalls.filter(call =>
-    !unassignedSearch ||
-    call.applicationId.toLowerCase().includes(unassignedSearch.toLowerCase()) ||
-    call.dealerName.toLowerCase().includes(unassignedSearch.toLowerCase()) ||
-    call.state.toLowerCase().includes(unassignedSearch.toLowerCase()) ||
-    call.statusLast.toLowerCase().includes(unassignedSearch.toLowerCase())
-  );
-
-  const dealersForSelectedStates = Array.from(
-    new Set(
-      unassignedCalls
-        .filter(call => quickAssignValues.has(call.state))
-        .map(call => call.dealerName)
-    )
-  ).sort();
-
-  const getDealerCallCount = (dealerName: string) =>
-    unassignedCalls.filter(call =>
-      quickAssignValues.has(call.state) && call.dealerName === dealerName
-    ).length;
-
-  const filteredDealersInModal = dealersForSelectedStates.filter(d =>
-    d.toLowerCase().includes(dealerModalSearch.toLowerCase())
-  );
-
-  const getOptions = () => {
-    if (assignMode === 'state') {
-      return uniqueStates.map(state => ({
-        value: state,
-        label: `${state} (${unassignedCalls.filter(c => c.state === state).length} calls)`,
-      }));
-    }
-    return uniqueDealers.map(dealer => ({
-      value: dealer,
-      label: `${dealer} (${unassignedCalls.filter(c => c.dealerName === dealer).length} calls)`,
-    }));
+  // ── ASSIGN ───────────────────────────────────────────────────────
+  const handleAssign = async () => {
+    if (!assignToId || selectedCalls.size === 0) return;
+    const rep = users.find(u => u.id === assignToId);
+    if (!rep) return;
+    const callIds = Array.from(selectedCalls);
+    setCalls(prev => prev.map(c => callIds.includes(c.id)
+      ? { ...c, assignedTo: assignToId, assignedToName: rep.name }
+      : c
+    ));
+    setSelectedCalls(new Set());
+    setAssignToId('');
+    setSuccess(`${callIds.length} call${callIds.length !== 1 ? 's' : ''} assigned to ${rep.name}`);
+    setTimeout(() => setSuccess(''), 3000);
+    await supabase.from('calls').update({
+      assigned_to: assignToId,
+      assigned_to_name: rep.name,
+      updated_at: new Date().toISOString(),
+    }).in('id', callIds);
   };
 
-  const filteredOptions = getOptions().filter(opt =>
-    opt.label.toLowerCase().includes(dropdownSearch.toLowerCase())
-  );
-
-  const getStatusColor = (status: string, isSelected: boolean) => {
-    if (!isSelected) return 'bg-gray-700 text-gray-400 border border-gray-600';
-    const s = status.toLowerCase();
-    if (s.includes('approved') || s.includes('approval')) return 'bg-green-600 text-white';
-    if (s.includes('counter')) return 'bg-yellow-500 text-gray-900';
-    if (s.includes('denial') || s.includes('declined')) return 'bg-red-600 text-white';
-    if (s.includes('accepted')) return 'bg-blue-600 text-white';
-    if (s.includes('pending')) return 'bg-orange-500 text-white';
-    if (s.includes('document') || s.includes('funded') || s.includes('funding')) return 'bg-emerald-600 text-white';
-    if (s.includes('new application')) return 'bg-cyan-600 text-white';
-    if (s.includes('reconsider')) return 'bg-purple-600 text-white';
-    if (s.includes('returned')) return 'bg-pink-600 text-white';
-    return 'bg-blue-600 text-white';
-  };
-
-  const toggleQuickAssignValue = (value: string) => {
-    const newSet = new Set(quickAssignValues);
-    if (newSet.has(value)) newSet.delete(value);
-    else newSet.add(value);
-    setQuickAssignValues(newSet);
-  };
-
-  const toggleStatus = (status: string) => {
-    const newSet = new Set(selectedStatuses);
-    if (newSet.has(status)) newSet.delete(status);
-    else newSet.add(status);
-    setSelectedStatuses(newSet);
-  };
-
-  const toggleDealer = (dealer: string) => {
-    const newSet = new Set(selectedDealers);
-    if (newSet.has(dealer)) newSet.delete(dealer);
-    else newSet.add(dealer);
-    setSelectedDealers(newSet);
-  };
-
-  const getPreviewCount = () => {
-    return unassignedCalls.filter(call => {
-      let matchesValue = false;
-      if (assignMode === 'state') {
-        matchesValue = selectedDealers.size > 0
-          ? selectedDealers.has(call.dealerName)
-          : quickAssignValues.has(call.state);
-      } else {
-        matchesValue = quickAssignValues.has(call.dealerName);
-      }
-      const matchesStatus = selectedStatuses.size === 0 || selectedStatuses.has(call.statusLast);
-      return matchesValue && matchesStatus;
-    }).length;
-  };
-
-  const handleQuickAssignClick = () => {
-    if (quickAssignValues.size === 0 || !quickAssignRep) {
-      alert('Please select both criteria and a rep');
-      return;
-    }
-    if (assignMode === 'state') {
-      setSelectedDealers(new Set());
-      setDealerModalSearch('');
-      setShowDealerModal(true);
-    } else {
-      setShowStatusModal(true);
-    }
-  };
-
-  const handleDealerModalContinue = () => {
-    if (selectedDealers.size === 0) {
-      alert('Please select at least one dealer');
-      return;
-    }
-    setShowDealerModal(false);
-    setShowStatusModal(true);
-  };
-
-  // Save assignments to Supabase
-  const saveAssignmentsToSupabase = async (callIds: string[], repId: string, repName: string) => {
-    if (callIds.length === 0) return;
-    try {
-      // Update in batches of 50 to avoid query limits
-      for (let i = 0; i < callIds.length; i += 50) {
-        const batch = callIds.slice(i, i + 50);
-        await supabase.from('calls').update({
-          assigned_to: repId,
-          assigned_to_name: repName,
-          updated_at: new Date().toISOString(),
-        }).in('id', batch);
-      }
-    } catch (err) {
-      console.error('Error saving assignments to Supabase:', err);
-    }
-  };
-
-  const handleConfirmAssign = async () => {
-    const repName = reps.find(r => r.id === quickAssignRep)?.name || '';
-
-    const callsToAssign = unassignedCalls.filter(call => {
-      let matchesValue = false;
-      if (assignMode === 'state') {
-        matchesValue = selectedDealers.has(call.dealerName);
-      } else {
-        matchesValue = quickAssignValues.has(call.dealerName);
-      }
-      const matchesStatus = selectedStatuses.size === 0 || selectedStatuses.has(call.statusLast);
-      return matchesValue && matchesStatus;
+  const toggleSelectCall = (id: string) => {
+    setSelectedCalls(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
     });
-
-    if (callsToAssign.length === 0) {
-      alert('No calls found matching your criteria.');
-      setShowStatusModal(false);
-      return;
-    }
-
-    // Update local state
-    setCalls(prevCalls =>
-      prevCalls.map(call =>
-        callsToAssign.some(c => c.id === call.id)
-          ? { ...call, assignedTo: quickAssignRep, assignedToName: repName }
-          : call
-      )
-    );
-
-    // Save to Supabase
-    await saveAssignmentsToSupabase(callsToAssign.map(c => c.id), quickAssignRep, repName);
-
-    setShowStatusModal(false);
-    setShowDealerModal(false);
-    setQuickAssignValues(new Set());
-    setSelectedDealers(new Set());
-    setQuickAssignRep('');
-    alert(`Successfully assigned ${callsToAssign.length} calls to ${repName}`);
-  };
-
-  const toggleCallSelection = (callId: string) => {
-    const newSelected = new Set(selectedCalls);
-    if (newSelected.has(callId)) newSelected.delete(callId);
-    else newSelected.add(callId);
-    setSelectedCalls(newSelected);
   };
 
   const toggleSelectAll = () => {
-    if (selectedCalls.size === filteredUnassigned.length) setSelectedCalls(new Set());
-    else setSelectedCalls(new Set(filteredUnassigned.map(c => c.id)));
-  };
-
-  const handleAssignSelected = async () => {
-    if (!selectedRep) { alert('Please select a rep to assign to'); return; }
-    if (selectedCalls.size === 0) { alert('Please select at least one call to assign'); return; }
-    const repName = reps.find(r => r.id === selectedRep)?.name || '';
-    const callIds = Array.from(selectedCalls);
-
-    // Update local state
-    setCalls(prevCalls =>
-      prevCalls.map(call =>
-        selectedCalls.has(call.id)
-          ? { ...call, assignedTo: selectedRep, assignedToName: repName }
-          : call
-      )
-    );
-
-    // Save to Supabase
-    await saveAssignmentsToSupabase(callIds, selectedRep, repName);
-
-    setSelectedCalls(new Set());
-    setSelectedRep('');
-    alert(`Successfully assigned ${callIds.length} calls to ${repName}`);
-  };
-
-  const handleSaveRepGoal = async (repId: string) => {
-    const newDailyGoals = { ...goals.daily, [repId]: tempRepGoal };
-
-    // Update local state
-    setGoals(prev => ({ ...prev, daily: newDailyGoals }));
-    setEditingRepGoal(null);
-
-    // Save to Supabase
-    try {
-      await supabase.from('team_goals').upsert({
-        id: 1,
-        rep_daily_goals: newDailyGoals,
-        updated_at: new Date().toISOString(),
+    if (paginatedCalls.every(c => selectedCalls.has(c.id))) {
+      setSelectedCalls(prev => {
+        const n = new Set(prev);
+        paginatedCalls.forEach(c => n.delete(c.id));
+        return n;
       });
-    } catch (err) {
-      console.error('Error saving rep goal to Supabase:', err);
+    } else {
+      setSelectedCalls(prev => {
+        const n = new Set(prev);
+        paginatedCalls.forEach(c => n.add(c.id));
+        return n;
+      });
     }
   };
 
-  const handleSaveTeamGoal = async () => {
-    // Update local state
-    setGoals(prev => ({ ...prev, team: tempTeamGoal }));
-    setEditingTeamGoal(false);
+  // ── UNASSIGN ─────────────────────────────────────────────────────
+  const openUnassign = (rep: User) => {
+    setUnassignRep(rep);
+    setUnassignMode('dealer');
+    setSelectedUnassignDealer('');
+    setSelectedUnassignState('');
+    setSelectedUnassignCalls(new Set());
+    setUnassignSearch('');
+  };
 
-    // Save to Supabase
-    try {
-      await supabase.from('team_goals').upsert({
-        id: 1,
-        team_daily: tempTeamGoal,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error('Error saving team goal to Supabase:', err);
+  const getUnassignCallIds = (): string[] => {
+    if (!unassignRep) return [];
+    const repCalls = getRepCalls(unassignRep.id);
+    if (unassignMode === 'dealer') {
+      if (!selectedUnassignDealer) return [];
+      return repCalls.filter(c => c.dealerName === selectedUnassignDealer).map(c => c.id);
     }
+    if (unassignMode === 'state') {
+      if (!selectedUnassignState) return [];
+      return repCalls.filter(c => c.state === selectedUnassignState).map(c => c.id);
+    }
+    return Array.from(selectedUnassignCalls);
   };
 
-  const getDropdownLabel = () => {
-    if (quickAssignValues.size === 0) return `Choose ${assignMode === 'state' ? 'State' : 'Dealer'}(s)...`;
-    if (quickAssignValues.size === 1) return Array.from(quickAssignValues)[0];
-    return `${quickAssignValues.size} selected`;
+  const handleUnassign = async () => {
+    const callIds = getUnassignCallIds();
+    if (!callIds.length) { setError('No calls selected to unassign.'); return; }
+    setUnassigning(true);
+    setCalls(prev => prev.map(c => callIds.includes(c.id)
+      ? { ...c, assignedTo: undefined, assignedToName: undefined }
+      : c
+    ));
+    await supabase.from('calls').update({
+      assigned_to: null,
+      assigned_to_name: null,
+      updated_at: new Date().toISOString(),
+    }).in('id', callIds);
+    setUnassigning(false);
+    setUnassignRep(null);
+    setSuccess(`${callIds.length} call${callIds.length !== 1 ? 's' : ''} unassigned successfully`);
+    setTimeout(() => setSuccess(''), 3000);
   };
+
+  // ── SET GOAL ─────────────────────────────────────────────────────
+  const openGoal = (rep: User) => {
+    setGoalRep(rep);
+    setGoalValue(String(goals.daily[rep.id] || ''));
+  };
+
+  const handleSaveGoal = async () => {
+    if (!goalRep) return;
+    const val = parseInt(goalValue) || 0;
+    setSavingGoal(true);
+    const newDaily = { ...goals.daily, [goalRep.id]: val };
+    setGoals(prev => ({ ...prev, daily: newDaily }));
+    await supabase.from('team_goals').update({
+      rep_daily_goals: newDaily,
+      updated_at: new Date().toISOString(),
+    }).eq('id', 1);
+    setSavingGoal(false);
+    setGoalRep(null);
+    setSuccess(`Goal updated for ${goalRep.name}`);
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  // ── UNASSIGN MODAL DATA ───────────────────────────────────────────
+  const unassignRepCalls = unassignRep ? getRepCalls(unassignRep.id) : [];
+  const unassignDealers = Array.from(new Set(unassignRepCalls.map(c => c.dealerName))).sort();
+  const unassignStates = Array.from(new Set(unassignRepCalls.map(c => c.state))).sort();
+  const filteredUnassignIndividual = unassignRepCalls.filter(c => {
+    const q = unassignSearch.toLowerCase();
+    return !q || c.applicationId.toLowerCase().includes(q) || c.dealerName.toLowerCase().includes(q);
+  });
+
+  // ── VIEW CALLS DATA ───────────────────────────────────────────────
+  const viewRepCalls = viewCallsRep ? getRepCalls(viewCallsRep.id) : [];
+  const filteredViewCalls = viewRepCalls.filter(c => {
+    const q = viewSearchQuery.toLowerCase();
+    return !q || c.applicationId.toLowerCase().includes(q) ||
+      c.dealerName.toLowerCase().includes(q) ||
+      (c.customerName || '').toLowerCase().includes(q);
+  });
+
+  const initials = (name: string) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  const avatarColors = ['bg-blue-900 text-blue-300', 'bg-green-900 text-green-300', 'bg-purple-900 text-purple-300', 'bg-amber-900 text-amber-300', 'bg-cyan-900 text-cyan-300', 'bg-pink-900 text-pink-300'];
+  const getAvatarColor = (idx: number) => avatarColors[idx % avatarColors.length];
 
   return (
     <div className="space-y-6">
+
+      {/* HEADER */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-100">Assign Calls</h2>
-        <p className="text-gray-400 mt-1">Assign unassigned calls to sales representatives</p>
+        <h2 className="text-2xl font-bold text-gray-100">Assign</h2>
+        <p className="text-sm text-gray-400 mt-0.5">Manage call assignments and rep workloads</p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Unassigned Calls</p>
-              <p className="text-3xl font-bold text-yellow-400 mt-2">{unassignedCalls.length}</p>
-            </div>
-            <UserPlus className="w-12 h-12 text-yellow-400" />
-          </div>
-        </div>
-        <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Assigned Calls</p>
-              <p className="text-3xl font-bold text-green-400 mt-2">{assignedCalls.length}</p>
-            </div>
-            <CheckSquare className="w-12 h-12 text-green-400" />
-          </div>
-        </div>
-      </div>
+      {success && <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm">{success}</div>}
+      {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">{error}</div>}
 
-      {/* Daily Goals */}
-      <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
-          <Target className="w-5 h-5 text-purple-400" />
-          Daily Goals
-        </h3>
-        <div className="space-y-4">
-          <div className="bg-gray-750 p-4 rounded-lg border border-gray-600">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Users className="w-5 h-5 text-cyan-400" />
-                <span className="text-gray-200 font-medium">Team Goal (Daily)</span>
-              </div>
-              {editingTeamGoal ? (
-                <div className="flex items-center gap-2">
-                  <input type="number" value={tempTeamGoal} onChange={e => setTempTeamGoal(parseInt(e.target.value) || 0)}
-                    className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-20" autoFocus />
-                  <button onClick={handleSaveTeamGoal} className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition">Save</button>
-                  <button onClick={() => setEditingTeamGoal(false)} className="px-3 py-1 bg-gray-600 text-white rounded text-sm transition">Cancel</button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl font-bold text-cyan-400">{goals.team}</span>
-                  <button onClick={() => { setEditingTeamGoal(true); setTempTeamGoal(goals.team); }}
-                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition">Edit</button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <p className="text-sm font-medium text-gray-300">Individual Goals (Daily)</p>
-            {reps.map(rep => (
-              <div key={rep.id} className="flex items-center justify-between bg-gray-750 p-4 rounded-lg border border-gray-600">
-                <span className="text-gray-200 font-medium">{rep.name}</span>
-                {editingRepGoal === rep.id ? (
-                  <div className="flex items-center gap-2">
-                    <input type="number" value={tempRepGoal} onChange={e => setTempRepGoal(parseInt(e.target.value) || 0)}
-                      className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-gray-100 w-20" autoFocus />
-                    <button onClick={() => handleSaveRepGoal(rep.id)} className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition">Save</button>
-                    <button onClick={() => setEditingRepGoal(null)} className="px-3 py-1 bg-gray-600 text-white rounded text-sm transition">Cancel</button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl font-bold text-purple-400">{goals.daily[rep.id] || 0}</span>
-                    <button onClick={() => { setEditingRepGoal(rep.id); setTempRepGoal(goals.daily[rep.id] || 0); }}
-                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition">Edit</button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Assign */}
-      <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-100 mb-4">Quick Assign</h3>
-
-        <div className="flex gap-2 mb-4">
-          {(['state', 'dealer'] as AssignMode[]).map(mode => (
-            <button key={mode}
-              onClick={() => { setAssignMode(mode); setQuickAssignValues(new Set()); setDropdownSearch(''); setDropdownOpen(false); }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${assignMode === mode ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-            >
-              By {mode === 'state' ? 'State' : 'Dealer'}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-4 flex-wrap items-end">
-          {/* Multi-select dropdown */}
-          <div className="flex-1 min-w-[250px]" ref={dropdownRef}>
-            <label className="block text-sm text-gray-400 mb-2">
-              Select {assignMode === 'state' ? 'State' : 'Dealer'}(s)
-            </label>
-            <div className="relative">
-              <button onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-left text-gray-100 flex items-center justify-between hover:bg-gray-650 transition">
-                <span className={quickAssignValues.size === 0 ? 'text-gray-400' : 'text-gray-100'}>
-                  {getDropdownLabel()}
-                </span>
-                <div className="flex items-center gap-2">
-                  {quickAssignValues.size > 0 && (
-                    <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">{quickAssignValues.size}</span>
-                  )}
-                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
-                </div>
-              </button>
-
-              {dropdownOpen && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-gray-700 border border-gray-600 rounded-lg shadow-2xl z-30">
-                  <div className="p-2 border-b border-gray-600">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input type="text"
-                        placeholder={`Search ${assignMode === 'state' ? 'states' : 'dealers'}...`}
-                        value={dropdownSearch}
-                        onChange={e => setDropdownSearch(e.target.value)}
-                        className="w-full pl-9 pr-3 py-1.5 bg-gray-600 border border-gray-500 rounded text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        onClick={e => e.stopPropagation()} />
+      {/* ── ASSIGNMENT SUMMARY ──────────────────────────────────── */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-200 mb-3">Assignment summary</h3>
+        {reps.length === 0 ? (
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 text-center text-sm text-gray-500">No reps found.</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {reps.map((rep, idx) => {
+              const repCalls = getRepCalls(rep.id);
+              const dailyGoal = goals.daily[rep.id] || 0;
+              return (
+                <div key={rep.id} className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 ${getAvatarColor(idx)}`}>
+                      {initials(rep.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-100 truncate">{rep.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {repCalls.length} call{repCalls.length !== 1 ? 's' : ''} assigned
+                        {dailyGoal > 0 && <span className="ml-2 text-gray-500">· Goal: {dailyGoal}/day</span>}
+                      </p>
                     </div>
                   </div>
-                  <div className="px-3 py-2 border-b border-gray-600 flex gap-3">
-                    <button onClick={e => { e.stopPropagation(); setQuickAssignValues(new Set(getOptions().map(o => o.value))); }}
-                      className="text-xs text-blue-400 hover:text-blue-300">Select All</button>
-                    <button onClick={e => { e.stopPropagation(); setQuickAssignValues(new Set()); }}
-                      className="text-xs text-red-400 hover:text-red-300">Clear All</button>
-                  </div>
-                  <div className="max-h-52 overflow-y-auto">
-                    {filteredOptions.length === 0 ? (
-                      <p className="text-gray-400 text-sm text-center py-4">No results found</p>
-                    ) : (
-                      filteredOptions.map(option => {
-                        const isChecked = quickAssignValues.has(option.value);
-                        return (
-                          <label key={option.value}
-                            className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition ${isChecked ? 'bg-blue-900 bg-opacity-40' : 'hover:bg-gray-600'}`}
-                            onClick={e => e.stopPropagation()}>
-                            <input type="checkbox" checked={isChecked} onChange={() => toggleQuickAssignValue(option.value)}
-                              className="w-4 h-4 accent-blue-500 cursor-pointer" />
-                            <span className={`text-sm ${isChecked ? 'text-blue-300 font-medium' : 'text-gray-200'}`}>{option.label}</span>
-                          </label>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Rep selector */}
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm text-gray-400 mb-2">Assign To</label>
-            <select value={quickAssignRep} onChange={e => setQuickAssignRep(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100">
-              <option value="">Choose rep...</option>
-              {reps.map(rep => <option key={rep.id} value={rep.id}>{rep.name}</option>)}
-            </select>
-          </div>
-
-          <button onClick={handleQuickAssignClick}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-            Quick Assign
-            {quickAssignValues.size > 0 && (
-              <span className="ml-2 bg-blue-500 px-2 py-0.5 rounded-full text-xs">{quickAssignValues.size}</span>
-            )}
-          </button>
-        </div>
-
-        {assignMode === 'state' && quickAssignValues.size > 0 && (
-          <p className="text-xs text-gray-400 mt-3">
-            After clicking Quick Assign, you'll choose which dealers to include from {Array.from(quickAssignValues).join(', ')}.
-          </p>
-        )}
-      </div>
-
-      {/* Unassigned Calls Table */}
-      <div className="bg-gray-800 rounded-lg shadow border border-gray-700 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-700">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <h3 className="text-lg font-semibold text-gray-100">Unassigned Calls ({unassignedCalls.length})</h3>
-            <div className="relative flex-1 min-w-[220px] max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input type="text" placeholder="Search by App ID, Dealer, State, Status..."
-                value={unassignedSearch} onChange={e => setUnassignedSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-              {unassignedSearch && (
-                <button onClick={() => setUnassignedSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200">
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-            {selectedCalls.size > 0 && (
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-400">{selectedCalls.size} selected</span>
-                <select value={selectedRep} onChange={e => setSelectedRep(e.target.value)}
-                  className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm">
-                  <option value="">Assign to...</option>
-                  {reps.map(rep => <option key={rep.id} value={rep.id}>{rep.name}</option>)}
-                </select>
-                <button onClick={handleAssignSelected}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
-                  Assign Selected
-                </button>
-              </div>
-            )}
-          </div>
-          {unassignedSearch && (
-            <p className="text-xs text-gray-400 mt-2">Showing {filteredUnassigned.length} of {unassignedCalls.length} unassigned calls</p>
-          )}
-        </div>
-
-        {filteredUnassigned.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <CheckSquare className="w-16 h-16 mx-auto mb-4 text-gray-600" />
-            <p className="text-lg font-medium">{unassignedSearch ? 'No calls match your search.' : 'All calls have been assigned!'}</p>
-            {!unassignedSearch && <p className="text-sm mt-2">Upload new calls to assign them to your team.</p>}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-700">
-                <tr>
-                  <th className="px-4 py-3 w-12">
-                    <button onClick={toggleSelectAll} className="text-gray-400 hover:text-gray-200">
-                      {selectedCalls.size === filteredUnassigned.length && filteredUnassigned.length > 0
-                        ? <CheckSquare className="w-5 h-5 text-blue-400" />
-                        : <Square className="w-5 h-5" />}
+                  {/* All 3 buttons on one line */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => { setViewCallsRep(rep); setViewSearchQuery(''); }}
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-900 bg-opacity-40 hover:bg-opacity-60 border border-blue-700 text-blue-300 rounded-lg text-xs transition">
+                      <List className="w-3 h-3 flex-shrink-0" />
+                      <span>View calls</span>
                     </button>
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">App ID</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Dealer Name</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">State</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Amount</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Date</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Status Last</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700">
-                {filteredUnassigned.map(call => (
-                  <tr key={call.id} className="hover:bg-gray-750 cursor-pointer" onClick={() => toggleCallSelection(call.id)}>
-                    <td className="px-4 py-4">
-                      <button onClick={e => { e.stopPropagation(); toggleCallSelection(call.id); }} className="text-gray-400 hover:text-gray-200">
-                        {selectedCalls.has(call.id) ? <CheckSquare className="w-5 h-5 text-blue-400" /> : <Square className="w-5 h-5" />}
-                      </button>
-                    </td>
-                    <td className="px-4 py-4 text-sm font-medium text-gray-100">{call.applicationId}</td>
-                    <td className="px-4 py-4 text-sm text-gray-200">{call.dealerName}</td>
-                    <td className="px-4 py-4 text-sm text-gray-300">{call.state}</td>
-                    <td className="px-4 py-4 text-sm text-gray-200">{call.buyerFinal}</td>
-                    <td className="px-4 py-4 text-sm text-gray-300">{call.submittedDate}</td>
-                    <td className="px-4 py-4 text-sm text-gray-300">{call.statusLast}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Assignment Summary */}
-      {assignedCalls.length > 0 && (
-        <div className="bg-gray-800 p-6 rounded-lg shadow border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4">Assignment Summary</h3>
-          <div className="space-y-3">
-            {reps.map(rep => {
-              const repCalls = assignedCalls.filter(call => call.assignedTo === rep.id);
-              return (
-                <div key={rep.id} className="flex items-center justify-between bg-gray-700 p-4 rounded-lg">
-                  <span className="text-gray-200 font-medium">{rep.name}</span>
-                  <span className="px-3 py-1 bg-blue-900 text-blue-200 rounded-full text-sm font-bold">{repCalls.length} calls assigned</span>
+                    <button
+                      onClick={() => openUnassign(rep)}
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-red-900 bg-opacity-30 hover:bg-opacity-50 border border-red-800 text-red-300 rounded-lg text-xs transition">
+                      <UserMinus className="w-3 h-3 flex-shrink-0" />
+                      <span>Unassign</span>
+                    </button>
+                    <button
+                      onClick={() => openGoal(rep)}
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-900 bg-opacity-30 hover:bg-opacity-50 border border-amber-800 text-amber-300 rounded-lg text-xs transition">
+                      <Target className="w-3 h-3 flex-shrink-0" />
+                      <span>Set goal</span>
+                    </button>
+                  </div>
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* DEALER SELECTION MODAL */}
-      {showDealerModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 rounded-lg max-w-lg w-full p-6 border border-gray-700">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xl font-bold text-gray-100">Select Dealers</h3>
-              <button onClick={() => setShowDealerModal(false)} className="text-gray-400 hover:text-gray-200">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-sm text-gray-400 mb-4">
-              Showing dealers from: <span className="text-blue-400 font-semibold">{Array.from(quickAssignValues).join(', ')}</span>
-              <span className="ml-2 text-gray-500">({dealersForSelectedStates.length} dealers, {unassignedCalls.filter(c => quickAssignValues.has(c.state)).length} total calls)</span>
-            </p>
-
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input type="text" placeholder="Search dealers..." value={dealerModalSearch}
-                onChange={e => setDealerModalSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-            </div>
-
-            <div className="flex gap-3 mb-3 pb-3 border-b border-gray-700">
-              <button onClick={() => setSelectedDealers(new Set(dealersForSelectedStates))}
-                className="text-sm text-blue-400 hover:text-blue-300 font-medium">
-                ✓ Select All ({dealersForSelectedStates.length})
-              </button>
-              <button onClick={() => setSelectedDealers(new Set())}
-                className="text-sm text-red-400 hover:text-red-300">Clear All</button>
-              {selectedDealers.size > 0 && (
-                <span className="text-sm text-gray-400 ml-auto">{selectedDealers.size} selected</span>
-              )}
-            </div>
-
-            <div className="max-h-64 overflow-y-auto space-y-1 mb-4">
-              {filteredDealersInModal.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">No dealers found</p>
-              ) : (
-                filteredDealersInModal.map(dealer => {
-                  const isChecked = selectedDealers.has(dealer);
-                  const callCount = getDealerCallCount(dealer);
-                  return (
-                    <label key={dealer}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition ${isChecked ? 'bg-blue-900 bg-opacity-40' : 'hover:bg-gray-700'}`}>
-                      <input type="checkbox" checked={isChecked} onChange={() => toggleDealer(dealer)}
-                        className="w-4 h-4 accent-blue-500 cursor-pointer flex-shrink-0" />
-                      <span className={`text-sm flex-1 ${isChecked ? 'text-blue-300 font-medium' : 'text-gray-200'}`}>{dealer}</span>
-                      <span className="text-xs text-gray-400 bg-gray-700 px-2 py-0.5 rounded-full">{callCount} calls</span>
-                    </label>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="flex gap-3">
-              <button onClick={handleDealerModalContinue} disabled={selectedDealers.size === 0}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-lg font-medium transition">
-                Continue → ({selectedDealers.size} dealers selected)
-              </button>
-              <button onClick={() => setShowDealerModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition">Cancel</button>
-            </div>
+      {/* ── UNASSIGNED CALLS ────────────────────────────────────── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-200">
+            Unassigned calls
+            <span className="ml-2 text-gray-400 font-normal">({filteredUnassigned.length})</span>
+          </h3>
+          <div className="flex items-center gap-2">
+            {selectedCalls.size > 0 && (
+              <span className="text-xs text-blue-400">{selectedCalls.size} selected</span>
+            )}
+            <select
+              value={assignToId}
+              onChange={e => setAssignToId(e.target.value)}
+              className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="">Assign to rep…</option>
+              {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            <button
+              onClick={handleAssign}
+              disabled={!assignToId || selectedCalls.size === 0}
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition">
+              Assign {selectedCalls.size > 0 ? `(${selectedCalls.size})` : ''}
+            </button>
           </div>
         </div>
-      )}
 
-      {/* STATUS FILTER MODAL */}
-      {showStatusModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 rounded-lg max-w-lg w-full p-6 border border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-100">Filter by Application Status</h3>
-              <button onClick={() => setShowStatusModal(false)} className="text-gray-400 hover:text-gray-200">
-                <X className="w-5 h-5" />
-              </button>
+        {/* Search */}
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            placeholder="Search App ID, dealer, customer, state…"
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+          {filteredUnassigned.length === 0 ? (
+            <div className="p-10 text-center">
+              <p className="text-sm text-gray-400">No unassigned calls match your search.</p>
             </div>
-            <p className="text-sm text-gray-400 mb-4">
-              Select which statuses to include. Only matching calls will be assigned.
-            </p>
-            <div className="flex gap-3 mb-3">
-              <button onClick={() => setSelectedStatuses(new Set(uniqueStatuses))} className="text-xs text-blue-400 hover:text-blue-300 underline">Select All</button>
-              <button onClick={() => setSelectedStatuses(new Set())} className="text-xs text-red-400 hover:text-red-300 underline">Clear All</button>
-              <button onClick={() => setSelectedStatuses(new Set(DEFAULT_SELECTED_STATUSES))} className="text-xs text-green-400 hover:text-green-300 underline">Reset to Defaults</button>
-            </div>
-            <div className="flex flex-wrap gap-2 mb-6">
-              {uniqueStatuses.map(status => {
-                const isSelected = selectedStatuses.has(status);
-                return (
-                  <button key={status} onClick={() => toggleStatus(status)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${getStatusColor(status, isSelected)}`}>
-                    {status}
+          ) : (
+            <>
+              {/* Table header */}
+              <div className="grid grid-cols-[28px_1fr_130px_130px_42px_72px_100px] gap-0 px-3 py-2 bg-gray-750 border-b border-gray-700">
+                <div className="flex items-center justify-center">
+                  <input
+                    type="checkbox"
+                    checked={paginatedCalls.length > 0 && paginatedCalls.every(c => selectedCalls.has(c.id))}
+                    onChange={toggleSelectAll}
+                    className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                  />
+                </div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">App ID</div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Dealer</div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Customer</div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">St</div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Amount</div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Status Last</div>
+              </div>
+
+              {/* Table rows */}
+              <div className="divide-y divide-gray-700">
+                {paginatedCalls.map(call => (
+                  <div
+                    key={call.id}
+                    className={`grid grid-cols-[28px_1fr_130px_130px_42px_72px_100px] gap-0 px-3 py-2 hover:bg-gray-750 transition-colors cursor-pointer items-center ${selectedCalls.has(call.id) ? 'bg-blue-900 bg-opacity-10' : ''}`}
+                    onClick={() => toggleSelectCall(call.id)}>
+                    <div className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedCalls.has(call.id)}
+                        onChange={() => toggleSelectCall(call.id)}
+                        className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                      />
+                    </div>
+                    <div className="px-2 text-xs text-blue-400 font-medium truncate">{call.applicationId}</div>
+                    <div className="px-2 text-xs text-gray-200 truncate">{call.dealerName}</div>
+                    <div className="px-2 text-xs text-gray-400 truncate">{call.customerName || '—'}</div>
+                    <div className="px-2">
+                      <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
+                    </div>
+                    <div className="px-2 text-xs font-medium text-gray-100">
+                      ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </div>
+                    <div className="px-2">
+                      <span className={`px-1.5 py-0 rounded-full text-[10px] border ${getStatusLastStyle(call.statusLast)}`}>
+                        {call.statusLast}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              <div className="px-4 py-2.5 border-t border-gray-700 flex items-center justify-between bg-gray-750">
+                <p className="text-xs text-gray-500">
+                  Showing {Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, filteredUnassigned.length)}–{Math.min(currentPage * ITEMS_PER_PAGE, filteredUnassigned.length)} of {filteredUnassigned.length}
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
+                    <ChevronLeft className="w-4 h-4 text-gray-400" />
                   </button>
-                );
-              })}
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let page: number;
+                    if (totalPages <= 5) page = i + 1;
+                    else if (currentPage <= 3) page = i + 1;
+                    else if (currentPage >= totalPages - 2) page = totalPages - 4 + i;
+                    else page = currentPage - 2 + i;
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`w-7 h-7 rounded text-xs transition ${currentPage === page ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}>
+                        {page}
+                      </button>
+                    );
+                  })}
+                  {totalPages > 5 && currentPage < totalPages - 2 && (
+                    <>
+                      <span className="text-xs text-gray-600 px-1">…</span>
+                      <button
+                        onClick={() => setCurrentPage(totalPages)}
+                        className="w-7 h-7 rounded text-xs hover:bg-gray-700 text-gray-400 transition">
+                        {totalPages}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
+                    <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── VIEW CALLS POPUP ────────────────────────────────────── */}
+      {viewCallsRep && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
+          onClick={() => setViewCallsRep(null)}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-4xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-100">{viewCallsRep.name}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{viewRepCalls.length} calls assigned · press Escape to close</p>
+              </div>
+              <button onClick={() => setViewCallsRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
             </div>
-            <div className="bg-gray-700 rounded-lg p-3 mb-4 text-center">
-              <p className="text-gray-300 text-sm">
-                This will assign <span className="text-blue-400 font-bold text-lg">{getPreviewCount()}</span> calls to{' '}
-                <span className="text-white font-semibold">{reps.find(r => r.id === quickAssignRep)?.name}</span>
-              </p>
+
+            <div className="px-4 py-3 border-b border-gray-700">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                <input
+                  type="text"
+                  placeholder="Search App ID, dealer, customer…"
+                  value={viewSearchQuery}
+                  onChange={e => setViewSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  autoFocus
+                />
+              </div>
             </div>
-            <div className="flex gap-3">
-              <button onClick={handleConfirmAssign} disabled={getPreviewCount() === 0}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded-lg font-medium transition">
-                Assign {getPreviewCount()} Calls
-              </button>
-              <button onClick={() => setShowStatusModal(false)}
-                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition">Cancel</button>
+
+            <div className="overflow-x-auto max-h-[55vh] overflow-y-auto">
+              <table className="w-full" style={{ tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '115px' }} />
+                  <col style={{ width: '120px' }} />
+                  <col style={{ width: '120px' }} />
+                  <col style={{ width: '38px' }} />
+                  <col style={{ width: '70px' }} />
+                  <col style={{ width: '62px' }} />
+                  <col style={{ width: '105px' }} />
+                  <col style={{ width: '88px' }} />
+                </colgroup>
+                <thead className="bg-gray-750 sticky top-0">
+                  <tr className="border-b border-gray-700">
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {filteredViewCalls.length === 0 ? (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">No calls found</td></tr>
+                  ) : filteredViewCalls.map(call => (
+                    <tr key={call.id} className="hover:bg-gray-750 transition-colors">
+                      <td className="px-2 py-2 text-xs text-blue-400 font-medium truncate">{call.applicationId}</td>
+                      <td className="px-2 py-2 text-xs text-gray-200 truncate">{call.dealerName}</td>
+                      <td className="px-2 py-2 text-xs text-gray-400 truncate">{call.customerName || '—'}</td>
+                      <td className="px-2 py-2">
+                        <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
+                      </td>
+                      <td className="px-2 py-2 text-xs font-medium text-gray-100">
+                        ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                      </td>
+                      <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{call.submittedDate}</td>
+                      <td className="px-2 py-2">
+                        <span className={`px-1.5 py-0 rounded-full text-[10px] border truncate ${getStatusLastStyle(call.statusLast)}`}>{call.statusLast}</span>
+                      </td>
+                      <td className="px-2 py-2 text-xs text-gray-400">{call.fuStatus || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-6 py-3 border-t border-gray-700">
+              <p className="text-xs text-gray-500">Press Escape to close</p>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── UNASSIGN MODAL ──────────────────────────────────────── */}
+      {unassignRep && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
+          onClick={() => setUnassignRep(null)}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-100">Unassign from {unassignRep.name}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{unassignRepCalls.length} calls currently assigned</p>
+              </div>
+              <button onClick={() => setUnassignRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+            </div>
+
+            {/* Mode tabs */}
+            <div className="flex border-b border-gray-700">
+              {(['dealer', 'state', 'individual'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => { setUnassignMode(mode); setSelectedUnassignDealer(''); setSelectedUnassignState(''); setSelectedUnassignCalls(new Set()); setUnassignSearch(''); }}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition border-b-2 capitalize ${
+                    unassignMode === mode
+                      ? 'border-blue-500 text-blue-400'
+                      : 'border-transparent text-gray-400 hover:text-gray-300'
+                  }`}>
+                  By {mode}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-5">
+
+              {/* BY DEALER */}
+              {unassignMode === 'dealer' && (
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-400">Select a dealer to remove all their calls from {unassignRep.name}.</p>
+                  <select
+                    value={selectedUnassignDealer}
+                    onChange={e => setSelectedUnassignDealer(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <option value="">Select a dealer…</option>
+                    {unassignDealers.map(d => {
+                      const cnt = unassignRepCalls.filter(c => c.dealerName === d).length;
+                      return <option key={d} value={d}>{d} ({cnt} call{cnt !== 1 ? 's' : ''})</option>;
+                    })}
+                  </select>
+                  {selectedUnassignDealer && (
+                    <div className="bg-gray-750 border border-gray-600 rounded-lg px-4 py-3">
+                      <p className="text-sm text-gray-300">
+                        This will unassign <span className="font-medium text-white">{unassignRepCalls.filter(c => c.dealerName === selectedUnassignDealer).length} calls</span> from <span className="font-medium text-white">{selectedUnassignDealer}</span>.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* BY STATE */}
+              {unassignMode === 'state' && (
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-400">Select a state to remove all calls in that state from {unassignRep.name}.</p>
+                  <select
+                    value={selectedUnassignState}
+                    onChange={e => setSelectedUnassignState(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <option value="">Select a state…</option>
+                    {unassignStates.map(s => {
+                      const cnt = unassignRepCalls.filter(c => c.state === s).length;
+                      return <option key={s} value={s}>{s} ({cnt} call{cnt !== 1 ? 's' : ''})</option>;
+                    })}
+                  </select>
+                  {selectedUnassignState && (
+                    <div className="bg-gray-750 border border-gray-600 rounded-lg px-4 py-3">
+                      <p className="text-sm text-gray-300">
+                        This will unassign <span className="font-medium text-white">{unassignRepCalls.filter(c => c.state === selectedUnassignState).length} calls</span> in state <span className="font-medium text-white">{selectedUnassignState}</span>.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* INDIVIDUAL */}
+              {unassignMode === 'individual' && (
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-400">Select specific calls to unassign from {unassignRep.name}.</p>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                    <input
+                      type="text"
+                      placeholder="Search App ID or dealer…"
+                      value={unassignSearch}
+                      onChange={e => setUnassignSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="border border-gray-600 rounded-lg overflow-hidden max-h-60 overflow-y-auto">
+                    {filteredUnassignIndividual.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-sm text-gray-500">No calls found</p>
+                    ) : filteredUnassignIndividual.map(call => (
+                      <div
+                        key={call.id}
+                        className={`flex items-center gap-3 px-3 py-2.5 border-b border-gray-700 last:border-0 cursor-pointer hover:bg-gray-750 transition-colors ${selectedUnassignCalls.has(call.id) ? 'bg-red-900 bg-opacity-10' : ''}`}
+                        onClick={() => {
+                          setSelectedUnassignCalls(prev => {
+                            const n = new Set(prev);
+                            if (n.has(call.id)) n.delete(call.id); else n.add(call.id);
+                            return n;
+                          });
+                        }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedUnassignCalls.has(call.id)}
+                          onChange={() => {}}
+                          className="w-3.5 h-3.5 accent-red-500 flex-shrink-0"
+                        />
+                        <span className="text-xs text-blue-400 font-medium w-28 flex-shrink-0">{call.applicationId}</span>
+                        <span className="text-xs text-gray-200 flex-1 truncate">{call.dealerName}</span>
+                        <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600 flex-shrink-0">{call.state}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedUnassignCalls.size > 0 && (
+                    <p className="text-xs text-gray-400">{selectedUnassignCalls.size} call{selectedUnassignCalls.size !== 1 ? 's' : ''} selected</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-700">
+              <button onClick={() => setUnassignRep(null)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">
+                Cancel
+              </button>
+              <button
+                onClick={handleUnassign}
+                disabled={unassigning || getUnassignCallIds().length === 0}
+                className="px-4 py-2 bg-red-700 hover:bg-red-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition">
+                {unassigning ? 'Unassigning…' : `Unassign ${getUnassignCallIds().length > 0 ? `(${getUnassignCallIds().length})` : ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SET GOAL MODAL ───────────────────────────────────────── */}
+      {goalRep && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 px-4"
+          onClick={() => setGoalRep(null)}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-sm overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700">
+              <h3 className="text-base font-semibold text-gray-100">Set daily goal</h3>
+              <button onClick={() => setGoalRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-300">
+                Daily deal goal for <span className="font-medium text-white">{goalRep.name}</span>
+              </p>
+              <div>
+                <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Deals per day</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={goalValue}
+                  onChange={e => setGoalValue(e.target.value)}
+                  placeholder="0"
+                  autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter') handleSaveGoal(); }}
+                  className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-lg text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium"
+                />
+              </div>
+              {goals.daily[goalRep.id] > 0 && (
+                <p className="text-xs text-gray-500 text-center">Current goal: {goals.daily[goalRep.id]}/day</p>
+              )}
+            </div>
+            <div className="flex items-center gap-3 px-5 py-4 border-t border-gray-700">
+              <button onClick={() => setGoalRep(null)}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveGoal}
+                disabled={savingGoal}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+                {savingGoal ? 'Saving…' : 'Save goal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
