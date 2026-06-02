@@ -517,7 +517,7 @@ function App() {
           <DailyDealsTab
             currentUser={currentUser}
             goals={goals}
-            onRefresh={fetchTodayDailyDeals}
+            onRefresh={() => { fetchTodayDailyDeals(); fetchCalls(); }}
             calls={calls}
             todayDailyDeals={todayDailyDeals}
             users={users}

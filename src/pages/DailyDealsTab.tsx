@@ -34,12 +34,14 @@ interface Call {
   buyerFinal: string;
   statusLast: string;
   submittedDate: string;
+  createdAt?: Date;
   fuStatus?: string;
   assignedTo?: string;
   assignedToName?: string;
   dealDate?: Date;
   dealBy?: string;
   dealByName?: string;
+  isDuplicate?: boolean;
 }
 
 interface DailyDealSummary {
@@ -88,6 +90,12 @@ interface CombinedEntry {
 }
 
 const FU_STATUSES = ['Deal', 'Confirmed Deal', 'Pending', 'No Answer', 'No Deal'];
+
+const STATUS_LAST_OPTIONS = [
+  'Accepted', 'Approved', 'Approval', 'Counter', 'Denial', 'Declined',
+  'Pending Approval', 'Document Received', 'Funded', 'Funding Pending',
+  'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
+];
 
 const getTodayString = () => {
   const now = new Date();
@@ -160,12 +168,22 @@ export default function DailyDealsTab({
   const [editCreditName, setEditCreditName] = useState('');
 
   const [callOverrides, setCallOverrides] = useState<{ [id: string]: { amount?: string; fuStatus?: string } }>({});
-
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Call[]>([]);
   const [linkedCall, setLinkedCall] = useState<Call | null>(null);
 
+  // Dealer popup state
   const [dealerPopup, setDealerPopup] = useState<string | null>(null);
+  const [popupNotes, setPopupNotes] = useState<{ [callId: string]: any[] }>({});
+  const [popupNewNoteText, setPopupNewNoteText] = useState<{ [callId: string]: string }>({});
+  const [popupExpandedNotes, setPopupExpandedNotes] = useState<Set<string>>(new Set());
+  const [popupEditingStatusLast, setPopupEditingStatusLast] = useState<string | null>(null);
+  const [popupTempStatusLast, setPopupTempStatusLast] = useState('');
+  const [popupEditingAmount, setPopupEditingAmount] = useState<string | null>(null);
+  const [popupTempAmount, setPopupTempAmount] = useState('');
+  const [popupFuOverrides, setPopupFuOverrides] = useState<{ [callId: string]: string }>({});
+  const [popupStatusLastOverrides, setPopupStatusLastOverrides] = useState<{ [callId: string]: string }>({});
+  const [popupAmountOverrides, setPopupAmountOverrides] = useState<{ [callId: string]: string }>({});
 
   const [showHistory, setShowHistory] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
@@ -189,11 +207,11 @@ export default function DailyDealsTab({
     return () => { supabase.removeChannel(channel); };
   }, [calendarYear, calendarMonth, showHistory]);
 
-  // ── ESCAPE KEY (layered) ─────────────────────────────────────────
+  // ── ESCAPE KEY ───────────────────────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (dealerPopup) { setDealerPopup(null); return; }
+        if (dealerPopup) { closeDealerPopup(); return; }
         if (expandedRows.size > 0) { setExpandedRows(new Set()); return; }
         if (editingDeal) { setEditingDeal(null); return; }
         if (showHistory) { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); return; }
@@ -273,17 +291,95 @@ export default function DailyDealsTab({
     })));
   };
 
-  const startEditing = (entry: CombinedEntry) => {
-    setEditingDeal(entry.id);
-    setEditAppId(entry.appId);
-    setEditDealerName(entry.dealerName);
-    setEditCustomerName(entry.customerName === '—' ? '' : entry.customerName);
-    setEditAmount(entry.amount);
-    setEditState(entry.state);
-    setEditFuStatus(entry.fuStatus);
-    setEditCreditId(entry.creditId || '');
-    setEditCreditName(entry.creditName);
+  // ── DEALER POPUP ─────────────────────────────────────────────────
+
+  const openDealerPopup = async (dealerName: string) => {
+    setDealerPopup(dealerName);
+    setPopupNotes({});
+    setPopupExpandedNotes(new Set());
+    setPopupFuOverrides({});
+    setPopupStatusLastOverrides({});
+    setPopupAmountOverrides({});
+    const dealerCalls = calls.filter(c => c.dealerName === dealerName);
+    const callIds = dealerCalls.map(c => c.id);
+    if (callIds.length > 0) {
+      const { data } = await supabase.from('call_notes').select('*')
+        .in('call_id', callIds).order('created_at', { ascending: true });
+      if (data) {
+        const grouped: { [id: string]: any[] } = {};
+        data.forEach((n: any) => {
+          if (!grouped[n.call_id]) grouped[n.call_id] = [];
+          grouped[n.call_id].push(n);
+        });
+        setPopupNotes(grouped);
+      }
+    }
   };
+
+  const closeDealerPopup = () => {
+    setDealerPopup(null);
+    setPopupNotes({});
+    setPopupNewNoteText({});
+    setPopupExpandedNotes(new Set());
+    setPopupEditingStatusLast(null);
+    setPopupEditingAmount(null);
+    setPopupFuOverrides({});
+    setPopupStatusLastOverrides({});
+    setPopupAmountOverrides({});
+  };
+
+  const handlePopupFuStatus = async (callId: string, newStatus: string) => {
+    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
+    await supabase.from('calls').update({
+      fu_status: newStatus || null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
+    onRefresh();
+  };
+
+  const handlePopupSaveStatusLast = async (callId: string) => {
+    setPopupStatusLastOverrides(prev => ({ ...prev, [callId]: popupTempStatusLast }));
+    setPopupEditingStatusLast(null);
+    await supabase.from('calls').update({
+      status_last: popupTempStatusLast,
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
+  };
+
+  const handlePopupSaveAmount = async (callId: string) => {
+    setPopupAmountOverrides(prev => ({ ...prev, [callId]: popupTempAmount }));
+    setPopupEditingAmount(null);
+    await supabase.from('calls').update({
+      buyer_final: popupTempAmount,
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
+  };
+
+  const handlePopupAddNote = async (callId: string) => {
+    const text = popupNewNoteText[callId]?.trim();
+    if (!text) return;
+    const call = calls.find(c => c.id === callId);
+    const { data, error } = await supabase.from('call_notes').insert({
+      call_id: callId,
+      application_id: call?.applicationId || '',
+      dealer_name: call?.dealerName || '',
+      note_text: text,
+      created_by: currentUser.id,
+      created_by_name: currentUser.name,
+    }).select().single();
+    if (!error && data) {
+      setPopupNotes(prev => ({ ...prev, [callId]: [...(prev[callId] || []), data] }));
+      setPopupNewNoteText(prev => ({ ...prev, [callId]: '' }));
+    }
+  };
+
+  const togglePopupNotes = (callId: string) => {
+    const n = new Set(popupExpandedNotes);
+    if (n.has(callId)) n.delete(callId); else n.add(callId);
+    setPopupExpandedNotes(n);
+  };
+
+  // ── SEARCH ───────────────────────────────────────────────────────
 
   const handleSearch = () => {
     if (!searchQuery.trim()) return;
@@ -315,7 +411,7 @@ export default function DailyDealsTab({
     setForm(prev => ({ ...prev, appId: '', dealerName: '', customerName: '', amount: '', state: '' }));
   };
 
-  // ── HANDLERS ────────────────────────────────────────────────────
+  // ── HANDLERS ─────────────────────────────────────────────────────
 
   const handleAddDeal = async () => {
     if (!form.appId || !form.dealerName || !form.amount || !form.state) {
@@ -327,18 +423,13 @@ export default function DailyDealsTab({
     try {
       setFormError('');
       const { error: err } = await supabase.from('daily_deals').insert({
-        app_id: form.appId.trim(),
-        dealer_name: form.dealerName.trim(),
+        app_id: form.appId.trim(), dealer_name: form.dealerName.trim(),
         customer_name: form.customerName.trim() || '',
         amount: form.amount.trim(),
-        state: form.state.trim().toUpperCase(),
-        fu_status: form.fuStatus,
-        added_by: currentUser.id,
-        added_by_name: currentUser.name,
-        deal_date: today,
+        state: form.state.trim().toUpperCase(), fu_status: form.fuStatus,
+        added_by: currentUser.id, added_by_name: currentUser.name, deal_date: today,
       });
       if (err) throw err;
-
       if (linkedCall) {
         await supabase.from('calls').update({
           fu_status: form.fuStatus,
@@ -349,13 +440,25 @@ export default function DailyDealsTab({
         }).eq('id', linkedCall.id);
         setLinkedCall(null);
       }
-
       setSuccess('Deal added!');
       setTimeout(() => setSuccess(''), 3000);
       setForm({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
+      onRefresh();
     } catch (e: any) {
       setFormError('Failed to add deal: ' + e.message);
     }
+  };
+
+  const startEditing = (entry: CombinedEntry) => {
+    setEditingDeal(entry.id);
+    setEditAppId(entry.appId);
+    setEditDealerName(entry.dealerName);
+    setEditCustomerName(entry.customerName === '—' ? '' : entry.customerName);
+    setEditAmount(entry.amount);
+    setEditState(entry.state);
+    setEditFuStatus(entry.fuStatus);
+    setEditCreditId(entry.creditId || '');
+    setEditCreditName(entry.creditName);
   };
 
   const handleUpdateCombined = async (entry: CombinedEntry) => {
@@ -363,14 +466,10 @@ export default function DailyDealsTab({
       if (entry.source === 'manual') {
         const creditUser = allUsers.find(u => u.id === editCreditId);
         const { error: err } = await supabase.from('daily_deals').update({
-          app_id: editAppId.trim(),
-          dealer_name: editDealerName.trim(),
-          customer_name: editCustomerName.trim(),
-          amount: editAmount.trim(),
-          state: editState.trim().toUpperCase(),
-          fu_status: editFuStatus,
-          added_by: editCreditId || null,
-          added_by_name: creditUser?.name || editCreditName,
+          app_id: editAppId.trim(), dealer_name: editDealerName.trim(),
+          customer_name: editCustomerName.trim(), amount: editAmount.trim(),
+          state: editState.trim().toUpperCase(), fu_status: editFuStatus,
+          added_by: editCreditId || null, added_by_name: creditUser?.name || editCreditName,
         }).eq('id', entry.id);
         if (err) throw err;
         await fetchTodayDeals();
@@ -381,10 +480,7 @@ export default function DailyDealsTab({
           updated_at: new Date().toISOString(),
         }).eq('id', entry.id);
         if (err) throw err;
-        setCallOverrides(prev => ({
-          ...prev,
-          [entry.id]: { amount: editAmount.trim(), fuStatus: editFuStatus },
-        }));
+        setCallOverrides(prev => ({ ...prev, [entry.id]: { amount: editAmount.trim(), fuStatus: editFuStatus } }));
       }
       setEditingDeal(null);
       onRefresh();
@@ -443,6 +539,13 @@ export default function DailyDealsTab({
     return date.getDate() === t.getDate() && date.getMonth() === t.getMonth() && date.getFullYear() === t.getFullYear();
   };
 
+  const isNewUpload = (call: Call): boolean => {
+    if (!call.createdAt) return false;
+    return isToday(new Date(call.createdAt));
+  };
+
+  // ── KPIs ─────────────────────────────────────────────────────────
+
   const ddDealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
   const ddTotalAmount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').reduce((s, d) => s + parseAmount(d.amount), 0);
   const callDealsToday = calls.filter(c => {
@@ -455,7 +558,6 @@ export default function DailyDealsTab({
   const totalDealCount = ddDealCount + callDealCount;
   const totalAmount = ddTotalAmount + callDealAmount;
   const goalPct = goals.team > 0 ? Math.min((totalDealCount / goals.team) * 100, 100) : 0;
-
   const activeRepNames = new Set([
     ...todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').map(d => d.addedByName),
     ...callDealsToday.filter(c => c.assignedToName).map(c => c.assignedToName as string),
@@ -492,16 +594,14 @@ export default function DailyDealsTab({
     todayDeals.forEach(d => {
       if (d.fuStatus !== 'Deal' && d.fuStatus !== 'Confirmed Deal') return;
       if (!repMap[d.addedBy]) repMap[d.addedBy] = { name: d.addedByName, dealCount: 0, amount: 0, role: roleMap[d.addedBy] || 'rep' };
-      repMap[d.addedBy].dealCount++;
-      repMap[d.addedBy].amount += parseAmount(d.amount);
+      repMap[d.addedBy].dealCount++; repMap[d.addedBy].amount += parseAmount(d.amount);
     });
     callDealsToday.forEach(c => {
       const creditId = c.dealBy || c.assignedTo;
       const creditName = c.dealByName || c.assignedToName || nameMap[creditId || ''] || 'Unknown';
       if (!creditId) return;
       if (!repMap[creditId]) repMap[creditId] = { name: creditName, dealCount: 0, amount: 0, role: roleMap[creditId] || 'rep' };
-      repMap[creditId].dealCount++;
-      repMap[creditId].amount += parseAmount(c.buyerFinal || '0');
+      repMap[creditId].dealCount++; repMap[creditId].amount += parseAmount(c.buyerFinal || '0');
     });
     return Object.entries(repMap).map(([id, data]) => ({ id, ...data }))
       .filter(r => r.dealCount > 0 || r.role === 'rep')
@@ -516,8 +616,9 @@ export default function DailyDealsTab({
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
   const inputCls = 'px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500';
-
-  const dealerCalls = dealerPopup ? calls.filter(c => c.dealerName === dealerPopup).sort((a, b) => new Date(b.submittedDate).getTime() - new Date(a.submittedDate).getTime()) : [];
+  const dealerCalls = dealerPopup
+    ? calls.filter(c => c.dealerName === dealerPopup).sort((a, b) => new Date(b.submittedDate).getTime() - new Date(a.submittedDate).getTime())
+    : [];
 
   return (
     <div className="space-y-5">
@@ -592,7 +693,7 @@ export default function DailyDealsTab({
               <div className="p-5">
                 {formError && <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded text-sm mb-4">{formError}</div>}
 
-                {/* Search box — always visible */}
+                {/* Search — only when no call linked */}
                 {!linkedCall && (
                   <div className="bg-gray-750 border border-gray-600 rounded-lg p-3 mb-4">
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
@@ -626,7 +727,7 @@ export default function DailyDealsTab({
                   </div>
                 )}
 
-                {/* COMPACT FORM when call is linked */}
+                {/* COMPACT FORM when call linked */}
                 {linkedCall ? (
                   <div className="border border-blue-700 rounded-lg overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 bg-blue-900 bg-opacity-20 border-b border-blue-800">
@@ -636,9 +737,7 @@ export default function DailyDealsTab({
                         <span className="text-xs text-gray-300 ml-2">{linkedCall.dealerName}</span>
                         <span className="text-xs text-gray-500 ml-2">· {formatCurrency(parseAmount(linkedCall.buyerFinal))} · {linkedCall.state}</span>
                       </div>
-                      <button onClick={clearLinkedCall} className="text-gray-500 hover:text-gray-300 transition">
-                        <X className="w-4 h-4" />
-                      </button>
+                      <button onClick={clearLinkedCall} className="text-gray-500 hover:text-gray-300 transition"><X className="w-4 h-4" /></button>
                     </div>
                     <div className="p-4">
                       <div className="grid grid-cols-3 gap-3">
@@ -666,7 +765,6 @@ export default function DailyDealsTab({
                     </div>
                   </div>
                 ) : (
-                  /* FULL FORM when no call linked */
                   <>
                     <div className="grid grid-cols-3 gap-3 mb-3">
                       <div>
@@ -797,54 +895,40 @@ export default function DailyDealsTab({
                   const manualDeal = entry.source === 'manual' ? todayDeals.find(d => d.id === entry.id) : null;
                   const canDelete = entry.source === 'manual' && manualDeal &&
                     (currentUser.role === 'admin' || currentUser.role === 'manager' || manualDeal.addedBy === currentUser.id);
-
                   return (
                     <>
                       <tr key={entry.id}
                         className={`hover:bg-gray-750 transition-colors ${!isEditing && entry.source === 'manual' ? 'cursor-pointer' : ''}`}
                         onClick={() => { if (!isEditing && entry.source === 'manual') toggleRow(entry.id); }}>
-
                         <td className="px-3 py-3 text-center">
                           {entry.source === 'manual' && (isExpanded
                             ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
                             : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />)}
                         </td>
-
                         <td className="px-3 py-3 text-sm text-blue-400 font-medium">{entry.appId}</td>
-
-                        {/* Dealer — click to open popup */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          <button
-                            onClick={() => setDealerPopup(entry.dealerName)}
+                          <button onClick={() => openDealerPopup(entry.dealerName)}
                             className="text-sm text-left hover:text-blue-300 transition text-gray-200 max-w-[150px] truncate"
-                            title={`View all calls for ${entry.dealerName}`}
-                          >
+                            title={`View all calls for ${entry.dealerName}`}>
                             {entry.dealerName}
                           </button>
                         </td>
-
                         <td className="px-3 py-3 text-sm text-gray-400">{entry.customerName}</td>
-
-                        {/* Amount */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <input value={editAmount} onChange={e => setEditAmount(e.target.value)} className={`${inputCls} w-24`} />
                           ) : (
                             <div className="flex items-center gap-1.5">
                               <span className="text-sm font-semibold text-gray-100">{formatCurrency(parseAmount(entry.amount))}</span>
-                              <button onClick={() => startEditing(entry)} className="text-gray-600 hover:text-gray-400 transition">
-                                <Edit2 className="w-3 h-3" />
-                              </button>
+                              <button onClick={() => startEditing(entry)} className="text-gray-600 hover:text-gray-400 transition"><Edit2 className="w-3 h-3" /></button>
                             </div>
                           )}
                         </td>
-
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing && entry.source === 'manual'
                             ? <input value={editState} onChange={e => setEditState(e.target.value.toUpperCase())} maxLength={2} className={`${inputCls} w-14`} />
                             : <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{entry.state}</span>}
                         </td>
-
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing
                             ? <select value={editFuStatus} onChange={e => setEditFuStatus(e.target.value)} className={inputCls}>
@@ -852,32 +936,20 @@ export default function DailyDealsTab({
                               </select>
                             : <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(entry.fuStatus)}`}>{entry.fuStatus}</span>}
                         </td>
-
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            entry.source === 'call'
-                              ? 'bg-purple-900 text-purple-300 border border-purple-700'
-                              : 'bg-gray-700 text-gray-400 border border-gray-600'
-                          }`}>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${entry.source === 'call' ? 'bg-purple-900 text-purple-300 border border-purple-700' : 'bg-gray-700 text-gray-400 border border-gray-600'}`}>
                             {entry.source === 'call' ? 'Calls' : 'Manual'}
                           </span>
                         </td>
-
                         <td className="px-3 py-3 text-sm text-gray-400">{entry.creditName}</td>
-
-                        {/* Note button */}
                         <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                           {entry.source === 'manual' && (
                             <button onClick={e => toggleNotes(e, entry.id)} title="Notes"
-                              className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${
-                                notes.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
-                              }`}>
+                              className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${notes.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'}`}>
                               <MessageSquare className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </td>
-
-                        {/* Save/Cancel/Delete */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <div className="flex items-center gap-1">
@@ -891,7 +963,6 @@ export default function DailyDealsTab({
                           ) : null}
                         </td>
                       </tr>
-
                       {isExpanded && !isEditing && entry.source === 'manual' && (
                         <tr key={`${entry.id}-exp`}>
                           <td colSpan={11} className="px-4 py-4 pl-12 bg-gray-750">
@@ -915,9 +986,7 @@ export default function DailyDealsTab({
                                   className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                   autoFocus />
                                 <button onClick={() => handleAddNote(entry.id)}
-                                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
-                                  Save
-                                </button>
+                                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Save</button>
                               </div>
                             </div>
                           </td>
@@ -932,57 +1001,187 @@ export default function DailyDealsTab({
         )}
       </div>
 
-      {/* DEALER POPUP */}
+      {/* DEALER POPUP — fully editable */}
       {dealerPopup && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-16 z-50 px-4"
-          onClick={() => setDealerPopup(null)}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-4xl overflow-hidden"
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
+          onClick={closeDealerPopup}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-5xl overflow-hidden"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
               <div>
                 <h3 className="text-lg font-semibold text-gray-100">{dealerPopup}</h3>
                 <p className="text-xs text-gray-500 mt-0.5">{dealerCalls.length} call{dealerCalls.length !== 1 ? 's' : ''} · press Escape to close</p>
               </div>
-              <button onClick={() => setDealerPopup(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              <button onClick={closeDealerPopup} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
             </div>
-            <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+            <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
               <table className="w-full">
-                <thead className="bg-gray-750 sticky top-0">
+                <thead className="bg-gray-750 sticky top-0 z-10">
                   <tr className="border-b border-gray-700">
-                    {['App ID', 'Amount', 'State', 'Date', 'Status Last', 'FU Status'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{h}</th>
-                    ))}
+                    <th className="w-8 px-3 py-3"></th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">State</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
+                    <th className="w-10 px-3 py-3"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-700">
                   {dealerCalls.length === 0 ? (
-                    <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">No calls found for this dealer</td></tr>
-                  ) : dealerCalls.map(call => (
-                    <tr key={call.id} className="hover:bg-gray-750 transition-colors">
-                      <td className="px-4 py-3">
-                        <span className="text-sm text-blue-400 font-medium cursor-pointer hover:underline"
-                          onClick={() => navigator.clipboard.writeText(call.applicationId)}
-                          title="Click to copy">
-                          {call.applicationId}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-100">{formatCurrency(parseAmount(call.buyerFinal))}</td>
-                      <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{call.state}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-400">{call.submittedDate}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs border ${getStatusLastStyle(call.statusLast)}`}>{call.statusLast}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {call.fuStatus
-                          ? <span className={`px-2 py-0.5 rounded-full text-xs border ${getFuStatusStyle(call.fuStatus)}`}>{call.fuStatus}</span>
-                          : <span className="text-gray-600 text-xs">—</span>}
-                      </td>
-                    </tr>
-                  ))}
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">No calls found for this dealer</td></tr>
+                  ) : dealerCalls.map(call => {
+                    const isNew = isNewUpload(call);
+                    const callNotes = popupNotes[call.id] || [];
+                    const isExpanded = popupExpandedNotes.has(call.id);
+                    const fuStatus = popupFuOverrides[call.id] ?? (call.fuStatus || '');
+                    const statusLast = popupStatusLastOverrides[call.id] ?? call.statusLast;
+                    const amount = popupAmountOverrides[call.id] ?? call.buyerFinal;
+
+                    return (
+                      <>
+                        <tr key={call.id}
+                          className={`transition-colors ${isNew ? 'bg-amber-950 border-l-2 border-l-amber-500 hover:bg-amber-900 hover:bg-opacity-20' : 'hover:bg-gray-750'}`}>
+                          <td className="px-3 py-3 text-center cursor-pointer" onClick={() => togglePopupNotes(call.id)}>
+                            {isExpanded
+                              ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
+                              : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />}
+                          </td>
+
+                          {/* App ID */}
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm text-blue-400 font-medium cursor-pointer hover:underline"
+                                onClick={() => navigator.clipboard.writeText(call.applicationId)}
+                                title="Click to copy">
+                                {call.applicationId}
+                              </span>
+                              {isNew && <span className="px-1.5 py-0.5 bg-amber-900 text-amber-300 text-xs rounded border border-amber-700 font-medium">NEW</span>}
+                            </div>
+                          </td>
+
+                          {/* Amount */}
+                          <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                            {popupEditingAmount === call.id ? (
+                              <div className="flex items-center gap-1">
+                                <input type="text" value={popupTempAmount} onChange={e => setPopupTempAmount(e.target.value)}
+                                  className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none" autoFocus />
+                                <button onClick={() => handlePopupSaveAmount(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => setPopupEditingAmount(null)} className="text-red-400 hover:text-red-300"><X className="w-3.5 h-3.5" /></button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-medium text-gray-100">{formatCurrency(parseAmount(amount))}</span>
+                                <button onClick={() => { setPopupEditingAmount(call.id); setPopupTempAmount(amount); }}
+                                  className="text-gray-600 hover:text-gray-400 transition"><Edit2 className="w-3 h-3" /></button>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* State */}
+                          <td className="px-3 py-3">
+                            <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{call.state}</span>
+                          </td>
+
+                          {/* Date */}
+                          <td className="px-3 py-3 text-xs text-gray-400">{call.submittedDate}</td>
+
+                          {/* Status Last */}
+                          <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                            {popupEditingStatusLast === call.id ? (
+                              <div className="flex items-center gap-1">
+                                <select value={popupTempStatusLast} onChange={e => setPopupTempStatusLast(e.target.value)}
+                                  className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none" autoFocus>
+                                  {STATUS_LAST_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <button onClick={() => handlePopupSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => setPopupEditingStatusLast(null)} className="text-red-400 hover:text-red-300"><X className="w-3.5 h-3.5" /></button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <span className={`px-2 py-0.5 rounded-full text-xs border ${getStatusLastStyle(statusLast)}`}>{statusLast}</span>
+                                <button onClick={() => { setPopupEditingStatusLast(call.id); setPopupTempStatusLast(statusLast); }}
+                                  className="text-gray-600 hover:text-gray-400 transition"><Edit2 className="w-3 h-3" /></button>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* FU Status */}
+                          <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                            <select value={fuStatus}
+                              onChange={e => handlePopupFuStatus(call.id, e.target.value)}
+                              className="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                              <option value="">Select…</option>
+                              <option>Deal</option><option>No Deal</option>
+                              <option>Pending</option><option>No Answer</option><option>Duplicates</option>
+                            </select>
+                          </td>
+
+                          {/* Notes count */}
+                          <td className="px-3 py-3">
+                            {callNotes.length > 0 && (
+                              <div className="flex items-center gap-1 text-blue-400">
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                <span className="text-xs font-bold">{callNotes.length}</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Note button */}
+                          <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => togglePopupNotes(call.id)}
+                              className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${callNotes.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'}`}>
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Expanded notes */}
+                        {isExpanded && (
+                          <tr key={`${call.id}-popup-notes`}>
+                            <td colSpan={9} className="px-4 py-4 pl-12 bg-gray-750">
+                              <div className="space-y-3 max-w-2xl">
+                                <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
+                                {callNotes.length === 0 ? <p className="text-sm text-gray-500 italic">No notes yet.</p> : (
+                                  <div className="space-y-2">
+                                    {callNotes.map((note: any) => (
+                                      <div key={note.id} className="bg-gray-700 px-4 py-3 rounded-lg border border-gray-600">
+                                        <p className="text-sm text-gray-200">{note.note_text}</p>
+                                        <p className="text-xs text-gray-500 mt-1.5">{note.created_by_name} · {new Date(note.created_at).toLocaleString()}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="flex gap-2">
+                                  <input type="text" placeholder="Add a note…"
+                                    value={popupNewNoteText[call.id] || ''}
+                                    onChange={e => setPopupNewNoteText(prev => ({ ...prev, [call.id]: e.target.value }))}
+                                    onKeyDown={e => { if (e.key === 'Enter') handlePopupAddNote(call.id); }}
+                                    className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    autoFocus />
+                                  <button onClick={() => handlePopupAddNote(call.id)}
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Save</button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
+            <div className="px-6 py-3 border-t border-gray-700 flex items-center justify-between">
+              <p className="text-xs text-gray-500">Press Escape to close · Click dealer name to copy App ID</p>
+              {dealerCalls.some(c => isNewUpload(c)) && (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-amber-400" />
+                  <span className="text-xs text-amber-300">Amber = uploaded today</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
