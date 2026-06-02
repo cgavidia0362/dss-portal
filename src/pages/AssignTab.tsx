@@ -63,6 +63,7 @@ const getStatusLastStyle = (status: string) => {
 };
 
 const DEALERS_PER_PAGE = 10;
+const CALLS_PER_PAGE = 25;
 const STATUS_FILTER_OPTIONS = [
   { label: 'Approved',           onCls: 'bg-green-900 bg-opacity-40 border-green-600 text-green-300',   offCls: 'bg-gray-800 border-green-800 text-green-700' },
   { label: 'Counter',            onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300',   offCls: 'bg-gray-800 border-amber-800 text-amber-700' },
