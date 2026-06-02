@@ -925,8 +925,8 @@ export default function CallsTab({
 
                     {isExpanded && (
                       <tr key={`${call.id}-exp`}>
-                      <td colSpan={11} className="px-3 py-2 pl-8 bg-gray-750">
-                          <div className="space-y-2 max-w-lg">
+                      <td colSpan={11} className="px-3 py-2 pl-8 pr-8 bg-gray-750">
+                          <div className="space-y-2">
                             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
                             {callNotes.length === 0 ? (
                               <p className="text-sm text-gray-500 italic">No notes yet.</p>
