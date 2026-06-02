@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { Search, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon, Check, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
@@ -63,7 +63,39 @@ const getStatusLastStyle = (status: string) => {
 };
 
 const DEALERS_PER_PAGE = 10;
-const CALLS_PER_PAGE = 25;
+const STATUS_FILTER_OPTIONS = [
+  { label: 'Approved',           onCls: 'bg-green-900 bg-opacity-40 border-green-600 text-green-300',   offCls: 'bg-gray-800 border-green-800 text-green-700' },
+  { label: 'Counter',            onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300',   offCls: 'bg-gray-800 border-amber-800 text-amber-700' },
+  { label: 'New Application',    onCls: 'bg-cyan-900 bg-opacity-40 border-cyan-500 text-cyan-300',      offCls: 'bg-gray-800 border-cyan-800 text-cyan-700' },
+  { label: 'Pending Approval',   onCls: 'bg-purple-900 bg-opacity-40 border-purple-600 text-purple-300', offCls: 'bg-gray-800 border-purple-800 text-purple-700' },
+  { label: 'Reconsider',         onCls: 'bg-gray-700 border-gray-500 text-gray-300',                    offCls: 'bg-gray-800 border-gray-700 text-gray-600' },
+  { label: 'Accepted',           onCls: 'bg-blue-900 bg-opacity-40 border-blue-600 text-blue-300',      offCls: 'bg-gray-800 border-blue-800 text-blue-700' },
+  { label: 'Denial',             onCls: 'bg-red-900 bg-opacity-40 border-red-700 text-red-300',         offCls: 'bg-gray-800 border-red-900 text-red-700' },
+  { label: 'Documents Received', onCls: 'bg-indigo-900 bg-opacity-40 border-indigo-600 text-indigo-300', offCls: 'bg-gray-800 border-indigo-800 text-indigo-700' },
+  { label: 'Duplicate',          onCls: 'bg-orange-900 bg-opacity-40 border-orange-600 text-orange-300', offCls: 'bg-gray-800 border-orange-800 text-orange-700' },
+  { label: 'Funding Pending',    onCls: 'bg-emerald-900 bg-opacity-40 border-emerald-600 text-emerald-300', offCls: 'bg-gray-800 border-emerald-800 text-emerald-700' },
+];
+
+const DEFAULT_STATUSES = new Set(['Approved', 'Counter', 'New Application', 'Pending Approval', 'Reconsider']);
+
+const statusMatchesFilter = (statusLast: string, selected: Set<string>): boolean => {
+  const s = (statusLast || '').toLowerCase();
+  for (const status of Array.from(selected)) {
+    switch (status) {
+      case 'Approved':           if (s.includes('approv')) return true; break;
+      case 'Counter':            if (s.includes('counter')) return true; break;
+      case 'New Application':    if (s.includes('new application') || s.includes('new app')) return true; break;
+      case 'Pending Approval':   if (s.includes('pending approval') || s === 'pending') return true; break;
+      case 'Reconsider':         if (s.includes('reconsider')) return true; break;
+      case 'Accepted':           if (s.includes('accept')) return true; break;
+      case 'Denial':             if (s.includes('denial') || s.includes('declined')) return true; break;
+      case 'Documents Received': if (s.includes('document')) return true; break;
+      case 'Duplicate':          if (s.includes('duplicate')) return true; break;
+      case 'Funding Pending':    if (s.includes('funding') || s.includes('funded')) return true; break;
+    }
+  }
+  return false;
+};
 
 export default function AssignTab({ calls, setCalls, users, goals, setGoals }: AssignTabProps) {
 
@@ -84,6 +116,13 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
   const [assignToId, setAssignToId] = useState('');
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+
+  // ── STATUS FILTER POPUP ──────────────────────────────────────────
+  const [showStatusFilter, setShowStatusFilter] = useState(false);
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set(DEFAULT_STATUSES));
+  const [pendingAssignCalls, setPendingAssignCalls] = useState<Call[]>([]);
+  const [pendingAssignRepId, setPendingAssignRepId] = useState('');
+  const [pendingAssignRepName, setPendingAssignRepName] = useState('');
 
   // ── VIEW CALLS POPUP ─────────────────────────────────────────────
   const [viewCallsRep, setViewCallsRep] = useState<User | null>(null);
@@ -169,28 +208,45 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
   const allCallsPageSelected = paginatedCallsView.length > 0 && paginatedCallsView.every(c => selectedCalls.has(c.id));
 
   // ── ASSIGN ───────────────────────────────────────────────────────
-  const handleAssign = async () => {
+  const handleAssign = () => {
     if (!assignToId) return;
     const rep = users.find(u => u.id === assignToId);
     if (!rep) return;
 
-    let callIds: string[] = [];
+    let callsToAssign: Call[] = [];
 
     if (step2View === 'dealers') {
       if (selectedDealers.size === 0) return;
-      callIds = unassignedCalls.filter(c =>
+      callsToAssign = unassignedCalls.filter(c =>
         selectedDealers.has(c.dealerName) &&
         (filterState ? c.state === filterState : true)
-      ).map(c => c.id);
+      );
     } else {
       if (selectedCalls.size === 0) return;
-      callIds = Array.from(selectedCalls);
+      callsToAssign = unassignedCalls.filter(c => selectedCalls.has(c.id));
     }
 
-    if (!callIds.length) return;
+    if (!callsToAssign.length) return;
+
+    setPendingAssignCalls(callsToAssign);
+    setPendingAssignRepId(rep.id);
+    setPendingAssignRepName(rep.name);
+    setShowStatusFilter(true);
+  };
+
+  const handleConfirmAssign = async () => {
+    const filteredCalls = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses));
+    const callIds = filteredCalls.map(c => c.id);
+
+    if (!callIds.length) {
+      setError('No calls match the selected statuses. Please select at least one status.');
+      setShowStatusFilter(false);
+      setTimeout(() => setError(''), 4000);
+      return;
+    }
 
     setCalls(prev => prev.map(c => callIds.includes(c.id)
-      ? { ...c, assignedTo: assignToId, assignedToName: rep.name }
+      ? { ...c, assignedTo: pendingAssignRepId, assignedToName: pendingAssignRepName }
       : c
     ));
 
@@ -198,12 +254,14 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
     setSelectedDealers(new Set());
     setSelectedCalls(new Set());
     setAssignToId('');
-    setSuccess(`${count} call${count !== 1 ? 's' : ''} assigned to ${rep.name}`);
+    setShowStatusFilter(false);
+    setPendingAssignCalls([]);
+    setSuccess(`${count} call${count !== 1 ? 's' : ''} assigned to ${pendingAssignRepName}`);
     setTimeout(() => setSuccess(''), 4000);
 
     await supabase.from('calls').update({
-      assigned_to: assignToId,
-      assigned_to_name: rep.name,
+      assigned_to: pendingAssignRepId,
+      assigned_to_name: pendingAssignRepName,
       updated_at: new Date().toISOString(),
     }).in('id', callIds);
   };
@@ -782,6 +840,102 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
           )}
         </div>
       </div>
+
+{/* ── STATUS FILTER POPUP ─────────────────────────────────── */}
+{showStatusFilter && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 px-4"
+          onClick={() => setShowStatusFilter(false)}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-lg overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div className="flex items-start justify-between px-6 py-4 border-b border-gray-700">
+              <div>
+                <h3 className="text-base font-semibold text-gray-100">Filter by status before assigning</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  {pendingAssignRepName}
+                  {step2View === 'dealers'
+                    ? ` · ${selectedDealers.size} dealer${selectedDealers.size !== 1 ? 's' : ''} selected`
+                    : ` · ${pendingAssignCalls.length} call${pendingAssignCalls.length !== 1 ? 's' : ''} selected`}
+                  {filterState ? ` · ${filterState}` : ' · All States'}
+                </p>
+              </div>
+              <button onClick={() => setShowStatusFilter(false)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Status chips */}
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Select which statuses to include</p>
+                <div className="flex flex-wrap gap-2">
+                  {STATUS_FILTER_OPTIONS.map(({ label, onCls, offCls }) => {
+                    const isOn = selectedStatuses.has(label);
+                    return (
+                      <button
+                        key={label}
+                        onClick={() => {
+                          setSelectedStatuses(prev => {
+                            const n = new Set(prev);
+                            if (n.has(label)) n.delete(label); else n.add(label);
+                            return n;
+                          });
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition ${isOn ? onCls : offCls}`}>
+                        {isOn
+                          ? <Check className="w-3 h-3 flex-shrink-0" />
+                          : <Plus className="w-3 h-3 flex-shrink-0" />}
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Summary */}
+              {(() => {
+                const matching = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses)).length;
+                const skipped = pendingAssignCalls.length - matching;
+                return (
+                  <div className="bg-gray-750 border border-gray-700 rounded-lg px-4 py-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-400">Total calls in selection</span>
+                      <span className="text-sm font-medium text-gray-200">{pendingAssignCalls.length}</span>
+                    </div>
+                    <div className="h-px bg-gray-700" />
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-400">Calls matching selected statuses</span>
+                      <span className="text-sm font-bold text-green-400">{matching}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-400">Calls skipped (stay unassigned)</span>
+                      <span className="text-sm text-gray-500">{skipped}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <p className="text-xs text-gray-600">Skipped calls stay in the unassigned pool and can be assigned later.</p>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-700">
+              <button onClick={() => setShowStatusFilter(false)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmAssign}
+                disabled={selectedStatuses.size === 0}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition">
+                {(() => {
+                  const matching = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses)).length;
+                  return `Assign ${matching} call${matching !== 1 ? 's' : ''} to ${pendingAssignRepName} →`;
+                })()}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── VIEW CALLS POPUP ────────────────────────────────────── */}
       {viewCallsRep && (
