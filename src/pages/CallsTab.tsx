@@ -720,7 +720,7 @@ export default function CallsTab({
               <col style={{ width: '78px' }} />
               <col style={{ width: '52px' }} />
               <col style={{ width: '110px' }} />
-              <col style={{ width: '88px' }} />
+              <col style={{ width: '68px' }} />
               <col style={{ width: '110px' }} />
               <col style={{ width: '36px' }} />
             </colgroup>
@@ -925,22 +925,22 @@ export default function CallsTab({
 
                     {isExpanded && (
                       <tr key={`${call.id}-exp`}>
-                        <td colSpan={11} className="px-3 py-3 pl-10 bg-gray-750">
-                          <div className="space-y-3 max-w-2xl">
+                      <td colSpan={11} className="px-3 py-2 pl-8 bg-gray-750">
+                          <div className="space-y-2 max-w-lg">
                             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
                             {callNotes.length === 0 ? (
                               <p className="text-sm text-gray-500 italic">No notes yet.</p>
                             ) : (
                               <div className="space-y-2">
                                 {callNotes.map(note => (
-                                  <div key={note.id} className="bg-gray-700 px-4 py-3 rounded-lg border border-gray-600">
-                                    <p className="text-sm text-gray-200">{note.noteText}</p>
-                                    <p className="text-xs text-gray-500 mt-1.5">{note.createdByName} · {note.createdAt.toLocaleString()}</p>
-                                  </div>
+                                  <div key={note.id} className="bg-gray-700 px-3 py-2 rounded-lg border border-gray-600">
+                                  <p className="text-sm text-gray-200">{note.noteText}</p>
+                                  <p className="text-xs text-gray-500 mt-1">{note.createdByName} · {note.createdAt.toLocaleString()}</p>
+                                </div>
                                 ))}
                               </div>
                             )}
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 mt-1">
                               <input type="text" placeholder="Add a note…"
                                 value={newNoteText[call.id] || ''}
                                 onChange={e => setNewNoteText(prev => ({ ...prev, [call.id]: e.target.value }))}
