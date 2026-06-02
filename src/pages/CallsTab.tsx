@@ -260,7 +260,7 @@ export default function CallsTab({
     if (filterState && call.state !== filterState) return false;
     if (filterRep && call.assignedTo !== filterRep) return false;
     if (dealerFilter && call.dealerName !== dealerFilter) return false;
-    if (filterNewOnly && !isNewUpload(call)) return false;
+    if (filterNewOnly && !dealerFilter && !isNewUpload(call)) return false;
     if (filterStatusLast.size > 0 && !filterStatusLast.has(call.statusLast)) return false;
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
     if (dateTo && new Date(call.submittedDate) > new Date(dateTo)) return false;
@@ -633,16 +633,6 @@ export default function CallsTab({
           {showCompleted ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
           <span className="text-xs">{showCompleted ? 'Hiding' : `Hidden (${completedCount})`}</span>
         </button>
-
-        <button onClick={() => setFilterNewOnly(f => !f)}
-          className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition ${
-            filterNewOnly
-              ? 'bg-amber-900 bg-opacity-40 border-amber-700 text-amber-300'
-              : 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-gray-400'
-          }`}>
-          <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
-          <span className="text-xs">New Only</span>
-        </button>
       </div>
 
       {/* ACTIVE REP FILTER BADGE */}
@@ -682,6 +672,15 @@ export default function CallsTab({
       <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-2.5 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-500 uppercase tracking-wider whitespace-nowrap">Filter</span>
         <div className="w-px h-4 bg-gray-700 mx-1" />
+        <button onClick={() => setFilterNewOnly(f => !f)}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition ${
+            filterNewOnly
+              ? 'bg-amber-900 bg-opacity-60 border-amber-700 text-amber-300'
+              : 'bg-gray-700 text-gray-400 border-gray-600 hover:border-gray-500 hover:text-gray-300'
+          }`}>
+          <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+          New Only
+        </button>
         {uniqueStatusLast.map(status => {
           const active = filterStatusLast.has(status);
           return (
