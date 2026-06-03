@@ -279,12 +279,27 @@ function App() {
 
   const fetchCalls = async () => {
     try {
-      const { data } = await supabase
-        .from('calls')
-        .select('*')
-        .order('timestamp_submit', { ascending: false });
-      if (data && data.length > 0) {
-        setCalls(data.map((c: any) => ({
+      const BATCH_SIZE = 1000;
+      let allData: any[] = [];
+      let from = 0;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from('calls')
+          .select('*')
+          .order('timestamp_submit', { ascending: false })
+          .range(from, from + BATCH_SIZE - 1);
+
+        if (error) { console.error('Error fetching calls batch:', error); break; }
+        if (!data || data.length === 0) break;
+
+        allData = [...allData, ...data];
+        if (data.length < BATCH_SIZE) break;
+        from += BATCH_SIZE;
+      }
+
+      if (allData.length > 0) {
+        setCalls(allData.map((c: any) => ({
           id: c.id,
           applicationId: c.application_id,
           dealerCifNumber: c.dealer_cif_number || '',
