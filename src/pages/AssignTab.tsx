@@ -246,6 +246,7 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
       return;
     }
 
+    // Update local state optimistically
     setCalls(prev => prev.map(c => callIds.includes(c.id)
       ? { ...c, assignedTo: pendingAssignRepId, assignedToName: pendingAssignRepName }
       : c
@@ -257,14 +258,34 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
     setAssignToId('');
     setShowStatusFilter(false);
     setPendingAssignCalls([]);
-    setSuccess(`${count} call${count !== 1 ? 's' : ''} assigned to ${pendingAssignRepName}`);
-    setTimeout(() => setSuccess(''), 4000);
 
-    await supabase.from('calls').update({
-      assigned_to: pendingAssignRepId,
-      assigned_to_name: pendingAssignRepName,
-      updated_at: new Date().toISOString(),
-    }).in('id', callIds);
+    // Write to Supabase in batches of 200 to avoid URL length limits
+    try {
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < callIds.length; i += BATCH_SIZE) {
+        const batch = callIds.slice(i, i + BATCH_SIZE);
+        const { error: updateError } = await supabase.from('calls').update({
+          assigned_to: pendingAssignRepId,
+          assigned_to_name: pendingAssignRepName,
+          updated_at: new Date().toISOString(),
+        }).in('id', batch);
+
+        if (updateError) {
+          console.error('Supabase assign error:', updateError);
+          setError(`Assignment failed: ${updateError.message}`);
+          setTimeout(() => setError(''), 6000);
+          return;
+        }
+      }
+
+      setSuccess(`${count} call${count !== 1 ? 's' : ''} assigned to ${pendingAssignRepName}`);
+      setTimeout(() => setSuccess(''), 4000);
+
+    } catch (err: any) {
+      console.error('Assignment exception:', err);
+      setError(`Assignment failed: ${err.message}`);
+      setTimeout(() => setError(''), 6000);
+    }
   };
 
   const toggleDealer = (dealerName: string) => {
