@@ -14,7 +14,7 @@ interface Call {
   submittedDate: string;
   assignedTo?: string;
   assignedToName?: string;
-  fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
+  fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates' | 'Follow Up';
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
   createdAt?: Date;
