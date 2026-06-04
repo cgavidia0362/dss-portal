@@ -65,20 +65,20 @@ const getStatusLastStyle = (status: string) => {
 const DEALERS_PER_PAGE = 25;
 const CALLS_PER_PAGE = 25;
 const STATUS_FILTER_OPTIONS = [
-  { label: 'Approved',           onCls: 'bg-green-900 bg-opacity-40 border-green-600 text-green-300',   offCls: 'bg-gray-800 border-green-800 text-green-700' },
-  { label: 'Counter',            onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300',   offCls: 'bg-gray-800 border-amber-800 text-amber-700' },
-  { label: 'New Application',    onCls: 'bg-cyan-900 bg-opacity-40 border-cyan-500 text-cyan-300',      offCls: 'bg-gray-800 border-cyan-800 text-cyan-700' },
-  { label: 'Pending Approval',   onCls: 'bg-purple-900 bg-opacity-40 border-purple-600 text-purple-300', offCls: 'bg-gray-800 border-purple-800 text-purple-700' },
-  { label: 'Reconsider',         onCls: 'bg-gray-700 border-gray-500 text-gray-300',                    offCls: 'bg-gray-800 border-gray-700 text-gray-600' },
-  { label: 'Accepted',           onCls: 'bg-blue-900 bg-opacity-40 border-blue-600 text-blue-300',      offCls: 'bg-gray-800 border-blue-800 text-blue-700' },
-  { label: 'Denial',             onCls: 'bg-red-900 bg-opacity-40 border-red-700 text-red-300',         offCls: 'bg-gray-800 border-red-900 text-red-700' },
-  { label: 'Documents Received', onCls: 'bg-indigo-900 bg-opacity-40 border-indigo-600 text-indigo-300', offCls: 'bg-gray-800 border-indigo-800 text-indigo-700' },
-  { label: 'Duplicate',          onCls: 'bg-orange-900 bg-opacity-40 border-orange-600 text-orange-300', offCls: 'bg-gray-800 border-orange-800 text-orange-700' },
-  { label: 'Funding Pending',    onCls: 'bg-emerald-900 bg-opacity-40 border-emerald-600 text-emerald-300', offCls: 'bg-gray-800 border-emerald-800 text-emerald-700' },
-  { label: 'Follow Up',          onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300',     offCls: 'bg-gray-800 border-amber-800 text-amber-700' },
+  { label: 'Approved',           onCls: 'bg-green-900 bg-opacity-40 border-green-600 text-green-300',    offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Counter',            onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300',    offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'New Application',    onCls: 'bg-cyan-900 bg-opacity-40 border-cyan-500 text-cyan-300',       offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Pending Approval',   onCls: 'bg-purple-900 bg-opacity-40 border-purple-600 text-purple-300', offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Reconsider',         onCls: 'bg-gray-700 border-gray-500 text-gray-300',                     offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Accepted',           onCls: 'bg-blue-900 bg-opacity-40 border-blue-600 text-blue-300',       offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Denial',             onCls: 'bg-red-900 bg-opacity-40 border-red-700 text-red-300',          offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Documents Received', onCls: 'bg-indigo-900 bg-opacity-40 border-indigo-600 text-indigo-300', offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Duplicate',          onCls: 'bg-orange-900 bg-opacity-40 border-orange-600 text-orange-300', offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Funding Pending',    onCls: 'bg-emerald-900 bg-opacity-40 border-emerald-600 text-emerald-300', offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Follow Up',          onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300',    offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
 ];
 
-const DEFAULT_STATUSES = new Set(['Approved', 'Counter', 'New Application', 'Pending Approval', 'Reconsider']);
+const DEFAULT_STATUSES = new Set(['Approved', 'Counter', 'New Application', 'Pending Approval', 'Reconsider', 'Follow Up']);
 
 const statusMatchesFilter = (statusLast: string, selected: Set<string>): boolean => {
   const s = (statusLast || '').toLowerCase();
