@@ -14,7 +14,7 @@ interface Call {
   submittedDate: string;
   assignedTo?: string;
   assignedToName?: string;
-  fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates';
+  fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates' | 'Follow Up';
   customerName?: string;
   updatedAt: Date;
   createdAt?: Date;
@@ -75,6 +75,7 @@ const STATUS_FILTER_OPTIONS = [
   { label: 'Documents Received', onCls: 'bg-indigo-900 bg-opacity-40 border-indigo-600 text-indigo-300', offCls: 'bg-gray-800 border-indigo-800 text-indigo-700' },
   { label: 'Duplicate',          onCls: 'bg-orange-900 bg-opacity-40 border-orange-600 text-orange-300', offCls: 'bg-gray-800 border-orange-800 text-orange-700' },
   { label: 'Funding Pending',    onCls: 'bg-emerald-900 bg-opacity-40 border-emerald-600 text-emerald-300', offCls: 'bg-gray-800 border-emerald-800 text-emerald-700' },
+  { label: 'Follow Up',          onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300',     offCls: 'bg-gray-800 border-amber-800 text-amber-700' },
 ];
 
 const DEFAULT_STATUSES = new Set(['Approved', 'Counter', 'New Application', 'Pending Approval', 'Reconsider']);

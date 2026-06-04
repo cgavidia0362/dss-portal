@@ -90,7 +90,7 @@ interface CombinedEntry {
   sortTime: number;
 }
 
-const FU_STATUSES = ['Deal', 'Confirmed Deal', 'Pending', 'No Answer', 'No Deal'];
+const FU_STATUSES = ['Deal', 'Confirmed Deal', 'Pending', 'No Answer', 'No Deal', 'Follow Up'];
 
 const STATUS_LAST_OPTIONS = [
   'Accepted', 'Approved', 'Approval', 'Counter', 'Denial', 'Declined',
@@ -112,6 +112,7 @@ const formatDateLabel = (dateStr: string) => {
 const getFuStatusStyle = (status: string) => {
   const s = status.toLowerCase();
   if (s.includes('confirmed')) return 'bg-emerald-900 text-emerald-300 border-emerald-700';
+  if (s.includes('follow up')) return 'bg-amber-900 text-amber-300 border-amber-700';
   if (s.includes('deal')) return 'bg-green-900 text-green-300 border-green-700';
   if (s.includes('pending')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
   if (s.includes('no answer')) return 'bg-orange-900 text-orange-300 border-orange-700';
@@ -1174,6 +1175,7 @@ export default function DailyDealsTab({
                               <option value="">Select…</option>
                               <option>Deal</option><option>No Deal</option>
                               <option>Pending</option><option>No Answer</option><option>Duplicates</option>
+                              <option>Follow Up</option>
                             </select>
                           </td>
 
