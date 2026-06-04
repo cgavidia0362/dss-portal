@@ -240,9 +240,10 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
     const callIds = filteredCalls.map(c => c.id);
 
     if (!callIds.length) {
-      setError('No calls match the selected statuses. Please select at least one status.');
-      setShowStatusFilter(false);
-      setTimeout(() => setError(''), 4000);
+      const actualStatuses = Array.from(
+        new Set(pendingAssignCalls.map(c => c.statusLast || 'Unknown'))
+      ).join(', ');
+      setError(`No calls match the selected statuses. The calls in your selection have these statuses: ${actualStatuses}. Please select the matching statuses above.`);
       return;
     }
 
@@ -886,9 +887,28 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
             </div>
 
             <div className="p-5 space-y-4">
+              {/* Inline error */}
+              {error && (
+                <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-4 py-3">
+                  <p className="text-xs text-red-300 leading-relaxed">{error}</p>
+                </div>
+              )}
               {/* Status chips */}
               <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Select which statuses to include</p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">Select which statuses to include</p>
+                  <button
+                    onClick={() => {
+                      if (selectedStatuses.size === STATUS_FILTER_OPTIONS.length) {
+                        setSelectedStatuses(new Set(DEFAULT_STATUSES));
+                      } else {
+                        setSelectedStatuses(new Set(STATUS_FILTER_OPTIONS.map(s => s.label)));
+                      }
+                    }}
+                    className="text-xs text-blue-400 hover:text-blue-300 transition">
+                    {selectedStatuses.size === STATUS_FILTER_OPTIONS.length ? 'Reset to defaults' : 'Select all'}
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {STATUS_FILTER_OPTIONS.map(({ label, onCls, offCls }) => {
                     const isOn = selectedStatuses.has(label);
@@ -941,7 +961,7 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
 
             {/* Footer */}
             <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-700">
-              <button onClick={() => setShowStatusFilter(false)}
+            <button onClick={() => { setShowStatusFilter(false); setError(''); }}
                 className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">
                 Cancel
               </button>
