@@ -600,6 +600,7 @@ export default function CallsTab({
           <option value="No Call">No Call</option>
           <option>Deal</option><option>No Deal</option>
           <option>Pending</option><option>No Answer</option><option>Duplicates</option>
+          <option>Follow Up</option>
         </select>
         {isAdmin && (
           <select value={filterRep} onChange={e => setFilterRep(e.target.value)}
@@ -893,7 +894,7 @@ export default function CallsTab({
 
                       {/* FU Status */}
                       <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                        <select value={call.fuStatus || ''}
+                      <select value={call.fuStatus || ''}
                           onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
                           className="px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
                           <option value="">Select…</option>
@@ -902,6 +903,7 @@ export default function CallsTab({
                           <option>Pending</option>
                           <option>No Answer</option>
                           <option>Duplicates</option>
+                          <option>Follow Up</option>
                         </select>
                       </td>
 
