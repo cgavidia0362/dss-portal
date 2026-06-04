@@ -133,8 +133,8 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
   // ── UNASSIGN MODAL ───────────────────────────────────────────────
   const [unassignRep, setUnassignRep] = useState<User | null>(null);
   const [unassignMode, setUnassignMode] = useState<'dealer' | 'state' | 'individual'>('dealer');
-  const [selectedUnassignDealer, setSelectedUnassignDealer] = useState('');
-  const [selectedUnassignState, setSelectedUnassignState] = useState('');
+  const [selectedUnassignDealers, setSelectedUnassignDealers] = useState<Set<string>>(new Set());
+  const [selectedUnassignStates, setSelectedUnassignStates] = useState<Set<string>>(new Set());
   const [selectedUnassignCalls, setSelectedUnassignCalls] = useState<Set<string>>(new Set());
   const [unassignSearch, setUnassignSearch] = useState('');
   const [unassigning, setUnassigning] = useState(false);
@@ -367,8 +367,8 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
   const openUnassign = (rep: User) => {
     setUnassignRep(rep);
     setUnassignMode('dealer');
-    setSelectedUnassignDealer('');
-    setSelectedUnassignState('');
+    setSelectedUnassignDealers(new Set());
+    setSelectedUnassignStates(new Set());
     setSelectedUnassignCalls(new Set());
     setUnassignSearch('');
   };
@@ -377,12 +377,12 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
     if (!unassignRep) return [];
     const repCalls = getRepCalls(unassignRep.id);
     if (unassignMode === 'dealer') {
-      if (!selectedUnassignDealer) return [];
-      return repCalls.filter(c => c.dealerName === selectedUnassignDealer).map(c => c.id);
+      if (selectedUnassignDealers.size === 0) return [];
+      return repCalls.filter(c => selectedUnassignDealers.has(c.dealerName)).map(c => c.id);
     }
     if (unassignMode === 'state') {
-      if (!selectedUnassignState) return [];
-      return repCalls.filter(c => c.state === selectedUnassignState).map(c => c.id);
+      if (selectedUnassignStates.size === 0) return [];
+      return repCalls.filter(c => selectedUnassignStates.has(c.state)).map(c => c.id);
     }
     return Array.from(selectedUnassignCalls);
   };
@@ -1114,41 +1114,137 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
               <button onClick={() => setUnassignRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
             </div>
             <div className="flex border-b border-gray-700">
-              {(['dealer', 'state', 'individual'] as const).map(mode => (
-                <button key={mode}
-                  onClick={() => { setUnassignMode(mode); setSelectedUnassignDealer(''); setSelectedUnassignState(''); setSelectedUnassignCalls(new Set()); setUnassignSearch(''); }}
+            {(['dealer', 'state', 'individual'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => { setUnassignMode(mode); setSelectedUnassignDealers(new Set()); setSelectedUnassignStates(new Set()); setSelectedUnassignCalls(new Set()); setUnassignSearch(''); }}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition border-b-2 capitalize ${unassignMode === mode ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-300'}`}>
                   By {mode}
                 </button>
               ))}
             </div>
             <div className="p-5">
-              {unassignMode === 'dealer' && (
+            {unassignMode === 'dealer' && (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-400">Select a dealer to remove all their calls from {unassignRep.name}.</p>
-                  <select value={selectedUnassignDealer} onChange={e => setSelectedUnassignDealer(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="">Select a dealer…</option>
-                    {unassignDealers.map(d => { const cnt = unassignRepCalls.filter(c => c.dealerName === d).length; return <option key={d} value={d}>{d} ({cnt} call{cnt !== 1 ? 's' : ''})</option>; })}
-                  </select>
-                  {selectedUnassignDealer && (
+                  <p className="text-xs text-gray-400">Select one or more dealers to remove all their calls from {unassignRep.name}.</p>
+                  <div>
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-750 border border-gray-600 border-b-0 rounded-t-lg">
+                      <span className="text-xs text-gray-400">
+                        {selectedUnassignDealers.size > 0
+                          ? `${selectedUnassignDealers.size} of ${unassignDealers.length} selected`
+                          : `${unassignDealers.length} dealers`}
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (selectedUnassignDealers.size === unassignDealers.length) {
+                            setSelectedUnassignDealers(new Set());
+                          } else {
+                            setSelectedUnassignDealers(new Set(unassignDealers));
+                          }
+                        }}
+                        className="text-xs text-blue-400 hover:text-blue-300 transition">
+                        {selectedUnassignDealers.size === unassignDealers.length ? 'Clear all' : 'Select all'}
+                      </button>
+                    </div>
+                    <div className="border border-gray-600 rounded-b-lg overflow-hidden max-h-52 overflow-y-auto">
+                      {unassignDealers.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-sm text-gray-500">No dealers found</p>
+                      ) : unassignDealers.map(d => {
+                        const cnt = unassignRepCalls.filter(c => c.dealerName === d).length;
+                        const isSelected = selectedUnassignDealers.has(d);
+                        const repState = unassignRepCalls.find(c => c.dealerName === d)?.state || '';
+                        return (
+                          <div
+                            key={d}
+                            className={`flex items-center gap-3 px-3 py-2.5 border-b border-gray-700 last:border-0 cursor-pointer transition-colors ${isSelected ? 'bg-red-900 bg-opacity-10' : 'hover:bg-gray-750'}`}
+                            onClick={() => {
+                              setSelectedUnassignDealers(prev => {
+                                const n = new Set(prev);
+                                if (n.has(d)) n.delete(d); else n.add(d);
+                                return n;
+                              });
+                            }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              readOnly
+                              className="w-3.5 h-3.5 accent-red-500 flex-shrink-0 pointer-events-none"
+                            />
+                            <span className="text-xs text-gray-200 flex-1 truncate">{d}</span>
+                            <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600 flex-shrink-0">{repState}</span>
+                            <span className="text-xs text-gray-500 flex-shrink-0">{cnt} call{cnt !== 1 ? 's' : ''}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {selectedUnassignDealers.size > 0 && (
                     <div className="bg-gray-750 border border-gray-600 rounded-lg px-4 py-3">
-                      <p className="text-sm text-gray-300">This will unassign <span className="font-medium text-white">{unassignRepCalls.filter(c => c.dealerName === selectedUnassignDealer).length} calls</span> from <span className="font-medium text-white">{selectedUnassignDealer}</span>.</p>
+                      <p className="text-sm text-gray-300">
+                        This will unassign <span className="font-medium text-white">{getUnassignCallIds().length} calls</span> from <span className="font-medium text-white">{selectedUnassignDealers.size} dealer{selectedUnassignDealers.size !== 1 ? 's' : ''}</span>.
+                      </p>
                     </div>
                   )}
                 </div>
               )}
               {unassignMode === 'state' && (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-400">Select a state to remove all calls in that state from {unassignRep.name}.</p>
-                  <select value={selectedUnassignState} onChange={e => setSelectedUnassignState(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="">Select a state…</option>
-                    {unassignStates.map(s => { const cnt = unassignRepCalls.filter(c => c.state === s).length; return <option key={s} value={s}>{s} ({cnt} call{cnt !== 1 ? 's' : ''})</option>; })}
-                  </select>
-                  {selectedUnassignState && (
+                  <p className="text-xs text-gray-400">Select one or more states to remove all calls in those states from {unassignRep.name}.</p>
+                  <div>
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-750 border border-gray-600 border-b-0 rounded-t-lg">
+                      <span className="text-xs text-gray-400">
+                        {selectedUnassignStates.size > 0
+                          ? `${selectedUnassignStates.size} of ${unassignStates.length} selected`
+                          : `${unassignStates.length} states`}
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (selectedUnassignStates.size === unassignStates.length) {
+                            setSelectedUnassignStates(new Set());
+                          } else {
+                            setSelectedUnassignStates(new Set(unassignStates));
+                          }
+                        }}
+                        className="text-xs text-blue-400 hover:text-blue-300 transition">
+                        {selectedUnassignStates.size === unassignStates.length ? 'Clear all' : 'Select all'}
+                      </button>
+                    </div>
+                    <div className="border border-gray-600 rounded-b-lg overflow-hidden max-h-52 overflow-y-auto">
+                      {unassignStates.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-sm text-gray-500">No states found</p>
+                      ) : unassignStates.map(s => {
+                        const cnt = unassignRepCalls.filter(c => c.state === s).length;
+                        const isSelected = selectedUnassignStates.has(s);
+                        return (
+                          <div
+                            key={s}
+                            className={`flex items-center gap-3 px-3 py-2.5 border-b border-gray-700 last:border-0 cursor-pointer transition-colors ${isSelected ? 'bg-red-900 bg-opacity-10' : 'hover:bg-gray-750'}`}
+                            onClick={() => {
+                              setSelectedUnassignStates(prev => {
+                                const n = new Set(prev);
+                                if (n.has(s)) n.delete(s); else n.add(s);
+                                return n;
+                              });
+                            }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              readOnly
+                              className="w-3.5 h-3.5 accent-red-500 flex-shrink-0 pointer-events-none"
+                            />
+                            <span className="text-xs text-gray-200 flex-1">{s}</span>
+                            <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600 flex-shrink-0">{s}</span>
+                            <span className="text-xs text-gray-500 flex-shrink-0">{cnt} call{cnt !== 1 ? 's' : ''}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {selectedUnassignStates.size > 0 && (
                     <div className="bg-gray-750 border border-gray-600 rounded-lg px-4 py-3">
-                      <p className="text-sm text-gray-300">This will unassign <span className="font-medium text-white">{unassignRepCalls.filter(c => c.state === selectedUnassignState).length} calls</span> in state <span className="font-medium text-white">{selectedUnassignState}</span>.</p>
+                      <p className="text-sm text-gray-300">
+                        This will unassign <span className="font-medium text-white">{getUnassignCallIds().length} calls</span> from <span className="font-medium text-white">{selectedUnassignStates.size} state{selectedUnassignStates.size !== 1 ? 's' : ''}</span>.
+                      </p>
                     </div>
                   )}
                 </div>
