@@ -236,59 +236,78 @@ export default function AssignTab({ calls, setCalls, users, goals, setGoals }: A
     setShowStatusFilter(true);
   };
 
-  const handleConfirmAssign = async () => {
-    const filteredCalls = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses));
-    const callIds = filteredCalls.map(c => c.id);
+  const isValidUUID = (id: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-    if (!callIds.length) {
-      const actualStatuses = Array.from(
-        new Set(pendingAssignCalls.map(c => c.statusLast || 'Unknown'))
-      ).join(', ');
-      setError(`No calls match the selected statuses. The calls in your selection have these statuses: ${actualStatuses}. Please select the matching statuses above.`);
-      return;
+const handleConfirmAssign = async () => {
+  const filteredCalls = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses));
+  const allCallIds = filteredCalls.map(c => c.id);
+
+  // Filter out any non-UUID IDs (locally generated temp IDs)
+  const callIds = allCallIds.filter(isValidUUID);
+  const skippedInvalid = allCallIds.length - callIds.length;
+
+  if (!callIds.length) {
+    const actualStatuses = Array.from(
+      new Set(pendingAssignCalls.map(c => c.statusLast || 'Unknown'))
+    ).join(', ');
+    setError(`No calls match the selected statuses. The calls in your selection have these statuses: ${actualStatuses}. Please select the matching statuses above.`);
+    return;
+  }
+
+  // Update local state optimistically (valid IDs only)
+  setCalls(prev => prev.map(c => callIds.includes(c.id)
+    ? { ...c, assignedTo: pendingAssignRepId, assignedToName: pendingAssignRepName }
+    : c
+  ));
+
+  const count = callIds.length;
+  setSelectedDealers(new Set());
+  setSelectedCalls(new Set());
+  setAssignToId('');
+  setShowStatusFilter(false);
+  setPendingAssignCalls([]);
+
+  try {
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < callIds.length; i += BATCH_SIZE) {
+      const batch = callIds.slice(i, i + BATCH_SIZE);
+      const { error: updateError } = await supabase.from('calls').update({
+        assigned_to: pendingAssignRepId,
+        assigned_to_name: pendingAssignRepName,
+        updated_at: new Date().toISOString(),
+      }).in('id', batch);
+
+      if (updateError) {
+        console.error('Supabase assign error:', updateError);
+        // Revert optimistic update so UI matches database
+        setCalls(prev => prev.map(c => callIds.includes(c.id)
+          ? { ...c, assignedTo: undefined, assignedToName: undefined }
+          : c
+        ));
+        setError(`Assignment failed: ${updateError.message}`);
+        setTimeout(() => setError(''), 6000);
+        return;
+      }
     }
 
-    // Update local state optimistically
+    const msg = skippedInvalid > 0
+      ? `${count} call${count !== 1 ? 's' : ''} assigned to ${pendingAssignRepName}. ${skippedInvalid} call${skippedInvalid !== 1 ? 's' : ''} skipped (temporary IDs — re-upload those calls to fix).`
+      : `${count} call${count !== 1 ? 's' : ''} assigned to ${pendingAssignRepName}`;
+    setSuccess(msg);
+    setTimeout(() => setSuccess(''), 6000);
+
+  } catch (err: any) {
+    console.error('Assignment exception:', err);
+    // Revert optimistic update
     setCalls(prev => prev.map(c => callIds.includes(c.id)
-      ? { ...c, assignedTo: pendingAssignRepId, assignedToName: pendingAssignRepName }
+      ? { ...c, assignedTo: undefined, assignedToName: undefined }
       : c
     ));
-
-    const count = callIds.length;
-    setSelectedDealers(new Set());
-    setSelectedCalls(new Set());
-    setAssignToId('');
-    setShowStatusFilter(false);
-    setPendingAssignCalls([]);
-
-    // Write to Supabase in batches of 200 to avoid URL length limits
-    try {
-      const BATCH_SIZE = 200;
-      for (let i = 0; i < callIds.length; i += BATCH_SIZE) {
-        const batch = callIds.slice(i, i + BATCH_SIZE);
-        const { error: updateError } = await supabase.from('calls').update({
-          assigned_to: pendingAssignRepId,
-          assigned_to_name: pendingAssignRepName,
-          updated_at: new Date().toISOString(),
-        }).in('id', batch);
-
-        if (updateError) {
-          console.error('Supabase assign error:', updateError);
-          setError(`Assignment failed: ${updateError.message}`);
-          setTimeout(() => setError(''), 6000);
-          return;
-        }
-      }
-
-      setSuccess(`${count} call${count !== 1 ? 's' : ''} assigned to ${pendingAssignRepName}`);
-      setTimeout(() => setSuccess(''), 4000);
-
-    } catch (err: any) {
-      console.error('Assignment exception:', err);
-      setError(`Assignment failed: ${err.message}`);
-      setTimeout(() => setError(''), 6000);
-    }
-  };
+    setError(`Assignment failed: ${err.message}`);
+    setTimeout(() => setError(''), 6000);
+  }
+};
 
   const toggleDealer = (dealerName: string) => {
     setSelectedDealers(prev => {
