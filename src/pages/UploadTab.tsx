@@ -302,10 +302,9 @@ export default function UploadTab({ setCalls, dealers, setDealers, fundingData, 
       await supabase.from('calls').delete()
         .lt('timestamp_submit', thirtyDaysAgo.toISOString());
 
-      // Update local state
+      // Update local state (calls already refreshed via onUploadSuccess above)
       const newDealersList = Array.from(discoveredDealers.values());
       if (newDealersList.length > 0) setDealers(prev => [...prev, ...newDealersList]);
-      setCalls(prev => [...prev, ...processedCalls]);
 
       if (matches.length > 0) setMatchedDeals(matches);
       if (duplicates.length > 0) setDuplicateApps(duplicates);
