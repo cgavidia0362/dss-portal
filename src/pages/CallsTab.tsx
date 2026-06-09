@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
@@ -84,7 +84,7 @@ export default function CallsTab({
 }: CallsTabProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterFuStatus, setFilterFuStatus] = useState('');
+  const [filterFuStatuses, setFilterFuStatuses] = useState<Set<string>>(new Set());
   const [filterState, setFilterState] = useState('');
   const [filterRep, setFilterRep] = useState('');
   const [filterNewOnly, setFilterNewOnly] = useState(false);
@@ -111,13 +111,33 @@ export default function CallsTab({
     'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
   ];
 
+  const fuStatusChips = [
+    { label: 'No Call',        onCls: 'bg-gray-700 border-gray-500 text-gray-300' },
+    { label: 'Pending',        onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300' },
+    { label: 'No Answer',      onCls: 'bg-red-900 bg-opacity-40 border-red-700 text-red-300' },
+    { label: 'Follow Up',      onCls: 'bg-orange-900 bg-opacity-40 border-orange-600 text-orange-300' },
+    { label: 'Deal',           onCls: 'bg-green-900 bg-opacity-40 border-green-600 text-green-300' },
+    { label: 'Confirmed Deal', onCls: 'bg-emerald-900 bg-opacity-40 border-emerald-600 text-emerald-300' },
+    { label: 'No Deal',        onCls: 'bg-red-900 bg-opacity-40 border-red-900 text-red-400' },
+    { label: 'Duplicates',     onCls: 'bg-orange-900 bg-opacity-40 border-orange-700 text-orange-300' },
+    { label: 'Closed',         onCls: 'bg-gray-700 border-gray-600 text-gray-400' },
+  ];
+
+  const toggleFuStatusFilter = (label: string) => {
+    setFilterFuStatuses(prev => {
+      const n = new Set(prev);
+      if (n.has(label)) n.delete(label); else n.add(label);
+      return n;
+    });
+  };
+
   const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const isRep = currentUserRole === 'rep' || currentUserRole === 'buying_assistant';
 
   useEffect(() => {
     if (currentUserRole === 'rep' && currentUser?.state) fetchRepStateGoal(currentUser.state);
   }, [currentUser?.state, currentUserRole]);
 
-  // ── ESCAPE KEY ───────────────────────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -163,7 +183,6 @@ export default function CallsTab({
     return isToday(new Date(call.createdAt));
   };
 
-  // ── SHORT DATE ───────────────────────────────────────────────────
   const formatShortDate = (dateStr: string): string => {
     if (!dateStr) return '—';
     const parts = dateStr.split('-');
@@ -171,7 +190,6 @@ export default function CallsTab({
     return dateStr;
   };
 
-  // ── LAST ACTIVITY ────────────────────────────────────────────────
   const formatLastActivity = (call: Call): { text: string; isToday: boolean } => {
     if (!call.updatedAt) return { text: '—', isToday: false };
     if (call.createdAt) {
@@ -221,8 +239,7 @@ export default function CallsTab({
   };
 
   const roleFilteredCalls = calls.filter(c =>
-    currentUserRole === 'rep' || currentUserRole === 'buying_assistant'
-      ? c.assignedTo === currentUserId : true
+    isRep ? c.assignedTo === currentUserId : true
   );
   const uniqueStatusLast = Array.from(new Set(roleFilteredCalls.map(c => c.statusLast).filter(Boolean))).sort();
   const uniqueStates = Array.from(new Set(roleFilteredCalls.map(c => c.state))).sort();
@@ -244,14 +261,12 @@ export default function CallsTab({
   };
 
   const filteredCalls = calls.filter(call => {
-    if ((currentUserRole === 'rep' || currentUserRole === 'buying_assistant') && call.assignedTo !== currentUserId) return false;
+    if (isRep && call.assignedTo !== currentUserId) return false;
     if (searchQuery &&
       !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.state.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !(call.customerName || '').toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    if (filterFuStatus === 'No Call' && !!call.fuStatus) return false;
-    if (filterFuStatus && filterFuStatus !== 'No Call' && call.fuStatus !== filterFuStatus) return false;
     if (filterState && call.state !== filterState) return false;
     if (filterRep && call.assignedTo !== filterRep) return false;
     if (dealerFilter && call.dealerName !== dealerFilter) return false;
@@ -259,13 +274,35 @@ export default function CallsTab({
     if (filterStatusLast.size > 0 && !filterStatusLast.has(call.statusLast)) return false;
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
     if (dateTo && new Date(call.submittedDate) > new Date(dateTo)) return false;
-    const isCompleted = call.fuStatus === 'No Deal' || call.fuStatus === 'Closed' || call.fuStatus === 'Duplicates';
-    const isExplicitlyFiltering = ['No Deal', 'Closed', 'Duplicates'].includes(filterFuStatus);
-    if (!showCompleted && isCompleted && !isExplicitlyFiltering) return false;
+
+    const fuKey = call.fuStatus || 'No Call';
+
+    if (isRep) {
+      // My Queue: unworked calls always show; worked calls show only if their FU chip is selected
+      if (fuKey !== 'No Call' && !filterFuStatuses.has(fuKey)) return false;
+    } else {
+      // Admin/Manager: if FU chips selected, filter to those only
+      if (filterFuStatuses.size > 0 && !filterFuStatuses.has(fuKey)) return false;
+      // showCompleted toggle for admins
+      const isCompleted = call.fuStatus === 'No Deal' || call.fuStatus === 'Closed' || call.fuStatus === 'Duplicates';
+      const explicitlyFiltering = filterFuStatuses.has('No Deal') || filterFuStatuses.has('Closed') || filterFuStatuses.has('Duplicates');
+      if (!showCompleted && isCompleted && !explicitlyFiltering) return false;
+    }
+
     return true;
   });
 
+  // Split for My Queue divider (reps only)
+  const unworkedCalls = isRep ? filteredCalls.filter(c => !c.fuStatus) : [];
+  const filteredInCalls = isRep ? filteredCalls.filter(c => !!c.fuStatus) : [];
+
   const sortedCalls = [...filteredCalls].sort((a, b) => {
+    // Reps: unworked calls always sort to top
+    if (isRep) {
+      const aUnworked = !a.fuStatus ? 0 : 1;
+      const bUnworked = !b.fuStatus ? 0 : 1;
+      if (aUnworked !== bUnworked) return aUnworked - bUnworked;
+    }
     if (!sortField || !sortOrder) return 0;
     let aVal: any = a[sortField], bVal: any = b[sortField];
     if (sortField === 'submittedDate') { aVal = new Date(aVal).getTime(); bVal = new Date(bVal).getTime(); }
@@ -280,7 +317,7 @@ export default function CallsTab({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterFuStatus, filterState, filterRep, filterNewOnly, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
+  }, [searchQuery, filterFuStatuses, filterState, filterRep, filterNewOnly, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
 
   const csvDealsToday = filteredCalls.filter(c =>
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))
@@ -317,7 +354,7 @@ export default function CallsTab({
   };
 
   const completedCount = calls.filter(c => {
-    if ((currentUserRole === 'rep' || currentUserRole === 'buying_assistant') && c.assignedTo !== currentUserId) return false;
+    if (isRep && c.assignedTo !== currentUserId) return false;
     return c.fuStatus === 'No Deal' || c.fuStatus === 'Closed' || c.fuStatus === 'Duplicates';
   }).length;
 
@@ -594,14 +631,6 @@ export default function CallsTab({
           <option value="">All States</option>
           {uniqueStates.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={filterFuStatus} onChange={e => setFilterFuStatus(e.target.value)}
-          className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <option value="">All Statuses</option>
-          <option value="No Call">No Call</option>
-          <option>Deal</option><option>No Deal</option>
-          <option>Pending</option><option>No Answer</option><option>Duplicates</option>
-          <option>Follow Up</option>
-        </select>
         {isAdmin && (
           <select value={filterRep} onChange={e => setFilterRep(e.target.value)}
             className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
@@ -619,11 +648,13 @@ export default function CallsTab({
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
             className="px-2 py-2 bg-gray-700 text-xs text-gray-300 focus:outline-none w-[120px]" />
         </div>
-        <button onClick={() => setShowCompleted(!showCompleted)}
-          className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg text-sm text-gray-400 transition">
-          {showCompleted ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-          <span className="text-xs">{showCompleted ? 'Hiding' : `Hidden (${completedCount})`}</span>
-        </button>
+        {isAdmin && (
+          <button onClick={() => setShowCompleted(!showCompleted)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg text-sm text-gray-400 transition">
+            {showCompleted ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+            <span className="text-xs">{showCompleted ? 'Hiding' : `Hidden (${completedCount})`}</span>
+          </button>
+        )}
       </div>
 
       {/* ACTIVE REP FILTER BADGE */}
@@ -659,10 +690,10 @@ export default function CallsTab({
         </div>
       )}
 
-      {/* STATUS CHIPS */}
+      {/* STATUS LAST CHIPS */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-2.5 flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-gray-500 uppercase tracking-wider whitespace-nowrap">Filter</span>
-        <div className="w-px h-4 bg-gray-700 mx-1" />
+        <span className="text-xs text-gray-500 uppercase tracking-wider whitespace-nowrap w-20 flex-shrink-0">Status Last</span>
+        <div className="w-px h-4 bg-gray-700 flex-shrink-0" />
         <button onClick={() => setFilterNewOnly(f => !f)}
           className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition ${
             filterNewOnly
@@ -676,20 +707,64 @@ export default function CallsTab({
           const active = filterStatusLast.has(status);
           return (
             <button key={status} onClick={() => toggleStatusLastFilter(status)}
-              className={`px-3 py-1 rounded-full text-xs border transition ${active
-                ? 'bg-blue-900 text-blue-300 border-blue-700'
-                : 'bg-gray-700 text-gray-400 border-gray-600 hover:border-gray-500 hover:text-gray-300'
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition ${
+                active
+                  ? 'bg-blue-900 text-blue-300 border-blue-700'
+                  : 'bg-gray-700 text-gray-400 border-gray-600 hover:border-gray-500 hover:text-gray-300'
               }`}>
+              {active && <Check className="w-3 h-3 flex-shrink-0" />}
               {status}
             </button>
           );
         })}
         {filterStatusLast.size > 0 && (
           <button onClick={() => setFilterStatusLast(new Set())} className="ml-auto text-xs text-blue-400 hover:text-blue-300">
-            Clear all
+            Clear
           </button>
         )}
       </div>
+
+      {/* FU STATUS CHIPS */}
+      <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-2.5 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-500 uppercase tracking-wider whitespace-nowrap w-20 flex-shrink-0">FU Status</span>
+        <div className="w-px h-4 bg-gray-700 flex-shrink-0" />
+        {fuStatusChips.map(({ label, onCls }) => {
+          const active = filterFuStatuses.has(label);
+          return (
+            <button key={label} onClick={() => toggleFuStatusFilter(label)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition ${
+                active
+                  ? onCls
+                  : 'bg-gray-700 text-gray-400 border-gray-600 hover:border-gray-500 hover:text-gray-300'
+              }`}>
+              {active
+                ? <Check className="w-3 h-3 flex-shrink-0" />
+                : <Plus className="w-3 h-3 flex-shrink-0" />}
+              {label}
+            </button>
+          );
+        })}
+        {filterFuStatuses.size > 0 && (
+          <button onClick={() => setFilterFuStatuses(new Set())} className="ml-auto text-xs text-blue-400 hover:text-blue-300">
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* MY QUEUE INFO BAR — reps only */}
+      {isRep && (
+        <div className="flex items-center gap-3 px-1">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900 bg-opacity-20 border border-blue-800 rounded-lg">
+            <span className="text-xs text-blue-400 font-medium">My Queue</span>
+            <span className="text-xs text-gray-400">{unworkedCalls.length} unworked</span>
+            {filteredInCalls.length > 0 && (
+              <span className="text-xs text-gray-500">
+                · +{filteredInCalls.length} filtered in ({Array.from(filterFuStatuses).filter(s => s !== 'No Call').join(', ')})
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* TABLE */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
@@ -761,205 +836,233 @@ export default function CallsTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
-              {paginatedCalls.map(call => {
+              {paginatedCalls.map((call, idx) => {
                 const callNotes = getCallNotes(call.id);
                 const isExpanded = expandedRows.has(call.id);
                 const isNew = isNewUpload(call);
                 const isFilteredDealer = dealerFilter === call.dealerName;
                 const activity = formatLastActivity(call);
+                const isWorked = !!call.fuStatus;
+                const prevCall = paginatedCalls[idx - 1];
+                const showDivider = isRep && isWorked && filteredInCalls.length > 0 &&
+                  (idx === 0 || !prevCall?.fuStatus);
 
                 const rowCls = call.isDuplicate
                   ? 'cursor-pointer transition-colors bg-yellow-900 bg-opacity-10 hover:bg-yellow-900 hover:bg-opacity-20'
                   : isNew
                     ? 'cursor-pointer transition-colors bg-amber-950 border-l-2 border-l-amber-500 hover:bg-amber-900 hover:bg-opacity-20'
-                    : 'cursor-pointer transition-colors hover:bg-gray-750';
+                    : isRep && !isWorked
+                      ? 'cursor-pointer transition-colors hover:bg-gray-750 border-l-2 border-l-blue-700'
+                      : 'cursor-pointer transition-colors hover:bg-gray-750';
 
-                return (
-                  <>
-                    <tr key={call.id} className={rowCls} onClick={() => toggleRow(call.id)}>
+                const rows = [];
 
-                      {/* Chevron */}
-                      <td className="px-2 py-2 text-center">
-                        {isExpanded
-                          ? <ChevronDown className="w-3.5 h-3.5 text-blue-400 mx-auto" />
-                          : <ChevronRight className="w-3.5 h-3.5 text-gray-500 mx-auto" />}
-                      </td>
-
-                      {/* App ID */}
-                      <td className="px-2 py-2">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <span
-                            className="text-xs text-blue-400 font-medium hover:underline cursor-pointer truncate"
-                            onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(call.applicationId); }}
-                            title="Click to copy"
-                          >
-                            {call.applicationId}
+                if (showDivider) {
+                  rows.push(
+                    <tr key={`divider-${call.id}`}>
+                      <td colSpan={11} className="px-0 py-0">
+                        <div className="flex items-center gap-3 px-4 py-1.5 bg-gray-750 border-y border-gray-700">
+                          <div className="flex-1 h-px bg-gray-600" />
+                          <span className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">
+                            Filtered in — {Array.from(filterFuStatuses).filter(s => s !== 'No Call').join(' · ')}
                           </span>
-                          {call.isDuplicate && (
-                            <span className="px-1 bg-yellow-900 text-yellow-300 text-[9px] rounded border border-yellow-700 font-medium flex-shrink-0">DUPE</span>
-                          )}
-                          {isNew && (
-                            <span className="px-1 bg-amber-900 text-amber-300 text-[9px] rounded border border-amber-700 font-medium flex-shrink-0">NEW</span>
-                          )}
+                          <div className="flex-1 h-px bg-gray-600" />
                         </div>
                       </td>
-
-                      {/* Dealer */}
-                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                        <button
-                          onClick={() => setDealerFilter(prev => prev === call.dealerName ? '' : call.dealerName)}
-                          title={call.dealerName}
-                          className={`text-xs text-left truncate block w-full transition hover:text-blue-300 ${
-                            isFilteredDealer ? 'text-blue-400 font-medium' : 'text-gray-200'
-                          }`}
-                        >
-                          {call.dealerName}
-                        </button>
-                      </td>
-
-                      {/* Customer */}
-                      <td className="px-2 py-2">
-                        {call.customerName
-                          ? <span className="text-xs text-gray-400 truncate block w-full" title={call.customerName}>{call.customerName}</span>
-                          : <span className="text-xs text-gray-600">—</span>}
-                      </td>
-
-                      {/* State */}
-                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                        <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
-                      </td>
-
-                      {/* Amount */}
-                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                        {editingAmount === call.id ? (
-                          <div className="flex items-center gap-1">
-                            <input type="text" value={tempAmount} onChange={e => setTempAmount(e.target.value)}
-                              className="w-14 px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
-                              autoFocus />
-                            <button onClick={() => handleSaveAmount(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3 h-3" /></button>
-                            <button onClick={() => setEditingAmount(null)} className="text-red-400 hover:text-red-300"><X className="w-3 h-3" /></button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs font-medium text-gray-100">
-                              ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                            </span>
-                            <button onClick={() => { setEditingAmount(call.id); setTempAmount(call.buyerFinal); }}
-                              className="text-gray-600 hover:text-gray-400 transition flex-shrink-0">
-                              <Edit2 className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Date */}
-                      <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{formatShortDate(call.submittedDate)}</td>
-
-                      {/* Status Last */}
-                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                        {editingStatusLast === call.id ? (
-                          <div className="flex items-center gap-1">
-                            <select value={tempStatusLast} onChange={e => setTempStatusLast(e.target.value)}
-                              className="px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
-                              autoFocus>
-                              {allStatusLastOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                            <button onClick={() => handleSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300 flex-shrink-0"><Check className="w-3 h-3" /></button>
-                            <button onClick={() => setEditingStatusLast(null)} className="text-red-400 hover:text-red-300 flex-shrink-0"><X className="w-3 h-3" /></button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <span className={`px-1.5 py-0 rounded-full text-[10px] border truncate ${getStatusLastStyle(call.statusLast)}`}>
-                              {call.statusLast}
-                            </span>
-                            <button onClick={() => { setEditingStatusLast(call.id); setTempStatusLast(call.statusLast); }}
-                              className="text-gray-600 hover:text-gray-400 transition flex-shrink-0">
-                              <Edit2 className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Last Activity */}
-                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                        <span className={`text-[10px] flex items-center gap-1 whitespace-nowrap ${activity.isToday ? 'text-emerald-400' : 'text-gray-500'}`}>
-                          {activity.text !== '—' && (
-                            <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
-                            </svg>
-                          )}
-                          {activity.text}
-                        </span>
-                      </td>
-
-                      {/* FU Status */}
-                      <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                      <select value={call.fuStatus || ''}
-                          onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
-                          className="px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
-                          <option value="">Select…</option>
-                          <option>Deal</option>
-                          <option>No Deal</option>
-                          <option>Pending</option>
-                          <option>No Answer</option>
-                          <option>Duplicates</option>
-                          <option>Follow Up</option>
-                        </select>
-                      </td>
-
-                      {/* Note button with badge */}
-                      <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
-                        <button onClick={e => openNotes(e, call.id)} title="Notes"
-                          className={`relative inline-flex items-center justify-center w-6 h-6 rounded transition ${
-                            callNotes.length > 0
-                              ? 'bg-blue-600 text-white hover:bg-blue-500'
-                              : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
-                          }`}>
-                          <MessageSquare className="w-3 h-3" />
-                          {callNotes.length > 0 && (
-                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center leading-none">
-                              {callNotes.length}
-                            </span>
-                          )}
-                        </button>
-                      </td>
                     </tr>
+                  );
+                }
 
-                    {isExpanded && (
-                      <tr key={`${call.id}-exp`}>
+                rows.push(
+                  <tr key={call.id} className={rowCls} onClick={() => toggleRow(call.id)}>
+
+                    {/* Chevron */}
+                    <td className="px-2 py-2 text-center">
+                      {isExpanded
+                        ? <ChevronDown className="w-3.5 h-3.5 text-blue-400 mx-auto" />
+                        : <ChevronRight className="w-3.5 h-3.5 text-gray-500 mx-auto" />}
+                    </td>
+
+                    {/* App ID */}
+                    <td className="px-2 py-2">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span
+                          className="text-xs text-blue-400 font-medium hover:underline cursor-pointer truncate"
+                          onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(call.applicationId); }}
+                          title="Click to copy"
+                        >
+                          {call.applicationId}
+                        </span>
+                        {call.isDuplicate && (
+                          <span className="px-1 bg-yellow-900 text-yellow-300 text-[9px] rounded border border-yellow-700 font-medium flex-shrink-0">DUPE</span>
+                        )}
+                        {isNew && (
+                          <span className="px-1 bg-amber-900 text-amber-300 text-[9px] rounded border border-amber-700 font-medium flex-shrink-0">NEW</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Dealer */}
+                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => setDealerFilter(prev => prev === call.dealerName ? '' : call.dealerName)}
+                        title={call.dealerName}
+                        className={`text-xs text-left truncate block w-full transition hover:text-blue-300 ${
+                          isFilteredDealer ? 'text-blue-400 font-medium' : 'text-gray-200'
+                        }`}
+                      >
+                        {call.dealerName}
+                      </button>
+                    </td>
+
+                    {/* Customer */}
+                    <td className="px-2 py-2">
+                      {call.customerName
+                        ? <span className="text-xs text-gray-400 truncate block w-full" title={call.customerName}>{call.customerName}</span>
+                        : <span className="text-xs text-gray-600">—</span>}
+                    </td>
+
+                    {/* State */}
+                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                      <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
+                    </td>
+
+                    {/* Amount */}
+                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                      {editingAmount === call.id ? (
+                        <div className="flex items-center gap-1">
+                          <input type="text" value={tempAmount} onChange={e => setTempAmount(e.target.value)}
+                            className="w-14 px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
+                            autoFocus />
+                          <button onClick={() => handleSaveAmount(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3 h-3" /></button>
+                          <button onClick={() => setEditingAmount(null)} className="text-red-400 hover:text-red-300"><X className="w-3 h-3" /></button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs font-medium text-gray-100">
+                            ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                          </span>
+                          <button onClick={() => { setEditingAmount(call.id); setTempAmount(call.buyerFinal); }}
+                            className="text-gray-600 hover:text-gray-400 transition flex-shrink-0">
+                            <Edit2 className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Date */}
+                    <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{formatShortDate(call.submittedDate)}</td>
+
+                    {/* Status Last */}
+                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                      {editingStatusLast === call.id ? (
+                        <div className="flex items-center gap-1">
+                          <select value={tempStatusLast} onChange={e => setTempStatusLast(e.target.value)}
+                            className="px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
+                            autoFocus>
+                            {allStatusLastOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                          <button onClick={() => handleSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300 flex-shrink-0"><Check className="w-3 h-3" /></button>
+                          <button onClick={() => setEditingStatusLast(null)} className="text-red-400 hover:text-red-300 flex-shrink-0"><X className="w-3 h-3" /></button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <span className={`px-1.5 py-0 rounded-full text-[10px] border truncate ${getStatusLastStyle(call.statusLast)}`}>
+                            {call.statusLast}
+                          </span>
+                          <button onClick={() => { setEditingStatusLast(call.id); setTempStatusLast(call.statusLast); }}
+                            className="text-gray-600 hover:text-gray-400 transition flex-shrink-0">
+                            <Edit2 className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Last Activity */}
+                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                      <span className={`text-[10px] flex items-center gap-1 whitespace-nowrap ${activity.isToday ? 'text-emerald-400' : 'text-gray-500'}`}>
+                        {activity.text !== '—' && (
+                          <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
+                          </svg>
+                        )}
+                        {activity.text}
+                      </span>
+                    </td>
+
+                    {/* FU Status */}
+                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                      <select value={call.fuStatus || ''}
+                        onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
+                        className="px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
+                        <option value="">Select…</option>
+                        <option>Deal</option>
+                        <option>Confirmed Deal</option>
+                        <option>No Deal</option>
+                        <option>Pending</option>
+                        <option>No Answer</option>
+                        <option>Follow Up</option>
+                        <option>Duplicates</option>
+                        <option>Closed</option>
+                      </select>
+                    </td>
+
+                    {/* Note button with badge */}
+                    <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
+                      <button onClick={e => openNotes(e, call.id)} title="Notes"
+                        className={`relative inline-flex items-center justify-center w-6 h-6 rounded transition ${
+                          callNotes.length > 0
+                            ? 'bg-blue-600 text-white hover:bg-blue-500'
+                            : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
+                        }`}>
+                        <MessageSquare className="w-3 h-3" />
+                        {callNotes.length > 0 && (
+                          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center leading-none">
+                            {callNotes.length}
+                          </span>
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                );
+
+                if (isExpanded) {
+                  rows.push(
+                    <tr key={`${call.id}-exp`}>
                       <td colSpan={11} className="px-3 py-2 pl-8 pr-8 bg-gray-750">
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
-                            {callNotes.length === 0 ? (
-                              <p className="text-sm text-gray-500 italic">No notes yet.</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {callNotes.map(note => (
-                                  <div key={note.id} className="bg-gray-700 px-3 py-2 rounded-lg border border-gray-600">
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
+                          {callNotes.length === 0 ? (
+                            <p className="text-sm text-gray-500 italic">No notes yet.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {callNotes.map(note => (
+                                <div key={note.id} className="bg-gray-700 px-3 py-2 rounded-lg border border-gray-600">
                                   <p className="text-sm text-gray-200">{note.noteText}</p>
                                   <p className="text-xs text-gray-500 mt-1">{note.createdByName} · {note.createdAt.toLocaleString()}</p>
                                 </div>
-                                ))}
-                              </div>
-                            )}
-                            <div className="flex gap-2 mt-1">
-                              <input type="text" placeholder="Add a note…"
-                                value={newNoteText[call.id] || ''}
-                                onChange={e => setNewNoteText(prev => ({ ...prev, [call.id]: e.target.value }))}
-                                onKeyDown={e => { if (e.key === 'Enter') handleAddNote(call.id); }}
-                                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                autoFocus />
-                              <button onClick={() => handleAddNote(call.id)}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
-                                Save
-                              </button>
+                              ))}
                             </div>
+                          )}
+                          <div className="flex gap-2 mt-1">
+                            <input type="text" placeholder="Add a note…"
+                              value={newNoteText[call.id] || ''}
+                              onChange={e => setNewNoteText(prev => ({ ...prev, [call.id]: e.target.value }))}
+                              onKeyDown={e => { if (e.key === 'Enter') handleAddNote(call.id); }}
+                              className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              autoFocus />
+                            <button onClick={() => handleAddNote(call.id)}
+                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                              Save
+                            </button>
                           </div>
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                );
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return rows;
               })}
             </tbody>
           </table>
