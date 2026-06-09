@@ -227,7 +227,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
         const timestampSubmit = parsedDate ?? new Date();
         const statusLast = String(row['Status Last'] || '').trim();
 
-        let initialFuStatus: Call['fuStatus'] = 'Pending';
+        let initialFuStatus: Call['fuStatus'] | undefined = undefined;
         let initialDealDate: Date | undefined = undefined;
 
         if (statusLast === 'Accepted') {
@@ -264,21 +264,47 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
 
       // Save calls to Supabase (upsert by application_id)
       if (processedCalls.length > 0) {
-        const callsToUpsert = processedCalls.map(c => ({
-          application_id: c.applicationId,
-          dealer_cif_number: c.dealerCifNumber,
-          dealer_name: c.dealerName,
-          state: c.state,
-          buyer_final: c.buyerFinal,
-          status_last: c.statusLast,
-          timestamp_submit: c.timestampSubmit.toISOString(),
-          submitted_date: c.submittedDate,
-          fu_status: c.fuStatus || null,
-          updated_at: new Date().toISOString(),
-          deal_date: c.dealDate ? c.dealDate.toISOString() : null,
-          is_duplicate: c.isDuplicate || false,
-          customer_full_name: c.customerName || null,
-        }));
+        // Check which app IDs already exist so we don't overwrite
+        // rep-managed fields (fu_status, updated_at) on existing calls
+        const batchAppIds = processedCalls.map(c => c.applicationId).filter(Boolean);
+        const existingAppIds = new Set<string>();
+        try {
+          const CHUNK = 200;
+          for (let i = 0; i < batchAppIds.length; i += CHUNK) {
+            const chunk = batchAppIds.slice(i, i + CHUNK);
+            const { data } = await supabase.from('calls').select('application_id').in('application_id', chunk);
+            if (data) data.forEach((d: any) => existingAppIds.add(d.application_id));
+          }
+        } catch { /* non-critical — fall through to full upsert */ }
+
+        const callsToUpsert = processedCalls.map(c => {
+          const isNew = !existingAppIds.has(c.applicationId);
+          const base = {
+            application_id: c.applicationId,
+            dealer_cif_number: c.dealerCifNumber,
+            dealer_name: c.dealerName,
+            state: c.state,
+            buyer_final: c.buyerFinal,
+            status_last: c.statusLast,
+            timestamp_submit: c.timestampSubmit.toISOString(),
+            submitted_date: c.submittedDate,
+            is_duplicate: c.isDuplicate || false,
+            customer_full_name: c.customerName || null,
+          };
+          if (isNew) {
+            // New call — set all fields including fu_status and updated_at
+            return {
+              ...base,
+              fu_status: c.fuStatus || null,
+              updated_at: new Date().toISOString(),
+              deal_date: c.dealDate ? c.dealDate.toISOString() : null,
+            };
+          }
+          // Existing call — only update safe fields, never touch
+          // fu_status, updated_at, deal_date, assigned_to, assigned_to_name
+          return base;
+        });
+
         const { error: upsertError } = await supabase
         .from('calls')
         .upsert(callsToUpsert, { onConflict: 'application_id' });
