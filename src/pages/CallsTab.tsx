@@ -67,7 +67,7 @@ interface CallsTabProps {
   users?: User[];
 }
 
-type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | null;
+type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | 'customerName' | null;
 type SortOrder = 'asc' | 'desc' | null;
 
 const parseAmount = (str: string) =>
@@ -84,7 +84,9 @@ export default function CallsTab({
 }: CallsTabProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterFuStatuses, setFilterFuStatuses] = useState<Set<string>>(new Set());
+  const [filterFuStatuses, setFilterFuStatuses] = useState<Set<string>>(
+    new Set(['No Call', 'Pending', 'Follow Up'])
+  );
   const [filterState, setFilterState] = useState('');
   const [filterRep, setFilterRep] = useState('');
   const [filterNewOnly, setFilterNewOnly] = useState(false);
@@ -112,7 +114,7 @@ export default function CallsTab({
   ];
 
   const fuStatusChips = [
-    { label: 'No Call',        onCls: 'bg-gray-700 border-gray-500 text-gray-300' },
+    { label: 'No Call',        onCls: 'bg-teal-900 bg-opacity-40 border-teal-600 text-teal-300' }
     { label: 'Pending',        onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300' },
     { label: 'No Answer',      onCls: 'bg-red-900 bg-opacity-40 border-red-700 text-red-300' },
     { label: 'Follow Up',      onCls: 'bg-orange-900 bg-opacity-40 border-orange-600 text-orange-300' },
@@ -813,7 +815,11 @@ export default function CallsTab({
                     Dealer <SortIcon field="dealerName" />
                   </button>
                 </th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
+                <th className="px-2 py-2 text-left">
+                  <button onClick={() => handleSort('customerName')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                    Customer <SortIcon field="customerName" />
+                  </button>
+                </th>
                 <th className="px-2 py-2 text-left">
                   <button onClick={() => handleSort('state')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     St <SortIcon field="state" />
