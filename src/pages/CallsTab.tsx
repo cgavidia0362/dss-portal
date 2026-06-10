@@ -112,7 +112,7 @@ export default function CallsTab({
   ];
 
   const fuStatusChips = [
-    { label: 'No Call',        onCls: 'bg-teal-900 bg-opacity-40 border-teal-600 text-teal-300' }
+    { label: 'No Call',        onCls: 'bg-teal-900 bg-opacity-40 border-teal-600 text-teal-300' },
     { label: 'Pending',        onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300' },
     { label: 'No Answer',      onCls: 'bg-red-900 bg-opacity-40 border-red-700 text-red-300' },
     { label: 'Follow Up',      onCls: 'bg-orange-900 bg-opacity-40 border-orange-600 text-orange-300' },
