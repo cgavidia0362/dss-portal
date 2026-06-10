@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { Edit2, Trash2, Link, Copy, Check, ChevronDown } from 'lucide-react';
+import { Edit2, Trash2, Link, Copy, Check, ChevronDown, Download } from 'lucide-react';
 
 interface User {
   id: string;
@@ -170,6 +170,107 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const [exporting, setExporting] = useState(false);
+
+  const escapeCsv = (val: any): string => {
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const handleExportAll = async () => {
+    setExporting(true);
+    setError('');
+    try {
+      // Fetch all calls in batches
+      let allCalls: any[] = [];
+      let from = 0;
+      const BATCH = 1000;
+      while (true) {
+        const { data, error: callsError } = await supabase
+          .from('calls')
+          .select('*')
+          .range(from, from + BATCH - 1);
+        if (callsError) throw callsError;
+        if (!data || data.length === 0) break;
+        allCalls = allCalls.concat(data);
+        if (data.length < BATCH) break;
+        from += BATCH;
+      }
+
+      // Fetch all call notes in batches
+      let allNotes: any[] = [];
+      from = 0;
+      while (true) {
+        const { data, error: notesError } = await supabase
+          .from('call_notes')
+          .select('*')
+          .range(from, from + BATCH - 1);
+        if (notesError) throw notesError;
+        if (!data || data.length === 0) break;
+        allNotes = allNotes.concat(data);
+        if (data.length < BATCH) break;
+        from += BATCH;
+      }
+
+      // Group notes by call_id
+      const notesByCall: { [callId: string]: string[] } = {};
+      allNotes.forEach((n: any) => {
+        if (!notesByCall[n.call_id]) notesByCall[n.call_id] = [];
+        notesByCall[n.call_id].push(`[${n.created_by_name || 'Unknown'} @ ${n.created_at}] ${n.note_text}`);
+      });
+
+      // Build CSV
+      const headers = [
+        'Application ID', 'Dealer Name', 'CIF Number', 'State',
+        'Customer Name', 'Assigned Rep', 'Status Last', 'FU Status',
+        'Amount', 'Submitted Date', 'Updated At', 'Created At',
+        'Deal Date', 'Deal By', 'Is Duplicate', 'Notes',
+      ];
+
+      const rows = allCalls.map((c: any) => [
+        escapeCsv(c.application_id),
+        escapeCsv(c.dealer_name),
+        escapeCsv(c.dealer_cif_number),
+        escapeCsv(c.state),
+        escapeCsv(c.customer_full_name),
+        escapeCsv(c.assigned_to_name),
+        escapeCsv(c.status_last),
+        escapeCsv(c.fu_status),
+        escapeCsv(c.buyer_final),
+        escapeCsv(c.submitted_date),
+        escapeCsv(c.updated_at),
+        escapeCsv(c.created_at),
+        escapeCsv(c.deal_date),
+        escapeCsv(c.deal_by_name),
+        escapeCsv(c.is_duplicate),
+        escapeCsv((notesByCall[c.id] || []).join(' | ')),
+      ]);
+
+      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.setAttribute('download', `dss-portal-export-${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setSuccess(`Exported ${allCalls.length} calls successfully.`);
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err: any) {
+      setError('Export failed: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Multi-state helpers
   const getSelectedStates = (stateStr: string): string[] =>
     stateStr ? stateStr.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -202,10 +303,17 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
           <h2 className="text-2xl font-bold text-gray-100">Users</h2>
           <p className="text-sm text-gray-400 mt-0.5">Manage team members and permissions</p>
         </div>
-        <button onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
-          + Add User
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExportAll} disabled={exporting}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+            <Download className="w-4 h-4" />
+            {exporting ? 'Exporting…' : 'Export All Data'}
+          </button>
+          <button onClick={() => setShowCreateModal(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+            + Add User
+          </button>
+        </div>
       </div>
 
       {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">{error}</div>}
