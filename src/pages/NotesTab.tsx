@@ -52,6 +52,12 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
   const [dateTo, setDateTo] = useState(today);
   const [selectedRepId, setSelectedRepId] = useState('');
   const [filterSource, setFilterSource] = useState('');
+  const [insights, setInsights] = useState<{
+    overallSummary: string;
+    repSummaries: { repName: string; feedback: string }[];
+  } | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState('');
 
   useEffect(() => { fetchNotes(); }, [dateFrom, dateTo, selectedRepId]);
 
@@ -120,6 +126,96 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       console.error('Error fetching notes:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateInsights = async () => {
+    setInsightsLoading(true);
+    setInsightsError('');
+    setInsights(null);
+
+    try {
+      // Filter out short/generic notes that don't carry conversation substance
+      const genericPhrases = [
+        'no answer', 'left vm', 'left voicemail', 'voicemail left',
+        'pending', 'no response', 'follow up', 'followup', 'callback',
+        'call back', 'no ans', 'vm left', 'still pending', 'ringing',
+        'busy', 'no pickup', 'didnt answer', "didn't answer", 'try again',
+      ];
+
+      const substantiveNotes = notes.filter(n => {
+        const text = n.noteText.trim().toLowerCase();
+        if (text.length < 20) return false;
+        if (genericPhrases.some(p => text === p || (text.length < 35 && text.includes(p)))) return false;
+        return true;
+      });
+
+      if (substantiveNotes.length === 0) {
+        setInsightsError('No substantive notes found in this date range to analyze.');
+        setInsightsLoading(false);
+        return;
+      }
+
+      // Group by rep
+      const byRep: { [name: string]: string[] } = {};
+      substantiveNotes.forEach(n => {
+        const name = n.createdByName || 'Unknown';
+        if (!byRep[name]) byRep[name] = [];
+        byRep[name].push(`[${n.dealerName || 'Unknown Dealer'} — App ${n.appId || 'N/A'}] ${n.noteText}`);
+      });
+
+      const repSections = Object.entries(byRep)
+        .map(([name, notesArr]) => `### Rep: ${name}\n${notesArr.map(t => `- ${t}`).join('\n')}`)
+        .join('\n\n');
+
+      const systemPrompt = `You are analyzing dealer/customer call notes for a subprime auto finance company called Pronto Finance. Reps call dealers to discuss the company's program and try to win deals.
+
+The company's current selling points (the "program") include: lower fees, lower rates, higher balances, easier GPS install process, TurboPass and faster funding, guaranteed backend.
+
+The IDEAL conversation a rep should be having with a dealer covers:
+1. Identifying who they spoke with at the dealership
+2. Gauging the dealer's reaction to the updated program (lower fees/rates, higher balances, easier GPS, TurboPass/faster funding, guaranteed backend)
+3. Asking who we're losing deals to (which bank/finance company) and how they're beating us
+4. Pitching: "click everything under 30k that isn't a BK or repo" to earn more business
+5. Asking if the dealer uses Dealer Center, and if so getting an email address to send approvals to (since approvals go out in 6-7 minutes and Dealer Center can cause delays)
+6. Getting a commitment from the dealer to click all subprime apps under 30k that aren't a BK or repo
+
+Analyze the notes provided and return a JSON object with this EXACT structure (no markdown, no code fences, just raw JSON):
+
+{
+  "overallSummary": "A few paragraphs covering: (1) Who we're losing deals to (which banks/finance companies are mentioned) and how they're beating us, (2) General feedback themes - both positive and negative - about our program from dealers, (3) Any other notable patterns across all conversations.",
+  "repSummaries": [
+    { "repName": "Name", "feedback": "Coaching feedback for this specific rep on how well their conversations covered the 6 points above. Be specific - mention what they did well and what they're missing. Keep it constructive and actionable, 2-4 sentences." }
+  ]
+}
+
+Only include reps who have at least one substantive note. If a competitor bank/finance company is named anywhere, call it out specifically in the overall summary.`;
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          system: systemPrompt,
+          messages: [
+            { role: 'user', content: `Here are the call notes grouped by rep for the period ${formatDateLabel(dateFrom, dateTo)}:\n\n${repSections}` }
+          ],
+        })
+      });
+
+      const data = await response.json();
+      const textBlock = data.content?.find((c: any) => c.type === 'text');
+      if (!textBlock?.text) throw new Error('No response from AI');
+
+      const cleaned = textBlock.text.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      setInsights(parsed);
+    } catch (err: any) {
+      console.error('Insights error:', err);
+      setInsightsError('Failed to generate insights. Please try again.');
+    } finally {
+      setInsightsLoading(false);
     }
   };
 
@@ -200,16 +296,15 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             )}
           </div>
 
-          {/* AI Insights — coming soon */}
+          {/* AI Insights */}
           {isAdminOrManager && (
             <button
-              disabled
-              title="Coming soon"
-              className="flex items-center gap-2 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-500 cursor-not-allowed opacity-60"
+              onClick={generateInsights}
+              disabled={insightsLoading || notes.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-900 bg-opacity-40 hover:bg-opacity-60 border border-purple-700 rounded-lg text-sm text-purple-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Sparkles className="w-4 h-4" />
-              AI Insights
-              <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded">soon</span>
+              {insightsLoading ? 'Analyzing…' : 'AI Insights'}
             </button>
           )}
         </div>
@@ -241,6 +336,37 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
           )}
         </div>
       </div>
+
+      {/* AI INSIGHTS PANEL */}
+      {insightsError && (
+        <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-4 py-3">
+          <p className="text-sm text-red-300">{insightsError}</p>
+        </div>
+      )}
+
+      {insights && (
+        <div className="space-y-3">
+          <div className="bg-purple-900 bg-opacity-10 border border-purple-800 rounded-lg p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <h3 className="text-sm font-semibold text-purple-300">Overall Summary — {formatDateLabel(dateFrom, dateTo)}</h3>
+            </div>
+            <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-line">{insights.overallSummary}</p>
+          </div>
+
+          {insights.repSummaries.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-gray-300 px-1">Rep Coaching Feedback</h3>
+              {insights.repSummaries.map((rep, idx) => (
+                <div key={idx} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                  <p className="text-sm font-semibold text-blue-400 mb-1.5">{rep.repName}</p>
+                  <p className="text-sm text-gray-300 leading-relaxed">{rep.feedback}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* NOTES LIST */}
       {loading ? (
