@@ -84,9 +84,7 @@ export default function CallsTab({
 }: CallsTabProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterFuStatuses, setFilterFuStatuses] = useState<Set<string>>(
-    new Set(['No Call', 'Pending', 'Follow Up'])
-  );
+  const [filterFuStatuses, setFilterFuStatuses] = useState<Set<string>>(new Set(['No Call', 'Pending', 'Follow Up']));
   const [filterState, setFilterState] = useState('');
   const [filterRep, setFilterRep] = useState('');
   const [filterNewOnly, setFilterNewOnly] = useState(false);
