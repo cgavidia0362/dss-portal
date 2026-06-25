@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, Upload, Users, FileText, UserCog, LogOut, TrendingUp, StickyNote } from 'lucide-react';
+import { BarChart3, Upload, Users, FileText, UserCog, LogOut, TrendingUp, StickyNote, Car } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import LoginPage from './pages/LoginPage';
 import CallsTab from './pages/CallsTab';
@@ -11,7 +11,9 @@ import AnalyticsTab from './pages/AnalyticsTab';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import DailyDealsTab from './pages/DailyDealsTab';
 import NotesTab from './pages/NotesTab';
+import VehicleRiskAnalyzer from './pages/VehicleRiskAnalyzer';
 import PublicDealsPage from './pages/PublicDealsPage';
+import VehicleRiskPublic from './pages/VehicleRiskPublic';
 
 interface Dealer {
   cifNumber: string;
@@ -95,8 +97,9 @@ const isRecoveryUrl = (() => {
   );
 })();
 
-// Check for public deals page before anything else
-const isPublicRoute = window.location.pathname === '/deals';
+const publicPath = window.location.pathname;
+const isPublicDealsRoute = publicPath === '/deals';
+const isVehicleRiskPublicRoute = publicPath === '/vehicle-risk-public';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -383,11 +386,12 @@ function App() {
       { id: 'calls', label: 'Calls', icon: FileText },
       { id: 'upload', label: 'Upload', icon: Upload },
       { id: 'assign', label: 'Assign', icon: Users },
-      { id: 'reporting', label: 'Reporting', icon: BarChart3 },
       { id: 'users', label: 'Users', icon: UserCog },
       { id: 'analytics', label: 'Analytics', icon: TrendingUp },
       { id: 'daily-deals', label: 'Daily Deals', icon: TrendingUp },
       { id: 'notes', label: 'Notes', icon: StickyNote },
+      { id: 'vehicle-risk', label: 'Vehicle Risk', icon: Car },
+      { id: 'reporting', label: 'Reporting', icon: BarChart3 },
     ];
     if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
     if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
@@ -396,7 +400,8 @@ function App() {
   };
 
   // ── LOADING / AUTH GATES ──────────────────────────────────────────
-  if (isPublicRoute) return <PublicDealsPage />;
+  if (isPublicDealsRoute) return <PublicDealsPage />;
+  if (isVehicleRiskPublicRoute) return <VehicleRiskPublic />;
 
   if (isLoading) {
     return (
@@ -548,6 +553,10 @@ function App() {
             currentUser={currentUser}
             users={users}
           />
+        )}
+
+        {activeTab === 'vehicle-risk' && (
+          <VehicleRiskAnalyzer currentUser={currentUser} />
         )}
 
       </main>
