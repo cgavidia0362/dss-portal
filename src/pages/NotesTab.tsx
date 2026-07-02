@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { StickyNote, Sparkles } from 'lucide-react';
+import { StickyNote, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface CombinedNote {
   id: string;
@@ -11,6 +11,7 @@ interface CombinedNote {
   createdBy: string;
   createdByName: string;
   createdAt: string;
+  fuStatus?: string;
 }
 
 interface User {
@@ -28,6 +29,8 @@ const getTodayString = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
+
+const NOTES_PER_PAGE = 10;
 
 const formatDateLabel = (from: string, to: string) => {
   const todayStr = getTodayString();
@@ -52,6 +55,8 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
   const [dateTo, setDateTo] = useState(today);
   const [selectedRepId, setSelectedRepId] = useState('');
   const [filterSource, setFilterSource] = useState('');
+  const [filterFuStatus, setFilterFuStatus] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [insights, setInsights] = useState<{
     overallSummary: string;
     repSummaries: { repName: string; feedback: string }[];
@@ -60,6 +65,8 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
   const [insightsError, setInsightsError] = useState('');
 
   useEffect(() => { fetchNotes(); }, [dateFrom, dateTo, selectedRepId]);
+
+  useEffect(() => { setCurrentPage(1); }, [dateFrom, dateTo, selectedRepId, filterSource, filterFuStatus]);
 
   const fetchNotes = async () => {
     setLoading(true);
@@ -82,10 +89,22 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
 
       const { data: callNotes } = await callQuery;
 
+      const appIds = [...new Set((callNotes || []).map((n: { application_id: string }) => n.application_id).filter(Boolean))];
+      const callStatusMap: Record<string, string> = {};
+      if (appIds.length > 0) {
+        const { data: callsData } = await supabase
+          .from('calls')
+          .select('application_id, fu_status')
+          .in('application_id', appIds);
+        (callsData || []).forEach((c: { application_id: string; fu_status?: string }) => {
+          if (c.application_id) callStatusMap[c.application_id] = c.fu_status || '';
+        });
+      }
+
       // Daily deal notes (joined with parent deal)
       let dealQuery = supabase
         .from('daily_deal_notes')
-        .select(`id, note_text, created_by, created_by_name, created_at, daily_deals (app_id, dealer_name)`)
+        .select(`id, note_text, created_by, created_by_name, created_at, daily_deals (app_id, dealer_name, fu_status)`)
         .gte('created_at', fromTs)
         .lte('created_at', toTs)
         .order('created_at', { ascending: false });
@@ -108,6 +127,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
           createdBy: n.created_by,
           createdByName: n.created_by_name,
           createdAt: n.created_at,
+          fuStatus: callStatusMap[n.application_id] || undefined,
         })),
         ...(dealNotes || []).map((n: any) => ({
           id: n.id,
@@ -118,6 +138,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
           createdBy: n.created_by,
           createdByName: n.created_by_name,
           createdAt: n.created_at,
+          fuStatus: n.daily_deals?.fu_status || undefined,
         })),
       ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
@@ -219,9 +240,20 @@ Only include reps who have at least one substantive note. If a competitor bank/f
     }
   };
 
-  const filteredNotes = filterSource
-    ? notes.filter(n => n.source === filterSource)
-    : notes;
+  const filteredNotes = notes.filter(n => {
+    if (filterSource && n.source !== filterSource) return false;
+    if (filterFuStatus && n.fuStatus !== filterFuStatus) return false;
+    return true;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filteredNotes.length / NOTES_PER_PAGE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedNotes = filteredNotes.slice(
+    (safePage - 1) * NOTES_PER_PAGE,
+    safePage * NOTES_PER_PAGE,
+  );
+  const rangeStart = filteredNotes.length === 0 ? 0 : (safePage - 1) * NOTES_PER_PAGE + 1;
+  const rangeEnd = Math.min(safePage * NOTES_PER_PAGE, filteredNotes.length);
 
   const repOptions = users.filter(u => u.role === 'rep' || u.role === 'buying_assistant');
   const callsCount = notes.filter(n => n.source === 'calls').length;
@@ -264,6 +296,16 @@ Only include reps who have at least one substantive note. If a competitor bank/f
             <option value="">All Sources</option>
             <option value="calls">Calls</option>
             <option value="daily_deals">Daily Deals</option>
+          </select>
+
+          {/* FU status filter */}
+          <select
+            value={filterFuStatus}
+            onChange={e => setFilterFuStatus(e.target.value)}
+            className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">All Statuses</option>
+            <option value="No Deal">No Deal Only</option>
           </select>
 
           {/* Date picker — subtle */}
@@ -382,8 +424,34 @@ Only include reps who have at least one substantive note. If a competitor bank/f
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {filteredNotes.map(note => (
+        <div className="space-y-3">
+          {filteredNotes.length > NOTES_PER_PAGE && (
+            <div className="flex items-center justify-between px-1 flex-wrap gap-2">
+              <span className="text-xs text-gray-500">
+                Showing {rangeStart}–{rangeEnd} of {filteredNotes.length} notes
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={safePage === 1}
+                  className="p-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  <ChevronLeft className="w-4 h-4 text-gray-400" />
+                </button>
+                <span className="text-xs text-gray-400 px-2">Page {safePage} of {totalPages}</span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  className="p-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+          {paginatedNotes.map(note => (
             <div
               key={`${note.source}-${note.id}`}
               className="bg-gray-800 border border-gray-700 rounded-lg px-5 py-4 hover:border-gray-600 transition"
@@ -399,6 +467,15 @@ Only include reps who have at least one substantive note. If a competitor bank/f
                   }`}>
                     {note.source === 'calls' ? 'Calls' : 'Daily Deals'}
                   </span>
+                  {note.fuStatus && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                      note.fuStatus === 'No Deal'
+                        ? 'bg-red-900 bg-opacity-40 text-red-300 border-red-800'
+                        : 'bg-gray-700 text-gray-400 border-gray-600'
+                    }`}>
+                      {note.fuStatus}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-gray-500">
                   {isAdminOrManager && (
@@ -414,6 +491,27 @@ Only include reps who have at least one substantive note. If a competitor bank/f
               <p className="text-sm text-gray-200 leading-relaxed">{note.noteText}</p>
             </div>
           ))}
+          </div>
+
+          {filteredNotes.length > NOTES_PER_PAGE && (
+            <div className="flex items-center justify-center gap-1 pt-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="p-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                <ChevronLeft className="w-4 h-4 text-gray-400" />
+              </button>
+              <span className="text-xs text-gray-400 px-2">Page {safePage} of {totalPages}</span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="p-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

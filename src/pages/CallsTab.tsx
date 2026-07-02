@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import NoteItem from '../components/NoteItem';
 
 interface Call {
   id: string;
@@ -474,6 +475,20 @@ export default function CallsTab({
   };
 
   const getCallNotes = (callId: string) => notes.filter(n => n.callId === callId);
+
+  const handleUpdateNote = async (noteId: string, text: string) => {
+    const { error } = await supabase.from('call_notes').update({ note_text: text }).eq('id', noteId);
+    if (!error) {
+      setNotes(prev => prev.map(n => n.id === noteId ? { ...n, noteText: text } : n));
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    const { error } = await supabase.from('call_notes').delete().eq('id', noteId);
+    if (!error) {
+      setNotes(prev => prev.filter(n => n.id !== noteId));
+    }
+  };
 
   const SortIcon = ({ field }: { field: SortField }) => (
     <ArrowUpDown className={`w-3 h-3 inline ml-1 ${sortField === field ? 'text-blue-400' : 'text-gray-600'}`} />
@@ -1041,10 +1056,16 @@ export default function CallsTab({
                           ) : (
                             <div className="space-y-2">
                               {callNotes.map(note => (
-                                <div key={note.id} className="bg-gray-700 px-3 py-2 rounded-lg border border-gray-600">
-                                  <p className="text-sm text-gray-200">{note.noteText}</p>
-                                  <p className="text-xs text-gray-500 mt-1">{note.createdByName} · {note.createdAt.toLocaleString()}</p>
-                                </div>
+                                <NoteItem
+                                  key={note.id}
+                                  id={note.id}
+                                  noteText={note.noteText}
+                                  createdByName={note.createdByName}
+                                  createdAt={note.createdAt}
+                                  canEdit={note.createdBy === currentUserId}
+                                  onUpdate={handleUpdateNote}
+                                  onDelete={handleDeleteNote}
+                                />
                               ))}
                             </div>
                           )}

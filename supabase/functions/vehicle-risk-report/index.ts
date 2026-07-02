@@ -80,7 +80,9 @@ Rules:
 - If VIN is not visible or unreadable, use an empty string for vin.
 - If mileage is not visible, use 0 for mileage.
 - Strip commas from mileage values (e.g. 85,432 → 85432).
-- VINs never contain the letters I, O, or Q.`;
+- VINs never contain the letters I, O, or Q.
+
+CRITICAL: Return ONLY raw JSON with no markdown, no code fences, no backticks, no \`\`\`json wrapper, no explanation text before or after. The response must start with { and end with }. Nothing else.`;
 
 const SYSTEM_PROMPT = `You are an experienced auto lending underwriter and mechanical analyst for a subprime/indirect auto finance portfolio. You assess vehicle collateral quality, reliability risk, and lending suitability.
 
@@ -123,7 +125,9 @@ Rules:
 - cons: EXACTLY 5 items. Finance-company-relevant risks with real specifics for this exact year/trim/engine. Each con should include concrete details: known issues, expensive maintenance items with dollar estimates (e.g. "timing belt replacement due at 90k — $800-$1,200"), poor MPG if applicable, upcoming wear items with costs, and anything that increases lending risk.
 - mechanicalOverview: Be specific to this exact vehicle. For any section that would warrant a yellow or red risk badge (known issues, high wear, expensive repairs, mileage concerns), the paragraph MUST include estimated costs with dollar amounts. mileageAssessment MUST explicitly state whether the mileage is good or bad for the vehicle year AND list upcoming maintenance milestones with estimated costs.
 - Be direct and professional. Flag known problem areas for the specific make/model/year/trim when applicable.
-- Do not include portfolio performance — that is handled separately by the application.`;
+- Do not include portfolio performance — that is handled separately by the application.
+
+CRITICAL: Return ONLY raw JSON with no markdown, no code fences, no backticks, no \`\`\`json wrapper, no explanation text before or after. The response must start with { and end with }. Nothing else.`;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -212,10 +216,14 @@ function validateReport(data: unknown): data is VehicleRiskReport {
 }
 
 function extractJson(text: string): unknown {
-  const trimmed = text.trim();
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = fenceMatch ? fenceMatch[1].trim() : trimmed;
-  return JSON.parse(candidate);
+  // Strip markdown code fences — handle ```json, ```, and any whitespace
+  const raw = text
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+
+  return JSON.parse(raw);
 }
 
 function buildUserPrompt(vin: string, mileage: number, nhtsaData: Record<string, string>): string {
@@ -232,7 +240,9 @@ Mileage: ${mileage.toLocaleString()} miles
 NHTSA Decode Data:
 ${nhtsaLines || "(no decode fields provided)"}
 
-Return the JSON report now.`;
+Return the JSON report now.
+
+CRITICAL: Return ONLY raw JSON with no markdown, no code fences, no backticks, no \`\`\`json wrapper, no explanation text before or after. The response must start with { and end with }. Nothing else.`;
 }
 
 async function callAnthropicVision(

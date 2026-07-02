@@ -514,10 +514,12 @@ function App() {
             currentUserId={currentUser.id}
             currentUserRole={currentUser.role}
             calls={calls}
+            setCalls={setCalls}
             goals={goals}
             setGoals={setGoals}
             fundingData={fundingData}
             todayDailyDeals={todayDailyDeals}
+            onRefreshDailyDeals={() => { fetchTodayDailyDeals(); fetchCalls(); }}
           />
         )}
 

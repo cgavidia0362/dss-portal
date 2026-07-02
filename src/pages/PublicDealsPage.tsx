@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare, Users, Trash2 } from 'lucide-react';
+import DealerNameInput from '../components/DealerNameInput';
+import NoteItem from '../components/NoteItem';
 
 interface DailyDeal {
   id: string;
@@ -15,10 +17,15 @@ interface DailyDeal {
   createdAt: string;
 }
 
+interface HistoryDeal extends DailyDeal {
+  dealDate: string;
+}
+
 interface DealNote {
   id: string;
   dealId: string;
   noteText: string;
+  createdBy?: string;
   createdByName: string;
   createdAt: string;
 }
@@ -27,6 +34,7 @@ interface CallDeal {
   id: string;
   applicationId: string;
   dealerName: string;
+  customerName?: string;
   buyerFinal: string;
   state: string;
   fuStatus: string;
@@ -112,6 +120,13 @@ const isSameLocalDate = (dateStr: string, today: string): boolean => {
   return localDate === today;
 };
 
+const toLocalDateString = (dateStr: string): string => {
+  const d = new Date(dateStr);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 export default function PublicDealsPage() {
   const today = getTodayString();
 
@@ -160,9 +175,17 @@ export default function PublicDealsPage() {
   const [popupFuOverrides, setPopupFuOverrides] = useState<{ [callId: string]: string }>({});
   const [popupStatusLastOverrides, setPopupStatusLastOverrides] = useState<{ [callId: string]: string }>({});
   const [popupAmountOverrides, setPopupAmountOverrides] = useState<{ [callId: string]: string }>({});
+  const [dealerNames, setDealerNames] = useState<string[]>([]);
+
+  const [showHistory, setShowHistory] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [datesWithDeals, setDatesWithDeals] = useState<Set<string>>(new Set());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDateDeals, setSelectedDateDeals] = useState<HistoryDeal[]>([]);
 
   useEffect(() => {
-    fetchUsers(); fetchTodayDeals(); fetchCallDealsToday(); fetchTeamGoal();
+    fetchUsers(); fetchTodayDeals(); fetchCallDealsToday(); fetchTeamGoal(); fetchDealerNames();
     const channel = supabase.channel('public_deals_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_deals' }, () => { fetchTodayDeals(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'calls' }, () => { fetchCallDealsToday(); })
@@ -171,8 +194,13 @@ export default function PublicDealsPage() {
   }, []);
 
   useEffect(() => {
+    if (showHistory) fetchDatesWithDeals(calendarYear, calendarMonth);
+  }, [calendarYear, calendarMonth, showHistory]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (showHistory) { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); return; }
         if (dealerPopup) { closeDealerPopup(); return; }
         if (expandedRows.size > 0) { setExpandedRows(new Set()); return; }
         if (editingDeal) { setEditingDeal(null); return; }
@@ -180,7 +208,7 @@ export default function PublicDealsPage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [dealerPopup, expandedRows, editingDeal]);
+  }, [dealerPopup, expandedRows, editingDeal, showHistory]);
 
   const fetchTeamGoal = async () => {
     const { data } = await supabase.from('team_goals').select('team_daily').eq('id', 1).single();
@@ -190,6 +218,96 @@ export default function PublicDealsPage() {
   const fetchUsers = async () => {
     const { data } = await supabase.from('profiles').select('id, name, role').eq('active', true).order('name');
     if (data) setUsers(data.map((u: any) => ({ id: u.id, name: u.name, role: u.role })));
+  };
+
+  const fetchDealerNames = async () => {
+    const names = new Set<string>();
+    const { data: callRows } = await supabase.from('calls').select('dealer_name');
+    const { data: dealRows } = await supabase.from('daily_deals').select('dealer_name');
+    (callRows || []).forEach((r: { dealer_name?: string }) => {
+      if (r.dealer_name?.trim()) names.add(r.dealer_name.trim());
+    });
+    (dealRows || []).forEach((r: { dealer_name?: string }) => {
+      if (r.dealer_name?.trim()) names.add(r.dealer_name.trim());
+    });
+    setDealerNames(Array.from(names).sort((a, b) => a.localeCompare(b)));
+  };
+
+  const fetchDatesWithDeals = async (year: number, month: number) => {
+    const start = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const end = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const dates = new Set<string>();
+
+    const { data: manualDates } = await supabase.from('daily_deals').select('deal_date')
+      .gte('deal_date', start).lte('deal_date', end);
+    (manualDates || []).forEach((d: { deal_date: string }) => dates.add(d.deal_date));
+
+    const { data: callRows } = await supabase.from('calls')
+      .select('deal_date')
+      .in('fu_status', ['Deal', 'Confirmed Deal'])
+      .not('deal_date', 'is', null)
+      .gte('deal_date', `${start}T00:00:00`)
+      .lte('deal_date', `${end}T23:59:59.999`);
+
+    (callRows || []).forEach((c: { deal_date: string }) => {
+      const localDate = toLocalDateString(c.deal_date);
+      if (localDate >= start && localDate <= end) dates.add(localDate);
+    });
+
+    setDatesWithDeals(dates);
+  };
+
+  const fetchDealsByDate = async (dateStr: string) => {
+    const { data: manualData } = await supabase.from('daily_deals').select('*')
+      .eq('deal_date', dateStr).order('created_at', { ascending: false });
+
+    const manualDeals: HistoryDeal[] = (manualData || []).map((d: any) => ({
+      id: d.id, appId: d.app_id, dealerName: d.dealer_name,
+      customerName: d.customer_name, amount: d.amount,
+      state: d.state, fuStatus: d.fu_status,
+      addedBy: d.added_by, addedByName: d.added_by_name,
+      dealDate: d.deal_date, createdAt: d.created_at,
+    }));
+
+    const manualAppIds = new Set(manualDeals.map(d => d.appId.trim().toLowerCase()).filter(Boolean));
+
+    const { data: callData } = await supabase.from('calls')
+      .select('id, application_id, dealer_name, customer_full_name, buyer_final, state, fu_status, deal_date, deal_by, deal_by_name, assigned_to_name')
+      .in('fu_status', ['Deal', 'Confirmed Deal'])
+      .not('deal_date', 'is', null)
+      .gte('deal_date', `${dateStr}T00:00:00`)
+      .lte('deal_date', `${dateStr}T23:59:59.999`);
+
+    const callDeals: HistoryDeal[] = (callData || [])
+      .filter((c: any) => c.deal_date && isSameLocalDate(c.deal_date, dateStr))
+      .filter((c: any) => !manualAppIds.has((c.application_id || '').trim().toLowerCase()))
+      .map((c: any) => ({
+        id: `call-${c.id}`,
+        appId: c.application_id,
+        dealerName: c.dealer_name,
+        customerName: c.customer_full_name || '—',
+        amount: c.buyer_final || '0',
+        state: c.state,
+        fuStatus: c.fu_status,
+        addedBy: c.deal_by || '',
+        addedByName: c.deal_by_name || c.assigned_to_name || 'Unknown',
+        dealDate: dateStr,
+        createdAt: c.deal_date,
+      }));
+
+    const combined = [...manualDeals, ...callDeals].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    setSelectedDateDeals(combined);
+  };
+
+  const handleCalendarClick = (day: number) => {
+    const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    if (dateStr >= today || !datesWithDeals.has(dateStr)) return;
+    if (selectedDate === dateStr) { setSelectedDate(null); setSelectedDateDeals([]); return; }
+    setSelectedDate(dateStr);
+    fetchDealsByDate(dateStr);
   };
 
   const fetchTodayDeals = async () => {
@@ -210,12 +328,13 @@ export default function PublicDealsPage() {
 
   const fetchCallDealsToday = async () => {
     const { data } = await supabase.from('calls')
-      .select('id, application_id, dealer_name, buyer_final, state, fu_status, deal_date, deal_by, deal_by_name, assigned_to, assigned_to_name')
+      .select('id, application_id, dealer_name, customer_full_name, buyer_final, state, fu_status, deal_date, deal_by, deal_by_name, assigned_to, assigned_to_name')
       .in('fu_status', ['Deal', 'Confirmed Deal']).not('deal_date', 'is', null);
     if (data) {
       const todayCalls = data.filter((c: any) => c.deal_date && isSameLocalDate(c.deal_date, today));
       setCallDealsToday(todayCalls.map((c: any) => ({
         id: c.id, applicationId: c.application_id, dealerName: c.dealer_name,
+        customerName: c.customer_full_name || undefined,
         buyerFinal: c.buyer_final || '0', state: c.state, fuStatus: c.fu_status,
         dealBy: c.deal_by || undefined, dealByName: c.deal_by_name || undefined,
         assignedTo: c.assigned_to || undefined, assignedToName: c.assigned_to_name || undefined,
@@ -231,7 +350,10 @@ export default function PublicDealsPage() {
       const grouped: { [id: string]: DealNote[] } = {};
       data.forEach((n: any) => {
         if (!grouped[n.deal_id]) grouped[n.deal_id] = [];
-        grouped[n.deal_id].push({ id: n.id, dealId: n.deal_id, noteText: n.note_text, createdByName: n.created_by_name, createdAt: n.created_at });
+        grouped[n.deal_id].push({
+          id: n.id, dealId: n.deal_id, noteText: n.note_text,
+          createdBy: n.created_by, createdByName: n.created_by_name, createdAt: n.created_at,
+        });
       });
       setDealNotes(grouped);
     }
@@ -309,6 +431,7 @@ export default function PublicDealsPage() {
       application_id: call?.application_id || '',
       dealer_name: dealerPopup || '',
       note_text: text,
+      created_by: selectedUser || null,
       created_by_name: user?.name || 'Anonymous',
     }).select().single();
     if (!err && data) {
@@ -366,7 +489,7 @@ export default function PublicDealsPage() {
       const user = users.find(u => u.id === selectedUser);
       const { error: err } = await supabase.from('daily_deals').insert({
         app_id: form.appId.trim(), dealer_name: form.dealerName.trim(),
-        customer_name: form.customerName.trim() || '',
+        customer_name: form.customerName.trim() || linkedCall?.customer_full_name || '',
         amount: form.amount.trim(), state: form.state.trim().toUpperCase(),
         fu_status: form.fuStatus, added_by: selectedUser,
         added_by_name: user?.name || 'Unknown', deal_date: today,
@@ -431,11 +554,51 @@ export default function PublicDealsPage() {
     if (!text) return;
     const currentUser = users.find(u => u.id === selectedUser);
     const { error: err } = await supabase.from('daily_deal_notes').insert({
-      deal_id: dealId, note_text: text, created_by_name: currentUser?.name || 'Anonymous',
+      deal_id: dealId, note_text: text,
+      created_by: selectedUser || null,
+      created_by_name: currentUser?.name || 'Anonymous',
     });
     if (err) return;
     setNewNoteText(prev => ({ ...prev, [dealId]: '' }));
     await fetchNotesForDeals(todayDeals.map(d => d.id));
+  };
+
+  const handleUpdateDealNote = async (noteId: string, text: string) => {
+    const { error } = await supabase.from('daily_deal_notes').update({ note_text: text }).eq('id', noteId);
+    if (!error) await fetchNotesForDeals(todayDeals.map(d => d.id));
+  };
+
+  const handleDeleteDealNote = async (noteId: string) => {
+    const { error } = await supabase.from('daily_deal_notes').delete().eq('id', noteId);
+    if (!error) await fetchNotesForDeals(todayDeals.map(d => d.id));
+  };
+
+  const handleUpdatePopupNote = async (noteId: string, text: string) => {
+    const { error } = await supabase.from('call_notes').update({ note_text: text }).eq('id', noteId);
+    if (!error) {
+      setPopupNotes(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(callId => {
+          next[callId] = next[callId].map((n: any) =>
+            n.id === noteId ? { ...n, note_text: text } : n
+          );
+        });
+        return next;
+      });
+    }
+  };
+
+  const handleDeletePopupNote = async (noteId: string) => {
+    const { error } = await supabase.from('call_notes').delete().eq('id', noteId);
+    if (!error) {
+      setPopupNotes(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(callId => {
+          next[callId] = next[callId].filter((n: any) => n.id !== noteId);
+        });
+        return next;
+      });
+    }
   };
 
   const startEditing = (entry: CombinedEntry) => {
@@ -461,8 +624,16 @@ export default function PublicDealsPage() {
 
   const ddDealCount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').length;
   const ddTotalAmount = todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').reduce((s, d) => s + parseAmount(d.amount), 0);
-  const callDealCount = callDealsToday.length;
-  const callDealAmount = callDealsToday.reduce((s, c) => s + parseAmount(c.buyerFinal), 0);
+
+  const manualAppIdsToday = new Set(
+    todayDeals.map(d => d.appId.trim().toLowerCase()).filter(Boolean),
+  );
+  const callDealsForToday = callDealsToday.filter(
+    c => !manualAppIdsToday.has(c.applicationId.trim().toLowerCase()),
+  );
+
+  const callDealCount = callDealsForToday.length;
+  const callDealAmount = callDealsForToday.reduce((s, c) => s + parseAmount(c.buyerFinal), 0);
   const totalDealCount = ddDealCount + callDealCount;
   const totalAmount = ddTotalAmount + callDealAmount;
   const goalPct = teamGoal > 0 ? Math.min((totalDealCount / teamGoal) * 100, 100) : 0;
@@ -475,9 +646,9 @@ export default function PublicDealsPage() {
       creditName: d.addedByName, creditId: d.addedBy,
       sortTime: new Date(d.createdAt).getTime(),
     })),
-    ...callDealsToday.map(c => ({
+    ...callDealsForToday.map(c => ({
       id: c.id, source: 'call' as const,
-      appId: c.applicationId, dealerName: c.dealerName, customerName: '—',
+      appId: c.applicationId, dealerName: c.dealerName, customerName: c.customerName || '—',
       amount: callOverrides[c.id]?.amount ?? c.buyerFinal,
       state: c.state, fuStatus: callOverrides[c.id]?.fuStatus ?? c.fuStatus,
       creditName: c.dealByName || c.assignedToName || 'Unknown',
@@ -497,7 +668,7 @@ export default function PublicDealsPage() {
       if (!repMap[d.addedBy]) repMap[d.addedBy] = { name: d.addedByName, dealCount: 0, amount: 0, role: roleMap[d.addedBy] || 'rep' };
       repMap[d.addedBy].dealCount++; repMap[d.addedBy].amount += parseAmount(d.amount);
     });
-    callDealsToday.forEach(c => {
+    callDealsForToday.forEach(c => {
       const creditId = c.dealBy || c.assignedTo;
       const creditName = c.dealByName || c.assignedToName || nameMap[creditId || ''] || 'Unknown';
       if (!creditId) return;
@@ -521,6 +692,12 @@ export default function PublicDealsPage() {
         return true;
       });
 
+  const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const calendarDays: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) calendarDays.push(null);
+  for (let d = 1; d <= daysInMonth; d++) calendarDays.push(d);
+
   return (
     <div className="min-h-screen bg-gray-900">
       <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
@@ -534,6 +711,15 @@ export default function PublicDealsPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+        <div className="flex justify-end">
+          <button
+            onClick={() => { setShowHistory(true); fetchDatesWithDeals(calendarYear, calendarMonth); }}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-lg text-sm transition"
+          >
+            📅 View History
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-start">
           <div className="space-y-4">
 
@@ -673,9 +859,13 @@ export default function PublicDealsPage() {
                       </div>
                       <div>
                         <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
-                        <input type="text" value={form.dealerName} onChange={e => setForm({ ...form, dealerName: e.target.value })}
+                        <DealerNameInput
+                          value={form.dealerName}
+                          onChange={(dealerName) => setForm({ ...form, dealerName })}
+                          suggestions={dealerNames}
                           placeholder="Dealer name"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
                       </div>
                       <div>
                         <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer *</label>
@@ -897,10 +1087,16 @@ export default function PublicDealsPage() {
                                   {notes.length === 0 ? <p className="text-sm text-gray-500 italic">No notes yet.</p> : (
                                     <div className="space-y-2">
                                       {notes.map(note => (
-                                        <div key={note.id} className="bg-gray-700 px-3 py-2 rounded-lg border border-gray-600">
-                                          <p className="text-sm text-gray-200">{note.noteText}</p>
-                                          <p className="text-xs text-gray-500 mt-1">{note.createdByName} · {new Date(note.createdAt).toLocaleString()}</p>
-                                        </div>
+                                        <NoteItem
+                                          key={note.id}
+                                          id={note.id}
+                                          noteText={note.noteText}
+                                          createdByName={note.createdByName}
+                                          createdAt={note.createdAt}
+                                          canEdit={!!selectedUser && note.createdBy === selectedUser}
+                                          onUpdate={handleUpdateDealNote}
+                                          onDelete={handleDeleteDealNote}
+                                        />
                                       ))}
                                     </div>
                                   )}
@@ -1097,10 +1293,16 @@ export default function PublicDealsPage() {
                                     {callNotes.length === 0 ? <p className="text-sm text-gray-500 italic">No notes yet.</p> : (
                                       <div className="space-y-2">
                                         {callNotes.map((note: any) => (
-                                          <div key={note.id} className="bg-gray-700 px-3 py-2 rounded-lg border border-gray-600">
-                                            <p className="text-sm text-gray-200">{note.note_text}</p>
-                                            <p className="text-xs text-gray-500 mt-1">{note.created_by_name} · {new Date(note.created_at).toLocaleString()}</p>
-                                          </div>
+                                          <NoteItem
+                                            key={note.id}
+                                            id={note.id}
+                                            noteText={note.note_text}
+                                            createdByName={note.created_by_name}
+                                            createdAt={note.created_at}
+                                            canEdit={!!selectedUser && note.created_by === selectedUser}
+                                            onUpdate={handleUpdatePopupNote}
+                                            onDelete={handleDeletePopupNote}
+                                          />
                                         ))}
                                       </div>
                                     )}
@@ -1133,6 +1335,98 @@ export default function PublicDealsPage() {
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-amber-400" />
                     <span className="text-xs text-amber-300">Amber = uploaded today</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* HISTORY MODAL */}
+        {showHistory && (
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-16 z-50 px-4"
+            onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}>
+            <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 shrink-0">
+                <h3 className="text-lg font-semibold text-gray-100">Deal History</h3>
+                <button onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}
+                  className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              </div>
+              <div className="p-6 overflow-y-auto flex-1 min-h-0">
+                <div className="flex items-center justify-between mb-4">
+                  <button onClick={() => { if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); } else setCalendarMonth(m => m - 1); }}
+                    className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">‹</button>
+                  <span className="text-base font-medium text-gray-100">{monthNames[calendarMonth]} {calendarYear}</span>
+                  <button onClick={() => { if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); } else setCalendarMonth(m => m + 1); }}
+                    className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">›</button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 mb-2">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                    <div key={d} className="text-center text-xs text-gray-500 py-1">{d}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1 mb-4">
+                  {calendarDays.map((day, i) => {
+                    if (!day) return <div key={i} />;
+                    const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const isTodayDate = dateStr === today;
+                    const isFuture = dateStr > today;
+                    const hasDeals = datesWithDeals.has(dateStr);
+                    const isSelected = selectedDate === dateStr;
+                    let cls = 'relative text-center text-sm py-2 rounded-lg transition font-normal ';
+                    if (isTodayDate) cls += 'bg-blue-600 text-white font-medium';
+                    else if (isFuture) cls += 'text-gray-600';
+                    else if (isSelected) cls += 'bg-blue-900 border border-blue-500 text-blue-300 cursor-pointer';
+                    else if (hasDeals) cls += 'bg-green-900 text-green-300 hover:bg-green-800 cursor-pointer font-medium';
+                    else cls += 'text-gray-500';
+                    return (
+                      <div key={i} className={cls} onClick={() => handleCalendarClick(day)}>
+                        {day}
+                        {hasDeals && !isTodayDate && !isSelected && (
+                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-green-400 block" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-5 mb-4 pb-4 border-b border-gray-700">
+                  <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-400" /><span className="text-xs text-gray-400">Has entries</span></div>
+                  <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-blue-500" /><span className="text-xs text-gray-400">Today</span></div>
+                </div>
+                {selectedDate && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-gray-200">{formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}</p>
+                      <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-gray-400 hover:text-gray-200">clear</button>
+                    </div>
+                    <div className="rounded-lg border border-gray-700 overflow-hidden max-h-[45vh] overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-700 sticky top-0 z-10">
+                          <tr>{['App ID', 'Dealer', 'Customer', 'Amount', 'State', 'Status', 'By'].map(h => (
+                            <th key={h} className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{h}</th>
+                          ))}</tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-700 bg-gray-800">
+                          {selectedDateDeals.map(deal => (
+                            <tr key={deal.id} className="hover:bg-gray-750">
+                              <td className="px-3 py-2.5 text-blue-400 font-medium">
+                                {deal.appId}
+                                {deal.id.startsWith('call-') && (
+                                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300 border border-blue-800">Calls</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-200">{deal.dealerName}</td>
+                              <td className="px-3 py-2.5 text-gray-200">{deal.customerName}</td>
+                              <td className="px-3 py-2.5 font-medium text-gray-100">{formatCurrency(parseAmount(deal.amount))}</td>
+                              <td className="px-3 py-2.5"><span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{deal.state}</span></td>
+                              <td className="px-3 py-2.5"><span className={`px-2 py-0.5 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>{deal.fuStatus}</span></td>
+                              <td className="px-3 py-2.5 text-gray-400">{deal.addedByName}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>

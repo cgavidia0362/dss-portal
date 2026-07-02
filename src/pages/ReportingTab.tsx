@@ -1,17 +1,23 @@
-import { useState, useEffect } from 'react';
-import { Target, Settings } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Target, Settings, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
   id: string;
+  applicationId: string;
+  dealerName: string;
+  customerName?: string;
   state: string;
   fuStatus?: string;
+  statusLast: string;
   submittedDate: string;
   dealDate?: Date;
   updatedAt: Date;
+  createdAt?: Date;
   assignedTo?: string;
   assignedToName?: string;
-  amount?: number;
+  dealBy?: string;
+  dealByName?: string;
   buyerFinal?: string;
 }
 
@@ -48,31 +54,84 @@ interface FundingData {
   [state: string]: { count: number; totalAmount: number };
 }
 
-interface DailyDealSummary {
+interface MonthlyDailyDeal {
   id: string;
+  appId: string;
+  dealerName: string;
+  customerName: string;
   addedBy: string;
+  addedByName: string;
   fuStatus: string;
   dealDate: string;
   amount: string;
+  state: string;
+}
+
+interface RepDealRow {
+  key: string;
+  source: 'call' | 'manual';
+  id: string;
+  applicationId: string;
+  dealerName: string;
+  customerName: string;
+  state: string;
+  amount: number;
+  date: Date;
+  statusLast: string;
+  activity: string;
+  fuStatus: string;
+  note: string;
 }
 
 interface ReportingTabProps {
   currentUserId: string;
   currentUserRole: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   calls: Call[];
+  setCalls: React.Dispatch<React.SetStateAction<any[]>>;
   goals: Goals;
   setGoals: (goals: Goals) => void;
   fundingData: FundingData;
-  todayDailyDeals?: DailyDealSummary[];
+  todayDailyDeals?: { id: string; addedBy: string; fuStatus: string; dealDate: string; amount: string; state: string }[];
+  onRefreshDailyDeals?: () => void;
 }
 
 type TimePeriod = 'daily' | 'weekly' | 'monthly';
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const FU_OPTIONS = ['Deal', 'Confirmed Deal', 'No Deal', 'Pending', 'No Answer', 'Closed', 'Duplicates', 'Follow Up'];
+
+const parseAmount = (str: string) =>
+  parseFloat((str || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
+const isDealStatus = (s?: string) => s === 'Deal' || s === 'Confirmed Deal';
+
+const formatLastActivity = (call: Call): string => {
+  if (!call.updatedAt) return '—';
+  if (call.createdAt) {
+    const diffMs = Math.abs(call.updatedAt.getTime() - new Date(call.createdAt).getTime());
+    if (diffMs < 5 * 60 * 1000) return '—';
+  }
+  const date = new Date(call.updatedAt);
+  const today = new Date();
+  const isToday = date.toDateString() === today.toDateString();
+  const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+    .replace(' AM', 'am').replace(' PM', 'pm');
+  if (isToday) return `Today ${timeStr}`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
 export default function ReportingTab({
-  currentUserId, currentUserRole, calls, goals, setGoals, fundingData, todayDailyDeals,
+  currentUserId, currentUserRole, calls, setCalls, goals, setGoals, fundingData,
+  todayDailyDeals, onRefreshDailyDeals,
 }: ReportingTabProps) {
+  const now = new Date();
+  const [viewYear, setViewYear] = useState(now.getFullYear());
+  const [viewMonth, setViewMonth] = useState(now.getMonth() + 1);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+
   const [stateGoals, setStateGoals] = useState<StateGoal[]>([]);
   const [stateStats, setStateStats] = useState<StateStats[]>([]);
+  const [monthlyDailyDeals, setMonthlyDailyDeals] = useState<MonthlyDailyDeal[]>([]);
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [selectedState, setSelectedState] = useState('');
   const [goalForm, setGoalForm] = useState({ monthlyGoal: '', fundingDays: '' });
@@ -87,26 +146,59 @@ export default function ReportingTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const currentMonth = new Date().getMonth() + 1;
-  const currentYear = new Date().getFullYear();
-  const currentDay = new Date().getDate();
+  const [repDealsModal, setRepDealsModal] = useState<{ repId: string; repName: string } | null>(null);
+  const [repDealsRows, setRepDealsRows] = useState<RepDealRow[]>([]);
+  const [repDealsLoading, setRepDealsLoading] = useState(false);
 
-  useEffect(() => { fetchStateGoals(); }, []);
-  useEffect(() => { if (stateGoals.length > 0) calculateStateStats(); }, [stateGoals, calls, fundingData]);
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+  const currentDay = now.getDate();
+  const isViewingCurrentMonth = viewYear === currentYear && viewMonth === currentMonth;
 
-  const fetchStateGoals = async () => {
+  const viewMonthLabel = `${MONTH_NAMES[viewMonth - 1]} ${viewYear}`;
+
+  const fetchMonthlyDailyDeals = useCallback(async () => {
+    const start = `${viewYear}-${String(viewMonth).padStart(2, '0')}-01`;
+    const lastDay = new Date(viewYear, viewMonth, 0).getDate();
+    const end = `${viewYear}-${String(viewMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const { data } = await supabase
+      .from('daily_deals')
+      .select('id, app_id, dealer_name, customer_name, added_by, added_by_name, fu_status, deal_date, amount, state')
+      .gte('deal_date', start)
+      .lte('deal_date', end);
+    if (data) {
+      setMonthlyDailyDeals(data.map((d: any) => ({
+        id: d.id,
+        appId: d.app_id,
+        dealerName: d.dealer_name || '',
+        customerName: d.customer_name || '',
+        addedBy: d.added_by || '',
+        addedByName: d.added_by_name || '',
+        fuStatus: d.fu_status || '',
+        dealDate: d.deal_date,
+        amount: d.amount || '0',
+        state: d.state || '',
+      })));
+    }
+  }, [viewYear, viewMonth]);
+
+  const fetchStateGoals = useCallback(async () => {
     try {
       const { data, error: fetchError } = await supabase
-        .from('state_goals').select('*').eq('month', currentMonth).eq('year', currentYear);
+        .from('state_goals').select('*').eq('month', viewMonth).eq('year', viewYear);
       if (fetchError) throw fetchError;
       if (data) {
         setStateGoals(data.map((g: any) => ({
           id: g.id, state: g.state, month: g.month, year: g.year,
           monthlyGoal: g.monthly_goal, fundingDays: g.funding_days,
         })));
+      } else {
+        setStateGoals([]);
       }
     } catch (err: any) { console.error('Error fetching goals:', err); }
-  };
+  }, [viewMonth, viewYear]);
+
+  useEffect(() => { fetchStateGoals(); fetchMonthlyDailyDeals(); }, [fetchStateGoals, fetchMonthlyDailyDeals]);
 
   const countBusinessDaysElapsed = (year: number, month: number, toDay: number): number => {
     let count = 0;
@@ -118,24 +210,51 @@ export default function ReportingTab({
     return count;
   };
 
-  const calculateStateStats = () => {
-    const states = [...new Set(calls.map(c => c.state))].sort();
+  const calculateStateStats = useCallback(() => {
+    const monthStart = new Date(viewYear, viewMonth - 1, 1);
+    const monthEnd = new Date(viewYear, viewMonth, 0, 23, 59, 59, 999);
+    const lastDayOfMonth = monthEnd.getDate();
+    const refDay = isViewingCurrentMonth ? currentDay : lastDayOfMonth;
+
+    const states = [...new Set([
+      ...calls.map(c => c.state),
+      ...monthlyDailyDeals.map(d => d.state),
+    ].filter(Boolean))].sort();
+
     const stats: StateStats[] = states.map(state => {
       const stateCalls = calls.filter(c => c.state === state);
       const totalApps = stateCalls.length;
 
       let funded = 0;
       let totalAmount = 0;
-      if (fundingData[state]) {
+
+      if (isViewingCurrentMonth && fundingData[state]) {
         funded = fundingData[state].count;
         totalAmount = fundingData[state].totalAmount;
       } else {
-        funded = stateCalls.filter(call => {
-          if (!call.dealDate) return false;
+        const callFunded = stateCalls.filter(call => {
+          if (!call.dealDate || !isDealStatus(call.fuStatus)) return false;
           const d = new Date(call.dealDate);
-          return (call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal') &&
-            d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
-        }).length;
+          return d >= monthStart && d <= monthEnd;
+        });
+        const manualFunded = monthlyDailyDeals.filter(d =>
+          d.state === state && isDealStatus(d.fuStatus)
+        );
+        const seenApps = new Set<string>();
+        callFunded.forEach(c => {
+          if (!seenApps.has(c.applicationId)) {
+            seenApps.add(c.applicationId);
+            funded++;
+            totalAmount += parseAmount(c.buyerFinal || '0');
+          }
+        });
+        manualFunded.forEach(d => {
+          if (!seenApps.has(d.appId)) {
+            seenApps.add(d.appId);
+            funded++;
+            totalAmount += parseAmount(d.amount);
+          }
+        });
       }
 
       const stateGoal = stateGoals.find(g => g.state === state);
@@ -143,14 +262,302 @@ export default function ReportingTab({
       const fundingDays = stateGoal?.fundingDays || 20;
       const dailyGoal = monthlyGoal > 0 ? Math.round(monthlyGoal / fundingDays) : 0;
       const progress = monthlyGoal > 0 ? (funded / monthlyGoal) * 100 : 0;
-      const daysElapsed = countBusinessDaysElapsed(currentYear, currentMonth, currentDay);
-      const daysRemaining = Math.max(fundingDays - daysElapsed, 0);
+      const daysElapsed = countBusinessDaysElapsed(viewYear, viewMonth, refDay);
+      const daysRemaining = isViewingCurrentMonth
+        ? Math.max(fundingDays - daysElapsed, 0)
+        : 0;
       const neededPerDay = monthlyGoal > 0 && daysRemaining > 0
         ? Math.ceil((monthlyGoal - funded) / daysRemaining) : 0;
 
       return { state, totalApps, funded, totalAmount, monthlyGoal, fundingDays, dailyGoal, progress, neededPerDay, daysRemaining };
     });
     setStateStats(stats);
+  }, [calls, monthlyDailyDeals, stateGoals, fundingData, viewYear, viewMonth, isViewingCurrentMonth, currentDay]);
+
+  useEffect(() => { calculateStateStats(); }, [calculateStateStats]);
+
+  const getPeriodBounds = (p: TimePeriod): { start: Date; end: Date } => {
+    if (isViewingCurrentMonth) {
+      if (p === 'daily') {
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        return { start, end: now };
+      }
+      if (p === 'weekly') {
+        const start = new Date(now);
+        start.setDate(now.getDate() - now.getDay());
+        start.setHours(0, 0, 0, 0);
+        return { start, end: now };
+      }
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { start, end: now };
+    }
+
+    const lastDay = new Date(viewYear, viewMonth, 0).getDate();
+    const monthEnd = new Date(viewYear, viewMonth - 1, lastDay, 23, 59, 59, 999);
+    const monthStart = new Date(viewYear, viewMonth - 1, 1);
+
+    if (p === 'monthly') return { start: monthStart, end: monthEnd };
+    if (p === 'daily') {
+      const start = new Date(viewYear, viewMonth - 1, lastDay);
+      start.setHours(0, 0, 0, 0);
+      return { start, end: monthEnd };
+    }
+    const start = new Date(monthEnd);
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    if (start < monthStart) start.setTime(monthStart.getTime());
+    return { start, end: monthEnd };
+  };
+
+  const isInBounds = (date: Date, bounds: { start: Date; end: Date }) =>
+    date >= bounds.start && date <= bounds.end;
+
+  const filterCallsByPeriod = (p: TimePeriod) => {
+    const bounds = getPeriodBounds(p);
+    return calls.filter(c => {
+      const d = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
+      return isInBounds(d, bounds);
+    });
+  };
+
+  const filterManualDealsByPeriod = (p: TimePeriod) => {
+    const bounds = getPeriodBounds(p);
+    const deals = isViewingCurrentMonth && p === 'daily'
+      ? (todayDailyDeals || []).map(d => {
+          const full = monthlyDailyDeals.find(m => m.id === d.id);
+          return full || {
+            id: d.id, appId: '', dealerName: '', customerName: '',
+            addedBy: d.addedBy, addedByName: '', fuStatus: d.fuStatus,
+            dealDate: d.dealDate, amount: d.amount, state: d.state,
+          };
+        })
+      : monthlyDailyDeals;
+
+    return deals.filter(d => {
+      const parts = d.dealDate.split('-');
+      const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      return isInBounds(date, bounds) && isDealStatus(d.fuStatus);
+    });
+  };
+
+  const getAmount = (call: Call) => parseAmount(call.buyerFinal || '0');
+
+  const periodCalls = filterCallsByPeriod(period);
+  const periodDealCalls = periodCalls.filter(c => isDealStatus(c.fuStatus));
+  const periodManualDeals = filterManualDealsByPeriod(period);
+
+  const seenPeriodApps = new Set(periodDealCalls.map(c => c.applicationId));
+  const uniqueManualForPeriod = periodManualDeals.filter(d => !seenPeriodApps.has(d.appId));
+
+  const periodTotalDeals = periodDealCalls.length + uniqueManualForPeriod.length;
+  const csvTotalAmount = periodDealCalls.reduce((sum, c) => sum + getAmount(c), 0);
+  const manualTotalAmount = uniqueManualForPeriod.reduce((sum, d) => sum + parseAmount(d.amount), 0);
+  const periodTotalAmount = csvTotalAmount + manualTotalAmount;
+  const periodAvgDeal = periodTotalDeals > 0 ? periodTotalAmount / periodTotalDeals : 0;
+
+  const monthBounds = getPeriodBounds('monthly');
+  const monthDealCalls = calls.filter(c => {
+    if (!isDealStatus(c.fuStatus) || !c.dealDate) return false;
+    return isInBounds(new Date(c.dealDate), monthBounds);
+  });
+  const monthManualDeals = monthlyDailyDeals.filter(d => isDealStatus(d.fuStatus));
+  const seenMonthApps = new Set(monthDealCalls.map(c => c.applicationId));
+  const uniqueMonthManual = monthManualDeals.filter(d => !seenMonthApps.has(d.appId));
+  const monthTotalDeals = monthDealCalls.length + uniqueMonthManual.length;
+
+  const totalCalls = calls.length;
+  const totalNoCall = calls.filter(c => !c.fuStatus || c.fuStatus === '').length;
+  const totalPending = calls.filter(c => c.fuStatus === 'Pending').length;
+
+  const todayBounds = getPeriodBounds('daily');
+  const csvDealsToday = calls.filter(c =>
+    isDealStatus(c.fuStatus) && c.dealDate && isInBounds(new Date(c.dealDate), todayBounds)
+  ).length;
+  const manualDealsToday = isViewingCurrentMonth
+    ? (todayDailyDeals || []).filter(d => isDealStatus(d.fuStatus)).length
+    : filterManualDealsByPeriod('daily').length;
+  const dealsToday = csvDealsToday + manualDealsToday;
+  const teamGoalPct = goals.team > 0 ? Math.min((dealsToday / goals.team) * 100, 100) : 0;
+  const monthlyGoalPct = goals.monthly > 0 ? Math.min((monthTotalDeals / goals.monthly) * 100, 100) : 0;
+
+  const dealsByState = [...periodDealCalls, ...uniqueManualForPeriod.map(d => ({
+    state: d.state, amount: parseAmount(d.amount),
+  }))].reduce((acc: { state: string; deals: number; amount: number }[], item: any) => {
+    const state = item.state || '—';
+    const amount = typeof item.amount === 'number' ? item.amount : getAmount(item);
+    const ex = acc.find(i => i.state === state);
+    if (ex) { ex.deals++; ex.amount += amount; }
+    else acc.push({ state, deals: 1, amount });
+    return acc;
+  }, []).sort((a, b) => b.deals - a.deals);
+
+  const calculateRepPerformance = (p: TimePeriod) => {
+    const bounds = getPeriodBounds(p);
+    const filtered = calls.filter(c => {
+      const d = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
+      return isInBounds(d, bounds);
+    });
+
+    const repData = filtered.reduce((acc: any[], call) => {
+      if (!call.assignedTo || !call.assignedToName) return acc;
+      const ex = acc.find(r => r.repId === call.assignedTo);
+      const isDeal = isDealStatus(call.fuStatus);
+      const isConfirmed = call.fuStatus === 'Confirmed Deal';
+      const isPending = call.fuStatus === 'Pending';
+      const isNoAnswer = call.fuStatus === 'No Answer';
+      const isNoCall = !call.fuStatus || call.fuStatus === '';
+      if (ex) {
+        ex.totalCalls++;
+        if (isDeal) ex.deals++;
+        if (isConfirmed) ex.confirmedDeals++;
+        if (isPending) ex.pending++;
+        if (isNoAnswer) ex.noAnswer++;
+        if (isNoCall) ex.noCall++;
+      } else {
+        acc.push({
+          repId: call.assignedTo, repName: call.assignedToName,
+          totalCalls: 1,
+          deals: isDeal ? 1 : 0,
+          confirmedDeals: isConfirmed ? 1 : 0,
+          pending: isPending ? 1 : 0,
+          noAnswer: isNoAnswer ? 1 : 0,
+          noCall: isNoCall ? 1 : 0,
+        });
+      }
+      return acc;
+    }, []);
+
+    const manualInPeriod = filterManualDealsByPeriod(p);
+    manualInPeriod.forEach(deal => {
+      if (!deal.addedBy) return;
+      const ex = repData.find(r => r.repId === deal.addedBy);
+      if (ex) {
+        ex.deals++;
+        if (deal.fuStatus === 'Confirmed Deal') ex.confirmedDeals++;
+      } else {
+        repData.push({
+          repId: deal.addedBy,
+          repName: deal.addedByName || 'Unknown',
+          totalCalls: 0,
+          deals: 1,
+          confirmedDeals: deal.fuStatus === 'Confirmed Deal' ? 1 : 0,
+          pending: 0,
+          noAnswer: 0,
+          noCall: 0,
+        });
+      }
+    });
+
+    repData.forEach(r => {
+      r.conversionRate = r.totalCalls > 0 ? ((r.confirmedDeals / r.totalCalls) * 100).toFixed(1) : '0';
+    });
+    return repData.sort((a: any, b: any) => b.deals - a.deals);
+  };
+
+  const repPerformance = calculateRepPerformance(repPeriod);
+
+  const openRepDealsModal = async (repId: string, repName: string) => {
+    setRepDealsModal({ repId, repName });
+    setRepDealsLoading(true);
+    setRepDealsRows([]);
+
+    const bounds = getPeriodBounds(repPeriod);
+    const repCalls = calls.filter(c => {
+      if (!isDealStatus(c.fuStatus)) return false;
+      const repMatch = c.assignedTo === repId || c.dealBy === repId;
+      if (!repMatch) return false;
+      const d = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
+      return isInBounds(d, bounds);
+    });
+
+    const repManual = filterManualDealsByPeriod(repPeriod).filter(d => d.addedBy === repId);
+    const seenApps = new Set(repCalls.map(c => c.applicationId));
+
+    const callIds = repCalls.map(c => c.id);
+    const manualIds = repManual.map(d => d.id);
+    const notesMap: Record<string, string> = {};
+
+    if (callIds.length > 0) {
+      const { data } = await supabase.from('call_notes').select('call_id, note_text, created_at')
+        .in('call_id', callIds).order('created_at', { ascending: false });
+      data?.forEach((n: any) => {
+        if (!notesMap[`call-${n.call_id}`]) notesMap[`call-${n.call_id}`] = n.note_text;
+      });
+    }
+    if (manualIds.length > 0) {
+      const { data } = await supabase.from('daily_deal_notes').select('deal_id, note_text, created_at')
+        .in('deal_id', manualIds).order('created_at', { ascending: false });
+      data?.forEach((n: any) => {
+        if (!notesMap[`manual-${n.deal_id}`]) notesMap[`manual-${n.deal_id}`] = n.note_text;
+      });
+    }
+
+    const rows: RepDealRow[] = repCalls.map(c => ({
+      key: `call-${c.id}`,
+      source: 'call',
+      id: c.id,
+      applicationId: c.applicationId,
+      dealerName: c.dealerName,
+      customerName: c.customerName || '—',
+      state: c.state,
+      amount: getAmount(c),
+      date: c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt),
+      statusLast: c.statusLast || '—',
+      activity: formatLastActivity(c),
+      fuStatus: c.fuStatus || '',
+      note: notesMap[`call-${c.id}`] || '—',
+    }));
+
+    repManual.forEach(d => {
+      if (seenApps.has(d.appId)) return;
+      seenApps.add(d.appId);
+      const parts = d.dealDate.split('-');
+      rows.push({
+        key: `manual-${d.id}`,
+        source: 'manual',
+        id: d.id,
+        applicationId: d.appId,
+        dealerName: d.dealerName,
+        customerName: d.customerName || '—',
+        state: d.state,
+        amount: parseAmount(d.amount),
+        date: new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])),
+        statusLast: '—',
+        activity: '—',
+        fuStatus: d.fuStatus,
+        note: notesMap[`manual-${d.id}`] || '—',
+      });
+    });
+
+    rows.sort((a, b) => b.date.getTime() - a.date.getTime());
+    setRepDealsRows(rows);
+    setRepDealsLoading(false);
+  };
+
+  const handleRepDealStatusChange = async (row: RepDealRow, newStatus: string) => {
+    if (row.source === 'call') {
+      const existingDealDate = calls.find(c => c.id === row.id)?.dealDate;
+      const dealDate = newStatus === 'Deal' && !existingDealDate ? new Date() : existingDealDate;
+      setCalls(prev => prev.map(c => c.id === row.id
+        ? { ...c, fuStatus: newStatus, updatedAt: new Date(), dealDate: isDealStatus(newStatus) ? dealDate : c.dealDate }
+        : c
+      ));
+      await supabase.from('calls').update({
+        fu_status: newStatus || null,
+        deal_date: newStatus === 'Deal' && !existingDealDate
+          ? new Date().toISOString()
+          : (existingDealDate ? new Date(existingDealDate).toISOString() : null),
+        updated_at: new Date().toISOString(),
+      }).eq('id', row.id);
+    } else {
+      await supabase.from('daily_deals').update({ fu_status: newStatus }).eq('id', row.id);
+      setMonthlyDailyDeals(prev => prev.map(d => d.id === row.id ? { ...d, fuStatus: newStatus } : d));
+      onRefreshDailyDeals?.();
+    }
+    setRepDealsRows(prev => {
+      if (!isDealStatus(newStatus)) return prev.filter(r => r.key !== row.key);
+      return prev.map(r => r.key === row.key ? { ...r, fuStatus: newStatus } : r);
+    });
   };
 
   const handleSetGoal = async () => {
@@ -160,7 +567,7 @@ export default function ReportingTab({
     try {
       setLoading(true); setError('');
       const { error: upsertError } = await supabase.from('state_goals').upsert(
-        { state: selectedState, month: currentMonth, year: currentYear,
+        { state: selectedState, month: viewMonth, year: viewYear,
           monthly_goal: parseInt(goalForm.monthlyGoal), funding_days: parseInt(goalForm.fundingDays),
           created_by: currentUserId },
         { onConflict: 'state,month,year' }
@@ -187,112 +594,13 @@ export default function ReportingTab({
     });
   };
 
-  const getStartDate = (p: TimePeriod) => {
-    const now = new Date();
-    if (p === 'daily') return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    if (p === 'weekly') {
-      const s = new Date(now); s.setDate(now.getDate() - now.getDay()); s.setHours(0,0,0,0); return s;
-    }
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  };
-
-  const filterByPeriod = (p: TimePeriod) => {
-    const start = getStartDate(p);
-    return calls.filter(c => {
-      const d = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
-      return d >= start;
-    });
-  };
-
-  const getAmount = (call: Call) =>
-    parseFloat((call.buyerFinal || call.amount?.toString() || '0').replace(/[^0-9.-]+/g, '')) || 0;
-
-  // Period stats
-  const periodCalls = filterByPeriod(period);
-  const periodDealCalls = periodCalls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal');
-
-  const dailyDealCount = (todayDailyDeals || []).filter(d =>
-    d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal'
-  ).length;
-
-  const periodTotalDeals = periodDealCalls.length + (period === 'daily' ? dailyDealCount : 0);
-  const csvTotalAmount = periodDealCalls.reduce((sum, c) => sum + getAmount(c), 0);
-
-  const dailyDealsAmount = period === 'daily'
-    ? (todayDailyDeals || [])
-        .filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal')
-        .reduce((sum, d) => sum + (parseFloat((d.amount || '0').replace(/[^0-9.-]+/g, '')) || 0), 0)
-    : 0;
-
-  const periodTotalAmount = csvTotalAmount + dailyDealsAmount;
-  const periodAvgDeal = periodTotalDeals > 0 ? periodTotalAmount / periodTotalDeals : 0;
-
-  // Static stats
-  const totalCalls = calls.length;
-  const totalNoCall = calls.filter(c => !c.fuStatus || c.fuStatus === '').length;
-  const totalPending = calls.filter(c => c.fuStatus === 'Pending').length;
-  const totalDealsAllTime = calls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
-
-  // Today's deals for goal tracking
-  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const csvDealsToday = calls.filter(c =>
-    (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && new Date(c.dealDate) >= todayStart
-  ).length;
-  const dealsToday = csvDealsToday + dailyDealCount;
-  const teamGoalPct = goals.team > 0 ? Math.min((dealsToday / goals.team) * 100, 100) : 0;
-  const monthlyGoalPct = goals.monthly > 0 ? Math.min((totalDealsAllTime / goals.monthly) * 100, 100) : 0;
-
-  // Deals by state for period
-  const dealsByState = periodDealCalls.reduce((acc: { state: string; deals: number; amount: number }[], call) => {
-    const ex = acc.find(i => i.state === call.state);
-    if (ex) { ex.deals++; ex.amount += getAmount(call); }
-    else acc.push({ state: call.state, deals: 1, amount: getAmount(call) });
-    return acc;
-  }, []).sort((a, b) => b.deals - a.deals);
-
-  // Rep performance
-  const calculateRepPerformance = (p: TimePeriod) => {
-    const filtered = filterByPeriod(p);
-    const repData = filtered.reduce((acc: any[], call) => {
-      if (!call.assignedTo || !call.assignedToName) return acc;
-      const ex = acc.find(r => r.repId === call.assignedTo);
-      const isDeal = call.fuStatus === 'Deal' || call.fuStatus === 'Confirmed Deal';
-      const isConfirmed = call.fuStatus === 'Confirmed Deal';
-      const isPending = call.fuStatus === 'Pending';
-      const isNoAnswer = call.fuStatus === 'No Answer';
-      const isNoCall = !call.fuStatus || call.fuStatus === '';
-      if (ex) {
-        ex.totalCalls++;
-        if (isDeal) ex.deals++;
-        if (isConfirmed) ex.confirmedDeals++;
-        if (isPending) ex.pending++;
-        if (isNoAnswer) ex.noAnswer++;
-        if (isNoCall) ex.noCall++;
-      } else {
-        acc.push({
-          repId: call.assignedTo, repName: call.assignedToName,
-          totalCalls: 1,
-          deals: isDeal ? 1 : 0,
-          confirmedDeals: isConfirmed ? 1 : 0,
-          pending: isPending ? 1 : 0,
-          noAnswer: isNoAnswer ? 1 : 0,
-          noCall: isNoCall ? 1 : 0,
-        });
-      }
-      return acc;
-    }, []);
-    repData.forEach(r => {
-      r.conversionRate = r.totalCalls > 0 ? ((r.confirmedDeals / r.totalCalls) * 100).toFixed(1) : '0';
-    });
-    return repData.sort((a: any, b: any) => b.deals - a.deals);
-  };
-
-  const repPerformance = calculateRepPerformance(repPeriod);
-
-  // State performance totals
-  const hasFundingData = Object.keys(fundingData).length > 0;
-  const totalFundedCount = Object.values(fundingData).reduce((sum, d) => sum + d.count, 0);
-  const totalFundedAmount = Object.values(fundingData).reduce((sum, d) => sum + d.totalAmount, 0);
+  const hasFundingData = isViewingCurrentMonth && Object.keys(fundingData).length > 0;
+  const totalFundedCount = hasFundingData
+    ? Object.values(fundingData).reduce((sum, d) => sum + d.count, 0)
+    : monthTotalDeals;
+  const totalFundedAmount = hasFundingData
+    ? Object.values(fundingData).reduce((sum, d) => sum + d.totalAmount, 0)
+    : monthDealCalls.reduce((s, c) => s + getAmount(c), 0) + uniqueMonthManual.reduce((s, d) => s + parseAmount(d.amount), 0);
 
   const formatCurrency = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -303,16 +611,75 @@ export default function ReportingTab({
   const periodLabel = period.charAt(0).toUpperCase() + period.slice(1);
   const repPeriodLabel = repPeriod.charAt(0).toUpperCase() + repPeriod.slice(1);
 
+  const goToMonth = (year: number, month: number) => {
+    setViewYear(year);
+    setViewMonth(month);
+    setShowMonthPicker(false);
+  };
+
   return (
     <div className="space-y-8">
       {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded">{error}</div>}
 
+      {/* Month picker bar */}
+      <div className="flex items-center justify-between bg-gray-800 rounded-lg border border-gray-700 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <Calendar className="w-5 h-5 text-blue-400" />
+          <div>
+            <p className="text-sm font-medium text-gray-200">Reporting Period</p>
+            <p className="text-xs text-gray-500">
+              {isViewingCurrentMonth ? 'Current month' : 'Historical view'} · Daily/Weekly relative to {isViewingCurrentMonth ? 'today' : 'end of month'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (viewMonth === 1) goToMonth(viewYear - 1, 12);
+              else goToMonth(viewYear, viewMonth - 1);
+            }}
+            className="p-2 rounded-lg hover:bg-gray-700 text-gray-400 transition"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowMonthPicker(true)}
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg text-sm font-medium text-gray-200 transition min-w-[160px]"
+          >
+            {viewMonthLabel}
+          </button>
+          <button
+            onClick={() => {
+              if (viewMonth === 12) goToMonth(viewYear + 1, 1);
+              else if (viewYear < currentYear || (viewYear === currentYear && viewMonth < currentMonth)) {
+                goToMonth(viewYear, viewMonth + 1);
+              }
+            }}
+            disabled={isViewingCurrentMonth}
+            className="p-2 rounded-lg hover:bg-gray-700 text-gray-400 transition disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          {!isViewingCurrentMonth && (
+            <button
+              onClick={() => goToMonth(currentYear, currentMonth)}
+              className="ml-2 px-3 py-2 text-xs bg-blue-900 text-blue-300 border border-blue-700 rounded-lg hover:bg-blue-800 transition"
+            >
+              Today
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* ── SECTION 1: PERFORMANCE OVERVIEW ── */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-gray-100">Performance Overview</h2>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-100">Performance Overview</h2>
+            <p className="text-sm text-gray-500 mt-0.5">{viewMonthLabel}</p>
+          </div>
           <div className="flex items-center gap-3">
-            {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
+            {(currentUserRole === 'admin' || currentUserRole === 'manager') && isViewingCurrentMonth && (
               <button
                 onClick={() => setShowTeamGoals(true)}
                 className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition"
@@ -321,7 +688,7 @@ export default function ReportingTab({
               </button>
             )}
             <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-              {(['daily','weekly','monthly'] as TimePeriod[]).map(p => (
+              {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
                 <button key={p} onClick={() => setPeriod(p)}
                   className={`px-4 py-2 text-sm font-medium transition ${period === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -331,7 +698,6 @@ export default function ReportingTab({
           </div>
         </div>
 
-        {/* Stat Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
           <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
             <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">Total Deals</p>
@@ -360,31 +726,31 @@ export default function ReportingTab({
           </div>
         </div>
 
-        {/* Goals Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-gray-300">Team Daily Goal</p>
-              <span className="text-sm font-bold text-cyan-400">{dealsToday} / {goals.team}</span>
+        {isViewingCurrentMonth && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-medium text-gray-300">Team Daily Goal</p>
+                <span className="text-sm font-bold text-cyan-400">{dealsToday} / {goals.team}</span>
+              </div>
+              <div className="w-full bg-gray-700 rounded-full h-2.5 mb-2">
+                <div className="bg-cyan-500 h-2.5 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
+              </div>
+              <p className="text-xs text-gray-500">{teamGoalPct.toFixed(0)}% complete today</p>
             </div>
-            <div className="w-full bg-gray-700 rounded-full h-2.5 mb-2">
-              <div className="bg-cyan-500 h-2.5 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
+            <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-medium text-gray-300">Monthly Goal</p>
+                <span className="text-sm font-bold text-purple-400">{monthTotalDeals} / {goals.monthly}</span>
+              </div>
+              <div className="w-full bg-gray-700 rounded-full h-2.5 mb-2">
+                <div className="bg-purple-500 h-2.5 rounded-full transition-all" style={{ width: `${monthlyGoalPct}%` }} />
+              </div>
+              <p className="text-xs text-gray-500">{monthlyGoalPct.toFixed(0)}% complete this month</p>
             </div>
-            <p className="text-xs text-gray-500">{teamGoalPct.toFixed(0)}% complete today</p>
           </div>
-          <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-gray-300">Monthly Goal</p>
-              <span className="text-sm font-bold text-purple-400">{totalDealsAllTime} / {goals.monthly}</span>
-            </div>
-            <div className="w-full bg-gray-700 rounded-full h-2.5 mb-2">
-              <div className="bg-purple-500 h-2.5 rounded-full transition-all" style={{ width: `${monthlyGoalPct}%` }} />
-            </div>
-            <p className="text-xs text-gray-500">{monthlyGoalPct.toFixed(0)}% complete this month</p>
-          </div>
-        </div>
+        )}
 
-        {/* Deals by State for period */}
         {dealsByState.length > 0 && (
           <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
             <p className="text-sm font-medium text-gray-300 mb-3">
@@ -408,11 +774,9 @@ export default function ReportingTab({
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-100">State Performance</h2>
-            <p className="text-sm text-gray-400 mt-0.5">
-              {new Date().toLocaleString('default', { month: 'long' })} {currentYear}
-            </p>
+            <p className="text-sm text-gray-400 mt-0.5">{viewMonthLabel}</p>
           </div>
-          {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
+          {(currentUserRole === 'admin' || currentUserRole === 'manager') && isViewingCurrentMonth && (
             <button onClick={() => setShowGoalModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition text-sm">
               <Settings className="w-4 h-4" /> Set State Goals
@@ -469,12 +833,16 @@ export default function ReportingTab({
                     <span className={`font-semibold ${getProgressTextColor(stat.progress)}`}>
                       {stat.progress.toFixed(0)}% complete
                     </span>
-                    <span className="text-gray-400">
-                      Need <span className="text-gray-200 font-medium">{stat.neededPerDay}/day</span>
-                    </span>
-                    <span className="text-gray-400">
-                      <span className="text-gray-200 font-medium">{stat.daysRemaining}</span> days left
-                    </span>
+                    {isViewingCurrentMonth && (
+                      <>
+                        <span className="text-gray-400">
+                          Need <span className="text-gray-200 font-medium">{stat.neededPerDay}/day</span>
+                        </span>
+                        <span className="text-gray-400">
+                          <span className="text-gray-200 font-medium">{stat.daysRemaining}</span> days left
+                        </span>
+                      </>
+                    )}
                   </div>
                   {stat.totalAmount > 0 && (
                     <div className="mt-2 pt-2 border-t border-gray-700">
@@ -498,9 +866,12 @@ export default function ReportingTab({
       {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold text-gray-100">Rep Performance</h2>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-100">Rep Performance</h2>
+              <p className="text-sm text-gray-500 mt-0.5">{viewMonthLabel}</p>
+            </div>
             <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-              {(['daily','weekly','monthly'] as TimePeriod[]).map(p => (
+              {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
                 <button key={p} onClick={() => setRepPeriod(p)}
                   className={`px-4 py-2 text-sm font-medium transition ${repPeriod === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -528,36 +899,33 @@ export default function ReportingTab({
                   {repPerformance.map((rep: any) => (
                     <tr key={rep.repId} className="hover:bg-gray-750">
                       <td className="px-5 py-4 text-sm font-medium text-gray-200">{rep.repName}</td>
+                      <td className="px-5 py-4"><span className="text-sm text-blue-400">{rep.totalCalls}</span></td>
+                      <td className="px-5 py-4"><span className="text-sm text-gray-400">{rep.noCall}</span></td>
+                      <td className="px-5 py-4"><span className="text-sm text-yellow-400">{rep.pending}</span></td>
+                      <td className="px-5 py-4"><span className="text-sm text-orange-400">{rep.noAnswer}</span></td>
                       <td className="px-5 py-4">
-                        <span className="text-sm text-blue-400">{rep.totalCalls}</span>
+                        {rep.deals > 0 ? (
+                          <button
+                            onClick={() => openRepDealsModal(rep.repId, rep.repName)}
+                            className="text-sm font-semibold text-green-400 hover:text-green-300 underline underline-offset-2 transition"
+                          >
+                            {rep.deals}
+                          </button>
+                        ) : (
+                          <span className="text-sm font-semibold text-green-400">0</span>
+                        )}
                       </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-gray-400">{rep.noCall}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-yellow-400">{rep.pending}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm text-orange-400">{rep.noAnswer}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm font-semibold text-green-400">{rep.deals}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm font-semibold text-emerald-400">{rep.confirmedDeals}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="text-sm font-semibold text-blue-400">{rep.conversionRate}%</span>
-                      </td>
+                      <td className="px-5 py-4"><span className="text-sm font-semibold text-emerald-400">{rep.confirmedDeals}</span></td>
+                      <td className="px-5 py-4"><span className="text-sm font-semibold text-blue-400">{rep.conversionRate}%</span></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <div className="px-5 py-3 bg-gray-750 border-t border-gray-700">
                 <p className="text-xs text-gray-500">
-                  Showing <span className="text-gray-400 font-medium">{repPeriodLabel}</span> view
+                  Showing <span className="text-gray-400 font-medium">{repPeriodLabel}</span> view for {viewMonthLabel}
+                  &nbsp;·&nbsp; Click deal count to view &amp; edit
                   &nbsp;·&nbsp; Conv. Rate = Confirmed Deals &divide; Total Calls
-                  &nbsp;·&nbsp; No Call = not yet attempted
                 </p>
               </div>
             </div>
@@ -569,11 +937,131 @@ export default function ReportingTab({
         </div>
       )}
 
-      {/* ── MODALS ── */}
+      {/* Month picker modal */}
+      {showMonthPicker && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50"
+          onClick={() => setShowMonthPicker(false)}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-sm p-6"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <button onClick={() => setViewYear(y => y - 1)} className="p-1 hover:bg-gray-700 rounded text-gray-400">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <h3 className="text-lg font-semibold text-gray-100">{viewYear}</h3>
+              <button
+                onClick={() => { if (viewYear < currentYear) setViewYear(y => y + 1); }}
+                disabled={viewYear >= currentYear}
+                className="p-1 hover:bg-gray-700 rounded text-gray-400 disabled:opacity-30"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {MONTH_NAMES.map((name, idx) => {
+                const month = idx + 1;
+                const isFuture = viewYear > currentYear || (viewYear === currentYear && month > currentMonth);
+                const isSelected = viewMonth === month;
+                return (
+                  <button
+                    key={name}
+                    disabled={isFuture}
+                    onClick={() => goToMonth(viewYear, month)}
+                    className={`px-3 py-2 rounded-lg text-sm transition ${
+                      isSelected
+                        ? 'bg-blue-600 text-white'
+                        : isFuture
+                          ? 'text-gray-600 cursor-not-allowed'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {name.slice(0, 3)}
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => setShowMonthPicker(false)}
+              className="mt-4 w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Rep deals modal */}
+      {repDealsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
+          onClick={() => setRepDealsModal(null)}>
+          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 shrink-0">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-100">
+                  {repDealsModal.repName}&apos;s Deals
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {repPeriodLabel} · {viewMonthLabel} · {repDealsRows.length} deal{repDealsRows.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <button onClick={() => setRepDealsModal(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+            </div>
+            <div className="overflow-auto flex-1">
+              {repDealsLoading ? (
+                <p className="text-center text-gray-500 py-12">Loading deals…</p>
+              ) : repDealsRows.length === 0 ? (
+                <p className="text-center text-gray-500 py-12">No deals found.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-900 sticky top-0">
+                    <tr>
+                      {['App ID', 'Dealer', 'Customer', 'State', 'Amount', 'Date', 'Status Last', 'Activity', 'FU Status', 'Note', 'Source'].map(h => (
+                        <th key={h} className="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-700">
+                    {repDealsRows.map(row => (
+                      <tr key={row.key} className="hover:bg-gray-750">
+                        <td className="px-3 py-2.5 text-blue-400 font-mono text-xs whitespace-nowrap">{row.applicationId}</td>
+                        <td className="px-3 py-2.5 text-gray-300 max-w-[140px] truncate">{row.dealerName}</td>
+                        <td className="px-3 py-2.5 text-gray-300 max-w-[120px] truncate">{row.customerName}</td>
+                        <td className="px-3 py-2.5"><span className="px-1.5 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{row.state}</span></td>
+                        <td className="px-3 py-2.5 text-green-400 whitespace-nowrap">{formatCurrency(row.amount)}</td>
+                        <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.date.toLocaleDateString()}</td>
+                        <td className="px-3 py-2.5 text-gray-400 text-xs">{row.statusLast}</td>
+                        <td className="px-3 py-2.5 text-gray-500 text-xs whitespace-nowrap">{row.activity}</td>
+                        <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                          <select
+                            value={row.fuStatus}
+                            onChange={e => handleRepDealStatusChange(row, e.target.value)}
+                            className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          >
+                            {FU_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                            {!FU_OPTIONS.includes(row.fuStatus) && row.fuStatus && (
+                              <option value={row.fuStatus}>{row.fuStatus}</option>
+                            )}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-400 text-xs max-w-[160px] truncate" title={row.note}>{row.note}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${row.source === 'call' ? 'bg-purple-900 text-purple-300 border border-purple-700' : 'bg-gray-700 text-gray-400 border border-gray-600'}`}>
+                            {row.source === 'call' ? 'Calls' : 'Manual'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Goal modals */}
       {showGoalModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
-            <h3 className="text-xl font-bold text-gray-100 mb-4">Set State Goal</h3>
+            <h3 className="text-xl font-bold text-gray-100 mb-4">Set State Goal — {viewMonthLabel}</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">State</label>
@@ -599,13 +1087,6 @@ export default function ReportingTab({
                   placeholder="e.g., 20"
                   className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-              {goalForm.monthlyGoal && goalForm.fundingDays && (
-                <div className="bg-gray-700 rounded-lg p-4 text-sm text-gray-300">
-                  <strong>Daily Goal:</strong> {Math.round(parseInt(goalForm.monthlyGoal) / parseInt(goalForm.fundingDays))} deals/day
-                  &nbsp;·&nbsp;
-                  <strong>Weekly:</strong> {Math.round((parseInt(goalForm.monthlyGoal) / parseInt(goalForm.fundingDays)) * 5)} deals/week
-                </div>
-              )}
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={handleSetGoal} disabled={loading}
