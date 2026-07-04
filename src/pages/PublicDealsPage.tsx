@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare, Users, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare, Users, Trash2, Trophy, DollarSign, ClipboardList, PlusCircle, Target } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
 
@@ -724,39 +724,70 @@ export default function PublicDealsPage() {
           <div className="space-y-4">
 
             {/* KPI CARDS */}
-            <div className="grid grid-cols-4 gap-3">
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Deals Today</p>
-                <p className="text-3xl font-bold text-green-400">{totalDealCount}</p>
-                {callDealCount > 0 && <p className="text-xs text-gray-500 mt-1">+{callDealCount} from calls</p>}
-              </div>
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Total Amount</p>
-                <p className="text-2xl font-bold text-green-400">{formatCurrency(totalAmount)}</p>
-                {callDealAmount > 0 && <p className="text-xs text-gray-500 mt-1">+{formatCurrency(callDealAmount)} from calls</p>}
-              </div>
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-                <div className="flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-cyan-400" />
-                  <p className="text-xs text-gray-400 uppercase tracking-wider">Team Goal</p>
-                </div>
-                <p className="text-xl font-bold text-cyan-400 leading-none">
-                  {totalDealCount} <span className="text-sm font-normal text-gray-500">/ {teamGoal}</span>
-                </p>
-                <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              <div className="relative overflow-hidden rounded-xl border border-green-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-green-950/25 p-4 shadow-xl shadow-green-950/10">
+                <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-green-500/10 blur-2xl" />
+                <div className="relative flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Deals Today</p>
+                    <p className="mt-2 text-3xl font-bold text-green-300 leading-none">{totalDealCount}</p>
+                    {callDealCount > 0 && <p className="mt-2 text-xs text-green-400/80">+{callDealCount} from calls</p>}
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-green-500/30 bg-green-500/10 text-green-300">
+                    <Trophy className="h-5 w-5" />
+                  </div>
                 </div>
               </div>
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Entries</p>
-                <p className="text-3xl font-bold text-blue-400">{combinedEntries.length}</p>
-                <p className="text-xs text-gray-500 mt-1">all sources</p>
+              <div className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-emerald-950/25 p-4 shadow-xl shadow-emerald-950/10">
+                <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
+                <div className="relative flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Amount</p>
+                    <p className="mt-2 text-2xl font-bold text-emerald-300 leading-none">{formatCurrency(totalAmount)}</p>
+                    {callDealAmount > 0 && <p className="mt-2 text-xs text-gray-500">+{formatCurrency(callDealAmount)} from calls</p>}
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                    <DollarSign className="h-5 w-5" />
+                  </div>
+                </div>
+              </div>
+              <div className="relative overflow-hidden rounded-xl border border-cyan-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-cyan-950/25 p-4 shadow-xl shadow-cyan-950/10">
+                <div className="relative flex items-start justify-between mb-3">
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-cyan-300" />
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Team Goal</p>
+                    </div>
+                    <p className="mt-2 text-xl font-bold text-cyan-300 leading-none">
+                      {totalDealCount} <span className="text-sm font-normal text-gray-500">/ {teamGoal}</span>
+                    </p>
+                  </div>
+                  <Target className="h-5 w-5 text-cyan-300" />
+                </div>
+                <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
+                </div>
+              </div>
+              <div className="relative overflow-hidden rounded-xl border border-blue-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-blue-950/25 p-4 shadow-xl shadow-blue-950/10">
+                <div className="relative flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Entries</p>
+                    <p className="mt-2 text-3xl font-bold text-blue-300 leading-none">{combinedEntries.length}</p>
+                    <p className="mt-2 text-xs text-gray-500">all sources</p>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300">
+                    <ClipboardList className="h-5 w-5" />
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* FORM */}
-            <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-gray-700">
+            <div className="bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-hidden shadow-xl shadow-black/10">
+              <div className="px-5 py-4 border-b border-gray-700 flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-green-500/30 bg-green-500/10 text-green-300">
+                  <PlusCircle className="h-4 w-4" />
+                </span>
                 <h2 className="text-sm font-semibold text-gray-200">Log a deal</h2>
               </div>
               <div className="p-5 space-y-4">
@@ -764,7 +795,7 @@ export default function PublicDealsPage() {
                 {error && <div className="bg-red-900 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">{error}</div>}
 
                 {!linkedCall && (
-                  <div className="bg-gray-750 border border-gray-600 rounded-lg p-3">
+                  <div className="bg-gray-900/40 border border-gray-700 rounded-xl p-4">
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
                     <div className="flex gap-2">
                       <input type="text" value={searchQuery}
@@ -841,7 +872,7 @@ export default function PublicDealsPage() {
                         </div>
                         <div className="flex items-end">
                           <button onClick={handleSubmit} disabled={submitting}
-                            className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+                            className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
                             {submitting ? 'Saving…' : 'Log Deal'}
                           </button>
                         </div>
@@ -896,7 +927,7 @@ export default function PublicDealsPage() {
                       </div>
                       <div className="flex flex-col justify-end">
                         <button onClick={handleSubmit} disabled={submitting}
-                          className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+                          className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
                           {submitting ? 'Saving…' : 'Add Deal'}
                         </button>
                       </div>
@@ -909,20 +940,25 @@ export default function PublicDealsPage() {
           </div>
 
           {/* Leaderboard */}
-          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
-              <span className="text-base">🏆</span>
-              <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
+          <div className="bg-gradient-to-b from-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-hidden shadow-xl shadow-black/10">
+            <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                  <Trophy className="h-4 w-4" />
+                </span>
+                <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
+              </div>
+              <span className="rounded-full bg-gray-700 px-2 py-0.5 text-[10px] font-semibold text-gray-400">{leaderboard.length}</span>
             </div>
-            <div className="divide-y divide-gray-700">
+            <div className="divide-y divide-gray-700/70">
               {leaderboard.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-gray-500">No entries yet today</p>
               ) : leaderboard.map((rep, idx) => {
                 const m = medal(idx);
                 const isMe = rep.id === selectedUser;
                 return (
-                  <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
-                    <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm">
+                  <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-blue-900/20 ring-1 ring-inset ring-blue-500/20' : 'hover:bg-gray-750'}`}>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${idx < 3 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-gray-700 text-gray-400'}`}>
                       {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -958,7 +994,7 @@ export default function PublicDealsPage() {
               <p className="text-xs text-gray-500 mt-1">Be the first to log one above.</p>
             </div>
           ) : (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <div className="bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-hidden shadow-xl shadow-black/10">
               <div className="overflow-x-auto">
                 <table className="w-full" style={{ tableLayout: 'fixed' }}>
                   <colgroup>
@@ -974,7 +1010,7 @@ export default function PublicDealsPage() {
                     <col style={{ width: '36px' }} />
                     <col style={{ width: '44px' }} />
                   </colgroup>
-                  <thead>
+                  <thead className="bg-gray-950/60">
                     <tr className="border-b border-gray-700">
                       <th className="px-2 py-2"></th>
                       <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
@@ -989,7 +1025,7 @@ export default function PublicDealsPage() {
                       <th className="px-2 py-2"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-700">
+                  <tbody className="divide-y divide-gray-700/80">
                     {combinedEntries.map(entry => {
                       const isExpanded = expandedRows.has(entry.id);
                       const isEditing = editingDeal === entry.id;
@@ -998,7 +1034,7 @@ export default function PublicDealsPage() {
                       return (
                         <>
                           <tr key={entry.id}
-                            className={`hover:bg-gray-750 transition-colors ${!isEditing && entry.source === 'manual' ? 'cursor-pointer' : ''}`}
+                            className={`hover:bg-gray-750 transition-colors odd:bg-gray-900/10 ${!isEditing && entry.source === 'manual' ? 'cursor-pointer' : ''}`}
                             onClick={() => { if (!isEditing && entry.source === 'manual') toggleRow(entry.id); }}>
 
                             <td className="px-2 py-2 text-center">

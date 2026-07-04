@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X } from 'lucide-react';
+import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
 
@@ -167,6 +167,7 @@ export default function DailyDealsTab({
   const [loading, setLoading] = useState(false);
 
   const [showForm, setShowForm] = useState(true);
+  const [selectedUser, setSelectedUser] = useState(currentUser.id);
   const [form, setForm] = useState({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
   const [formError, setFormError] = useState('');
   const [error, setError] = useState('');
@@ -421,16 +422,18 @@ export default function DailyDealsTab({
   };
 
   const handlePopupAddNote = async (callId: string) => {
+    if (!selectedUser) { setError('Please select your name to add notes.'); return; }
     const text = popupNewNoteText[callId]?.trim();
     if (!text) return;
     const call = calls.find(c => c.id === callId);
+    const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
     const { data, error } = await supabase.from('call_notes').insert({
       call_id: callId,
       application_id: call?.applicationId || '',
       dealer_name: call?.dealerName || '',
       note_text: text,
-      created_by: currentUser.id,
-      created_by_name: currentUser.name,
+      created_by: selectedUser,
+      created_by_name: creditUser.name,
     }).select().single();
     if (!error && data) {
       setPopupNotes(prev => ({ ...prev, [callId]: [...(prev[callId] || []), data] }));
@@ -482,6 +485,9 @@ export default function DailyDealsTab({
   // ── HANDLERS ─────────────────────────────────────────────────────
 
   const handleAddDeal = async () => {
+    if (!selectedUser) {
+      setFormError('Please select your name.'); return;
+    }
     if (!form.appId || !form.dealerName || !form.amount || !form.state) {
       setFormError('App ID, dealer, amount and state are required'); return;
     }
@@ -490,19 +496,20 @@ export default function DailyDealsTab({
     }
     try {
       setFormError('');
+      const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
       const { error: err } = await supabase.from('daily_deals').insert({
         app_id: form.appId.trim(), dealer_name: form.dealerName.trim(),
         customer_name: form.customerName.trim() || linkedCall?.customerName || '',
         amount: form.amount.trim(),
         state: form.state.trim().toUpperCase(), fu_status: form.fuStatus,
-        added_by: currentUser.id, added_by_name: currentUser.name, deal_date: today,
+        added_by: selectedUser, added_by_name: creditUser.name, deal_date: today,
       });
       if (err) throw err;
       if (linkedCall) {
         await supabase.from('calls').update({
           fu_status: form.fuStatus,
-          deal_by: currentUser.id,
-          deal_by_name: currentUser.name,
+          deal_by: selectedUser,
+          deal_by_name: creditUser.name,
           deal_date: today,
           updated_at: new Date().toISOString(),
         }).eq('id', linkedCall.id);
@@ -568,11 +575,13 @@ export default function DailyDealsTab({
   };
 
   const handleAddNote = async (dealId: string) => {
+    if (!selectedUser) { setError('Please select your name to add notes.'); return; }
     const text = newNoteText[dealId]?.trim();
     if (!text) return;
+    const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
     const { error: err } = await supabase.from('daily_deal_notes').insert({
       deal_id: dealId, note_text: text,
-      created_by: currentUser.id, created_by_name: currentUser.name,
+      created_by: selectedUser, created_by_name: creditUser.name,
     });
     if (err) return;
     setNewNoteText(prev => ({ ...prev, [dealId]: '' }));
@@ -672,12 +681,6 @@ export default function DailyDealsTab({
   const totalDealCount = ddDealCount + callDealCount;
   const totalAmount = ddTotalAmount + callDealAmount;
   const goalPct = goals.team > 0 ? Math.min((totalDealCount / goals.team) * 100, 100) : 0;
-  const activeRepNames = new Set([
-    ...todayDeals.filter(d => d.fuStatus === 'Deal' || d.fuStatus === 'Confirmed Deal').map(d => d.addedByName),
-    ...callDealsForToday.filter(c => c.assignedToName || c.dealByName).map(c => (c.dealByName || c.assignedToName) as string),
-  ]);
-  const activeReps = activeRepNames.size;
-
   const combinedEntries: CombinedEntry[] = [
     ...todayDeals.map(d => ({
       id: d.id, source: 'manual' as const,
@@ -729,6 +732,12 @@ export default function DailyDealsTab({
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }, [calls, todayDeals]);
 
+  const selectableUsers = useMemo(() => {
+    const userMap = new Map<string, User>();
+    [...allUsers, ...users, currentUser].forEach(u => userMap.set(u.id, u));
+    return Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allUsers, users, currentUser]);
+
   const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
   const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
   const calendarDays: (number | null)[] = [];
@@ -770,7 +779,7 @@ export default function DailyDealsTab({
             🔗 Share Link
           </button>
           <button onClick={() => setShowForm(f => !f)}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
             + Log Deal
           </button>
         </div>
@@ -782,41 +791,73 @@ export default function DailyDealsTab({
       {/* TOP ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-3">
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
-              <p className="text-xs text-gray-400 uppercase tracking-wider">Deals Today</p>
-              <p className="text-3xl font-bold text-green-400 leading-none">{totalDealCount}</p>
-              {callDealCount > 0 && <p className="text-xs text-gray-500">+{callDealCount} from calls</p>}
-            </div>
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
-              <p className="text-xs text-gray-400 uppercase tracking-wider">Total Amount</p>
-              <p className="text-xl font-bold text-green-400 leading-none">{formatCurrency(totalAmount)}</p>
-              {callDealAmount > 0 && <p className="text-xs text-gray-500">+{formatCurrency(callDealAmount)} from calls</p>}
-            </div>
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-              <div className="flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-cyan-400" />
-                <p className="text-xs text-gray-400 uppercase tracking-wider">Team Goal</p>
-              </div>
-              <p className="text-xl font-bold text-cyan-400 leading-none">
-                {totalDealCount} <span className="text-sm font-normal text-gray-500">/ {goals.team}</span>
-              </p>
-              <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="relative overflow-hidden rounded-xl border border-green-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-green-950/25 p-4 shadow-xl shadow-green-950/10">
+              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-green-500/10 blur-2xl" />
+              <div className="relative flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Deals Today</p>
+                  <p className="mt-2 text-3xl font-bold text-green-300 leading-none">{totalDealCount}</p>
+                  {callDealCount > 0 && <p className="mt-2 text-xs text-green-400/80">+{callDealCount} from calls</p>}
+                </div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-green-500/30 bg-green-500/10 text-green-300">
+                  <Trophy className="h-5 w-5" />
+                </div>
               </div>
             </div>
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
-              <p className="text-xs text-gray-400 uppercase tracking-wider">Active Reps</p>
-              <p className="text-3xl font-bold text-gray-100 leading-none">{activeReps}</p>
+            <div className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-emerald-950/25 p-4 shadow-xl shadow-emerald-950/10">
+              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
+              <div className="relative flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Amount</p>
+                  <p className="mt-2 text-2xl font-bold text-emerald-300 leading-none">{formatCurrency(totalAmount)}</p>
+                  {callDealAmount > 0 && <p className="mt-2 text-xs text-gray-500">+{formatCurrency(callDealAmount)} from calls</p>}
+                </div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                  <DollarSign className="h-5 w-5" />
+                </div>
+              </div>
+            </div>
+            <div className="relative overflow-hidden rounded-xl border border-cyan-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-cyan-950/25 p-4 shadow-xl shadow-cyan-950/10">
+              <div className="relative flex items-start justify-between mb-3">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-cyan-300" />
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Team Goal</p>
+                  </div>
+                  <p className="mt-2 text-xl font-bold text-cyan-300 leading-none">
+                    {totalDealCount} <span className="text-sm font-normal text-gray-500">/ {goals.team}</span>
+                  </p>
+                </div>
+                <Target className="h-5 w-5 text-cyan-300" />
+              </div>
+              <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
+              </div>
+            </div>
+            <div className="relative overflow-hidden rounded-xl border border-blue-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-blue-950/25 p-4 shadow-xl shadow-blue-950/10">
+              <div className="relative flex items-start justify-between">
+                <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Entries</p>
+                  <p className="mt-2 text-3xl font-bold text-blue-300 leading-none">{combinedEntries.length}</p>
+                  <p className="mt-2 text-xs text-gray-500">all sources</p>
+                </div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300">
+                  <ClipboardList className="h-5 w-5" />
+                </div>
+              </div>
             </div>
           </div>
 
           {/* FORM */}
-          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+          <div className="bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-hidden shadow-xl shadow-black/10">
             <button onClick={() => setShowForm(f => !f)}
-              className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-700 transition border-b border-gray-700">
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-700/60 transition border-b border-gray-700">
               <span className="text-sm font-medium text-gray-200 flex items-center gap-2">
-                <span className="text-green-400 text-base">+</span> Log a deal
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-green-500/30 bg-green-500/10 text-green-300">
+                  <PlusCircle className="h-4 w-4" />
+                </span>
+                Log a deal
               </span>
               <span className="text-gray-400">{showForm ? '▲' : '▼'}</span>
             </button>
@@ -826,7 +867,7 @@ export default function DailyDealsTab({
 
                 {/* Search — only when no call linked */}
                 {!linkedCall && (
-                  <div className="bg-gray-750 border border-gray-600 rounded-lg p-3 mb-4">
+                  <div className="bg-gray-900/40 border border-gray-700 rounded-xl p-4 mb-4">
                     <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
                     <div className="flex gap-2">
                       <input type="text" value={searchQuery}
@@ -864,6 +905,15 @@ export default function DailyDealsTab({
                   </div>
                 )}
 
+                <div className="mb-4">
+                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Your name *</label>
+                  <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <option value="">Select your name…</option>
+                    {selectableUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+
                 {/* COMPACT FORM when call linked */}
                 {linkedCall ? (
                   <div className="border border-blue-700 rounded-lg overflow-hidden">
@@ -894,7 +944,7 @@ export default function DailyDealsTab({
                         </div>
                         <div className="flex items-end">
                           <button onClick={handleAddDeal}
-                            className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
+                            className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
                             Log Deal
                           </button>
                         </div>
@@ -949,7 +999,7 @@ export default function DailyDealsTab({
                       </div>
                       <div className="flex items-end">
                         <button onClick={handleAddDeal}
-                          className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
+                          className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
                           Add Deal
                         </button>
                       </div>
@@ -963,20 +1013,25 @@ export default function DailyDealsTab({
         </div>
 
         {/* Leaderboard */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
-            <span className="text-base">🏆</span>
-            <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
+          <div className="bg-gradient-to-b from-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-hidden shadow-xl shadow-black/10">
+            <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                  <Trophy className="h-4 w-4" />
+                </span>
+                <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
+              </div>
+              <span className="rounded-full bg-gray-700 px-2 py-0.5 text-[10px] font-semibold text-gray-400">{leaderboard.length}</span>
           </div>
-          <div className="divide-y divide-gray-700">
+            <div className="divide-y divide-gray-700/70">
             {leaderboard.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-gray-500">No entries yet today</p>
             ) : leaderboard.map((rep, idx) => {
               const m = medal(idx);
-              const isMe = rep.id === currentUser.id;
+              const isMe = rep.id === selectedUser;
               return (
-                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
-                  <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm">
+                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-blue-900/20 ring-1 ring-inset ring-blue-500/20' : 'hover:bg-gray-750'}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${idx < 3 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-gray-700 text-gray-400'}`}>
                     {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -1000,9 +1055,13 @@ export default function DailyDealsTab({
 
       {/* TODAY'S ENTRIES */}
       <div>
-        <h3 className="text-base font-semibold text-gray-100 mb-3">
-          Today's entries <span className="ml-2 text-sm font-normal text-gray-400">({combinedEntries.length} total)</span>
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold text-gray-100 flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-blue-300" />
+            Today's entries
+          </h3>
+          <span className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{combinedEntries.length} total</span>
+        </div>
         {loading ? (
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-400">Loading...</div>
         ) : combinedEntries.length === 0 ? (
@@ -1011,9 +1070,9 @@ export default function DailyDealsTab({
             <p className="text-sm text-gray-500 mt-1">Use the form above to log the first deal.</p>
           </div>
         ) : (
-          <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
+          <div className="bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-x-auto shadow-xl shadow-black/10">
             <table className="w-full">
-              <thead>
+              <thead className="bg-gray-950/60">
                 <tr className="border-b border-gray-700">
                   <th className="w-8 px-3 py-3"></th>
                   <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
@@ -1028,7 +1087,7 @@ export default function DailyDealsTab({
                   <th className="w-16 px-3 py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700">
+              <tbody className="divide-y divide-gray-700/80">
                 {combinedEntries.map(entry => {
                   const isExpanded = expandedRows.has(entry.id);
                   const isEditing = editingDeal === entry.id;
@@ -1039,7 +1098,7 @@ export default function DailyDealsTab({
                   return (
                     <>
                       <tr key={entry.id}
-                        className={`hover:bg-gray-750 transition-colors ${!isEditing && entry.source === 'manual' ? 'cursor-pointer' : ''}`}
+                        className={`hover:bg-gray-750 transition-colors odd:bg-gray-900/10 ${!isEditing && entry.source === 'manual' ? 'cursor-pointer' : ''}`}
                         onClick={() => { if (!isEditing && entry.source === 'manual') toggleRow(entry.id); }}>
                         <td className="px-3 py-3 text-center">
                           {entry.source === 'manual' && (isExpanded
@@ -1118,7 +1177,7 @@ export default function DailyDealsTab({
                                       noteText={note.noteText}
                                       createdByName={note.createdByName}
                                       createdAt={note.createdAt}
-                                      canEdit={note.createdBy === currentUser.id}
+                                      canEdit={!!selectedUser && note.createdBy === selectedUser}
                                       onUpdate={handleUpdateDealNote}
                                       onDelete={handleDeleteDealNote}
                                     />
@@ -1126,7 +1185,7 @@ export default function DailyDealsTab({
                                 </div>
                               )}
                               <div className="flex gap-2">
-                                <input type="text" placeholder="Add a note..."
+                                <input type="text" placeholder={selectedUser ? 'Add a note...' : 'Select your name above to add a note...'}
                                   value={newNoteText[entry.id] || ''}
                                   onChange={e => setNewNoteText(prev => ({ ...prev, [entry.id]: e.target.value }))}
                                   onKeyDown={e => { if (e.key === 'Enter') handleAddNote(entry.id); }}
@@ -1337,7 +1396,7 @@ export default function DailyDealsTab({
                                         noteText={note.note_text}
                                         createdByName={note.created_by_name}
                                         createdAt={note.created_at}
-                                        canEdit={note.created_by === currentUser.id}
+                                        canEdit={!!selectedUser && note.created_by === selectedUser}
                                         onUpdate={handleUpdatePopupNote}
                                         onDelete={handleDeletePopupNote}
                                       />

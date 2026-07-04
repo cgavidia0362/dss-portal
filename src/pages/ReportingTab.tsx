@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Target, Settings, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Call {
@@ -673,24 +673,33 @@ export default function ReportingTab({
 
       {/* ── SECTION 1: PERFORMANCE OVERVIEW ── */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start justify-between gap-4 mb-5">
           <div>
-            <h2 className="text-2xl font-bold text-gray-100">Performance Overview</h2>
-            <p className="text-sm text-gray-500 mt-0.5">{viewMonthLabel}</p>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300 shadow-lg shadow-blue-950/20">
+                <Target className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-100">Performance Overview</h2>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+                  <Calendar className="h-3.5 w-3.5" /> {viewMonthLabel}
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             {(currentUserRole === 'admin' || currentUserRole === 'manager') && isViewingCurrentMonth && (
               <button
                 onClick={() => setShowTeamGoals(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition"
+                className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-lg text-sm transition shadow-lg shadow-black/10"
               >
                 <Target className="w-4 h-4" /> Set Goals
               </button>
             )}
-            <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden p-1 shadow-lg shadow-black/10">
               {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
                 <button key={p} onClick={() => setPeriod(p)}
-                  className={`px-4 py-2 text-sm font-medium transition ${period === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}>
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition ${period === p ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
                 </button>
               ))}
@@ -698,72 +707,143 @@ export default function ReportingTab({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-          <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">Total Deals</p>
-            <p className="text-3xl font-bold text-green-400">{periodTotalDeals}</p>
-            <p className="text-xs text-gray-500 mt-1">{periodLabel}</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">Total Amount</p>
-            <p className="text-2xl font-bold text-green-400">{formatCurrency(periodTotalAmount)}</p>
-            <p className="text-xs text-gray-500 mt-1">Avg: {formatCurrency(periodAvgDeal)}</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">Total Calls</p>
-            <p className="text-3xl font-bold text-blue-400">{totalCalls}</p>
-            <p className="text-xs text-gray-500 mt-1">All time</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">No Call</p>
-            <p className="text-3xl font-bold text-gray-400">{totalNoCall}</p>
-            <p className="text-xs text-gray-500 mt-1">Not yet called</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">Pending</p>
-            <p className="text-3xl font-bold text-yellow-400">{totalPending}</p>
-            <p className="text-xs text-gray-500 mt-1">Waiting on response</p>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
+          {[
+            {
+              label: 'Total Deals',
+              value: periodTotalDeals,
+              sub: periodLabel,
+              Icon: Handshake,
+              color: 'text-green-300',
+              accent: 'border-green-500/30 bg-green-500/10',
+              card: 'to-green-950/25',
+            },
+            {
+              label: 'Total Amount',
+              value: formatCurrency(periodTotalAmount),
+              sub: `Avg: ${formatCurrency(periodAvgDeal)}`,
+              Icon: DollarSign,
+              color: 'text-emerald-300',
+              accent: 'border-emerald-500/30 bg-emerald-500/10',
+              card: 'to-emerald-950/25',
+            },
+            {
+              label: 'Total Calls',
+              value: totalCalls,
+              sub: 'All time',
+              Icon: Phone,
+              color: 'text-blue-300',
+              accent: 'border-blue-500/30 bg-blue-500/10',
+              card: 'to-blue-950/25',
+            },
+            {
+              label: 'No Call',
+              value: totalNoCall,
+              sub: 'Not yet called',
+              Icon: PhoneOff,
+              color: 'text-gray-300',
+              accent: 'border-gray-500/30 bg-gray-500/10',
+              card: 'to-gray-700/20',
+            },
+            {
+              label: 'Pending',
+              value: totalPending,
+              sub: 'Waiting on response',
+              Icon: Hourglass,
+              color: 'text-yellow-300',
+              accent: 'border-yellow-500/30 bg-yellow-500/10',
+              card: 'to-yellow-950/25',
+            },
+          ].map(({ label, value, sub, Icon, color, accent, card }) => (
+            <div key={label} className={`relative overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 ${card} p-4 shadow-xl shadow-black/10`}>
+              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
+              <div className={`relative mb-4 flex h-11 w-11 items-center justify-center rounded-xl border ${accent} ${color}`}>
+                <Icon className="h-5 w-5" />
+              </div>
+              <p className="relative text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+              <p className={`relative mt-1 text-3xl font-bold ${color}`}>{value}</p>
+              <p className="relative mt-2 inline-flex rounded-full border border-gray-700 bg-gray-900/40 px-2 py-1 text-xs text-gray-500">{sub}</p>
+            </div>
+          ))}
         </div>
 
         {isViewingCurrentMonth && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-medium text-gray-300">Team Daily Goal</p>
-                <span className="text-sm font-bold text-cyan-400">{dealsToday} / {goals.team}</span>
+            <div className="relative overflow-hidden rounded-xl border border-cyan-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-cyan-950/25 p-5 shadow-xl shadow-cyan-950/10">
+              <div className="absolute -left-10 -top-10 h-28 w-28 rounded-full bg-cyan-500/10 blur-2xl" />
+              <div className="relative flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
+                    <Target className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-100">Team Daily Goal</p>
+                    <p className="text-xs text-gray-500">Daily pace target</p>
+                  </div>
+                </div>
+                <span className="text-sm font-bold text-cyan-300">{dealsToday} / {goals.team}</span>
               </div>
-              <div className="w-full bg-gray-700 rounded-full h-2.5 mb-2">
-                <div className="bg-cyan-500 h-2.5 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
+              <div className="relative w-full bg-gray-700 rounded-full h-2.5 mb-3 overflow-hidden">
+                <div className="bg-gradient-to-r from-cyan-400 to-blue-500 h-2.5 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
               </div>
-              <p className="text-xs text-gray-500">{teamGoalPct.toFixed(0)}% complete today</p>
+              <p className="relative text-xs text-gray-500"><span className="text-cyan-300 font-semibold">{teamGoalPct.toFixed(0)}%</span> complete today</p>
             </div>
-            <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-medium text-gray-300">Monthly Goal</p>
-                <span className="text-sm font-bold text-purple-400">{monthTotalDeals} / {goals.monthly}</span>
+            <div className="relative overflow-hidden rounded-xl border border-purple-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-purple-950/25 p-5 shadow-xl shadow-purple-950/10">
+              <div className="absolute -left-10 -top-10 h-28 w-28 rounded-full bg-purple-500/10 blur-2xl" />
+              <div className="relative flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-300">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-100">Monthly Goal</p>
+                    <p className="text-xs text-gray-500">Month-to-date progress</p>
+                  </div>
+                </div>
+                <span className="text-sm font-bold text-purple-300">{monthTotalDeals} / {goals.monthly}</span>
               </div>
-              <div className="w-full bg-gray-700 rounded-full h-2.5 mb-2">
-                <div className="bg-purple-500 h-2.5 rounded-full transition-all" style={{ width: `${monthlyGoalPct}%` }} />
+              <div className="relative w-full bg-gray-700 rounded-full h-2.5 mb-3 overflow-hidden">
+                <div className="bg-gradient-to-r from-purple-400 to-fuchsia-500 h-2.5 rounded-full transition-all" style={{ width: `${monthlyGoalPct}%` }} />
               </div>
-              <p className="text-xs text-gray-500">{monthlyGoalPct.toFixed(0)}% complete this month</p>
+              <p className="relative text-xs text-gray-500"><span className="text-purple-300 font-semibold">{monthlyGoalPct.toFixed(0)}%</span> complete this month</p>
             </div>
           </div>
         )}
 
         {dealsByState.length > 0 && (
-          <div className="bg-gray-800 rounded-lg p-5 border border-gray-700">
-            <p className="text-sm font-medium text-gray-300 mb-3">
-              Deals by State — {periodLabel}
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {dealsByState.map(item => (
-                <div key={item.state} className="bg-gray-700 rounded-lg p-3 text-center">
-                  <p className="text-lg font-bold text-gray-100">{item.state}</p>
-                  <p className="text-2xl font-bold text-green-400">{item.deals}</p>
-                  <p className="text-xs text-gray-400 mt-1">{formatCurrency(item.amount)}</p>
-                </div>
-              ))}
+          <div className="rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 p-5 shadow-xl shadow-black/10">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-600 bg-gray-900/50 text-gray-300">
+                <MapPin className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-100">Deals by State — {periodLabel}</p>
+                <p className="text-xs text-gray-500">Share of funded deals by state</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {dealsByState.map(item => {
+                const share = periodTotalDeals > 0 ? Math.round((item.deals / periodTotalDeals) * 100) : 0;
+                return (
+                  <div key={item.state} className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-gray-900/80 to-emerald-950/20 p-5">
+                    <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
+                    <div className="relative flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-2xl font-bold text-gray-100">{item.state}</p>
+                        <p className="mt-2 text-4xl font-bold text-emerald-300">{item.deals}</p>
+                        <p className="mt-1 text-sm text-gray-400">{formatCurrency(item.amount)}</p>
+                      </div>
+                      <div className="grid h-16 w-16 place-items-center rounded-full text-sm font-bold text-emerald-200"
+                        style={{ background: `conic-gradient(rgb(16 185 129) ${share}%, rgba(55,65,81,.85) 0)` }}>
+                        <div className="grid h-12 w-12 place-items-center rounded-full bg-gray-900">{share}%</div>
+                      </div>
+                    </div>
+                    <div className="relative mt-5 h-2.5 overflow-hidden rounded-full bg-gray-700/80">
+                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-green-500 transition-all" style={{ width: `${share}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -771,62 +851,95 @@ export default function ReportingTab({
 
       {/* ── SECTION 2: STATE PERFORMANCE ── */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-100">State Performance</h2>
-            <p className="text-sm text-gray-400 mt-0.5">{viewMonthLabel}</p>
+        <div className="flex items-start justify-between gap-4 mb-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+              <MapPin className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-100">State Performance</h2>
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+                <Calendar className="h-3.5 w-3.5" /> {viewMonthLabel}
+              </p>
+            </div>
           </div>
           {(currentUserRole === 'admin' || currentUserRole === 'manager') && isViewingCurrentMonth && (
             <button onClick={() => setShowGoalModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition text-sm">
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition text-sm shadow-lg shadow-blue-950/30">
               <Settings className="w-4 h-4" /> Set State Goals
             </button>
           )}
         </div>
 
         {hasFundingData && (
-          <div className="bg-gradient-to-r from-green-900 to-emerald-900 rounded-lg p-4 border border-green-700 mb-4 flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <p className="text-green-300 text-xs font-medium mb-1 uppercase tracking-wide">All States Combined</p>
-              <div className="flex items-end gap-4">
+          <div className="relative overflow-hidden bg-gradient-to-r from-green-950 via-emerald-950 to-green-900 rounded-xl p-5 border border-green-700/60 mb-4 flex items-center justify-between flex-wrap gap-4 shadow-xl shadow-green-950/20">
+            <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(34,197,94,0.18),transparent_45%)]" />
+            <div className="relative">
+              <p className="text-green-300 text-xs font-semibold mb-2 uppercase tracking-wider">All States Combined</p>
+              <div className="flex items-end gap-6">
                 <div>
-                  <p className="text-4xl font-bold text-white">{totalFundedCount}</p>
+                  <p className="text-4xl font-bold text-white leading-none">{totalFundedCount}</p>
                   <p className="text-green-400 text-xs mt-0.5">funded deals</p>
                 </div>
+                <div className="h-10 w-px bg-green-700/70" />
                 <div>
-                  <p className="text-2xl font-bold text-green-300">{formatCurrency(totalFundedAmount)}</p>
+                  <p className="text-2xl font-bold text-green-200">{formatCurrency(totalFundedAmount)}</p>
                   <p className="text-green-500 text-xs mt-0.5">total volume</p>
                 </div>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-green-400 text-xs">Avg per deal</p>
-              <p className="text-xl font-bold text-green-200">
+            <div className="relative flex items-center gap-3 rounded-xl border border-green-600/50 bg-green-950/40 px-4 py-3 text-right">
+              <DollarSign className="h-7 w-7 text-green-300" />
+              <div>
+                <p className="text-green-400 text-xs">Avg per deal</p>
+                <p className="text-xl font-bold text-green-100">
                 {formatCurrency(totalFundedCount > 0 ? totalFundedAmount / totalFundedCount : 0)}
-              </p>
+                </p>
+              </div>
             </div>
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {stateStats.map(stat => (
-            <div key={stat.state} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xl font-bold text-gray-100">{stat.state}</span>
-                {stat.monthlyGoal > 0 ? (
-                  <span className={`text-2xl font-bold ${getProgressTextColor(stat.progress)}`}>
-                    {stat.funded}
-                    <span className="text-sm text-gray-500 font-normal"> / {stat.monthlyGoal}</span>
-                  </span>
-                ) : (
-                  <span className="text-sm text-gray-500 italic">No goal set</span>
-                )}
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {stateStats.map((stat, idx) => {
+            const share = totalFundedCount > 0 ? Math.round((stat.funded / totalFundedCount) * 100) : 0;
+            const accentColors = [
+              'rgb(139 92 246)',
+              'rgb(59 130 246)',
+              'rgb(249 115 22)',
+              'rgb(34 211 238)',
+              'rgb(250 204 21)',
+              'rgb(16 185 129)',
+            ];
+            const accent = accentColors[idx % accentColors.length];
+            return (
+              <div key={stat.state} className="relative overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 p-4 shadow-lg shadow-black/10">
+                <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full opacity-20 blur-2xl" style={{ backgroundColor: accent }} />
+                <div className="relative flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-14 w-14 place-items-center rounded-full text-xs font-bold text-gray-100"
+                      style={{ background: `conic-gradient(${accent} ${stat.monthlyGoal > 0 ? Math.min(stat.progress, 100) : share}%, rgba(55,65,81,.85) 0)` }}>
+                      <div className="grid h-10 w-10 place-items-center rounded-full bg-gray-900">{stat.state}</div>
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold text-gray-100">{stat.state}</p>
+                      <p className="text-xs text-gray-500">{stat.totalApps} total apps</p>
+                    </div>
+                  </div>
+                  {stat.monthlyGoal > 0 ? (
+                    <div className="text-right">
+                      <p className={`text-xl font-bold ${getProgressTextColor(stat.progress)}`}>{stat.funded}</p>
+                      <p className="text-xs text-gray-500">/ {stat.monthlyGoal} goal</p>
+                    </div>
+                  ) : (
+                    <span className="rounded-full border border-gray-700 bg-gray-900/50 px-2 py-1 text-xs italic text-gray-500">No goal set</span>
+                  )}
+                </div>
 
               {stat.monthlyGoal > 0 ? (
                 <>
-                  <div className="w-full bg-gray-700 rounded-full h-2 mb-3">
-                    <div className={`h-2 rounded-full ${getProgressColor(stat.progress)}`}
+                  <div className="w-full bg-gray-700/80 rounded-full h-2.5 mb-3 overflow-hidden">
+                    <div className={`h-2.5 rounded-full ${getProgressColor(stat.progress)}`}
                       style={{ width: `${Math.min(stat.progress, 100)}%` }} />
                   </div>
                   <div className="flex items-center justify-between text-xs">
@@ -845,35 +958,47 @@ export default function ReportingTab({
                     )}
                   </div>
                   {stat.totalAmount > 0 && (
-                    <div className="mt-2 pt-2 border-t border-gray-700">
+                    <div className="mt-3 pt-3 border-t border-gray-700">
                       <span className="text-xs text-green-400 font-semibold">{formatCurrency(stat.totalAmount)}</span>
                       <span className="text-xs text-gray-500 ml-2">funded volume</span>
                     </div>
                   )}
                 </>
               ) : (
-                <div className="flex items-center justify-between text-xs text-gray-400">
-                  <span>{stat.totalApps} total apps</span>
-                  {stat.funded > 0 && <span className="text-green-400">{stat.funded} funded</span>}
+                <div className="relative flex items-center justify-between text-xs text-gray-400">
+                  <span>{share}% of funded deals</span>
+                  {stat.funded > 0 && (
+                    <span className="rounded-full border border-green-700/60 bg-green-900/30 px-2 py-1 text-green-300">
+                      {stat.funded} funded
+                    </span>
+                  )}
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* ── SECTION 3: REP PERFORMANCE ── */}
       {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-100">Rep Performance</h2>
-              <p className="text-sm text-gray-500 mt-0.5">{viewMonthLabel}</p>
+          <div className="flex items-start justify-between gap-4 mb-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-100">Rep Performance</h2>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+                  <Calendar className="h-3.5 w-3.5" /> {viewMonthLabel}
+                </p>
+              </div>
             </div>
-            <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden p-1 shadow-lg shadow-black/10">
               {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
                 <button key={p} onClick={() => setRepPeriod(p)}
-                  className={`px-4 py-2 text-sm font-medium transition ${repPeriod === p ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}>
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition ${repPeriod === p ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
                 </button>
               ))}
@@ -881,9 +1006,10 @@ export default function ReportingTab({
           </div>
 
           {repPerformance.length > 0 ? (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-900">
+            <div className="bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-hidden shadow-xl shadow-black/10">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px]">
+                <thead className="bg-gray-950/70">
                   <tr>
                     <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Rep</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Total Calls</th>
@@ -895,19 +1021,34 @@ export default function ReportingTab({
                     <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Conv. Rate</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-700">
-                  {repPerformance.map((rep: any) => (
-                    <tr key={rep.repId} className="hover:bg-gray-750">
-                      <td className="px-5 py-4 text-sm font-medium text-gray-200">{rep.repName}</td>
-                      <td className="px-5 py-4"><span className="text-sm text-blue-400">{rep.totalCalls}</span></td>
+                <tbody className="divide-y divide-gray-700/80">
+                  {repPerformance.map((rep: any, idx: number) => {
+                    const initials = rep.repName
+                      .split(' ')
+                      .map((part: string) => part[0])
+                      .join('')
+                      .slice(0, 2)
+                      .toUpperCase();
+                    const avatarColors = ['bg-purple-600', 'bg-blue-600', 'bg-cyan-600', 'bg-indigo-600', 'bg-orange-600', 'bg-emerald-600'];
+                    return (
+                    <tr key={rep.repId} className={`${idx % 2 === 0 ? 'bg-gray-800/40' : 'bg-gray-900/20'} hover:bg-gray-750 transition`}>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ${avatarColors[idx % avatarColors.length]}`}>
+                            {initials || <UserRound className="h-4 w-4" />}
+                          </div>
+                          <span className="text-sm font-medium text-gray-200">{rep.repName}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4"><span className="text-sm font-semibold text-blue-400">{rep.totalCalls}</span></td>
                       <td className="px-5 py-4"><span className="text-sm text-gray-400">{rep.noCall}</span></td>
-                      <td className="px-5 py-4"><span className="text-sm text-yellow-400">{rep.pending}</span></td>
-                      <td className="px-5 py-4"><span className="text-sm text-orange-400">{rep.noAnswer}</span></td>
+                      <td className="px-5 py-4"><span className="text-sm font-semibold text-yellow-400">{rep.pending}</span></td>
+                      <td className="px-5 py-4"><span className="text-sm font-semibold text-orange-400">{rep.noAnswer}</span></td>
                       <td className="px-5 py-4">
                         {rep.deals > 0 ? (
                           <button
                             onClick={() => openRepDealsModal(rep.repId, rep.repName)}
-                            className="text-sm font-semibold text-green-400 hover:text-green-300 underline underline-offset-2 transition"
+                            className="inline-flex items-center rounded-full border border-green-700/60 bg-green-900/30 px-2.5 py-1 text-sm font-semibold text-green-300 hover:bg-green-800/40 transition"
                           >
                             {rep.deals}
                           </button>
@@ -915,13 +1056,19 @@ export default function ReportingTab({
                           <span className="text-sm font-semibold text-green-400">0</span>
                         )}
                       </td>
-                      <td className="px-5 py-4"><span className="text-sm font-semibold text-emerald-400">{rep.confirmedDeals}</span></td>
+                      <td className="px-5 py-4">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-700/60 bg-emerald-900/30 px-2.5 py-1 text-sm font-semibold text-emerald-300">
+                          <BadgeCheck className="h-3 w-3" /> {rep.confirmedDeals}
+                        </span>
+                      </td>
                       <td className="px-5 py-4"><span className="text-sm font-semibold text-blue-400">{rep.conversionRate}%</span></td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
-              <div className="px-5 py-3 bg-gray-750 border-t border-gray-700">
+              </div>
+              <div className="px-5 py-3 bg-gray-950/40 border-t border-gray-700">
                 <p className="text-xs text-gray-500">
                   Showing <span className="text-gray-400 font-medium">{repPeriodLabel}</span> view for {viewMonthLabel}
                   &nbsp;·&nbsp; Click deal count to view &amp; edit

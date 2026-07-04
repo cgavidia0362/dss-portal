@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import NoteItem from '../components/NoteItem';
 
@@ -366,6 +366,14 @@ export default function CallsTab({
   const noDealCount = filteredCalls.filter(c => c.fuStatus === 'No Deal').length;
   const breakdownTotal = filteredCalls.length || 1;
   const pct = (n: number) => `${Math.round((n / breakdownTotal) * 100)}%`;
+  const pctValue = (n: number) => Math.round((n / breakdownTotal) * 100);
+  const activeQueueCount = noCallCount + pendingCount + noAnswerCount;
+  const staleCount = filteredCalls.filter(c => {
+    if (!c.updatedAt) return false;
+    if (['Deal', 'Confirmed Deal', 'No Deal', 'Closed', 'Duplicates'].includes(c.fuStatus || '')) return false;
+    return Date.now() - new Date(c.updatedAt).getTime() > 3 * 24 * 60 * 60 * 1000;
+  }).length;
+  const workedTodayCount = filteredCalls.filter(c => c.updatedAt && isToday(new Date(c.updatedAt)) && c.fuStatus).length;
 
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
@@ -506,52 +514,86 @@ export default function CallsTab({
       </div>
 
       {/* KPI CARDS + LEADERBOARD */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 items-stretch">
-        <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-              <p className="text-xs text-gray-400 uppercase tracking-wider">Daily Goal</p>
-              <p className="text-2xl font-bold text-purple-400">
-                {dealsToday}<span className="text-sm font-normal text-gray-500 ml-1">/ {dailyGoal}</span>
-              </p>
-              <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-4 items-stretch">
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="relative overflow-hidden rounded-xl border border-purple-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-purple-950/30 p-4 shadow-lg shadow-purple-950/10">
+              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-purple-500/10 blur-2xl" />
+              <div className="relative flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300">
+                      <Target className="h-4 w-4" />
+                    </div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-purple-300/80">Daily Goal</p>
+                  </div>
+                  <p className="text-3xl font-bold text-purple-300">
+                    {dealsToday}<span className="ml-1 text-base font-normal text-gray-500">/ {dailyGoal}</span>
+                  </p>
+                </div>
+                <div className="grid h-16 w-16 place-items-center rounded-full bg-gray-950/40 text-sm font-bold text-purple-200"
+                  style={{ background: `conic-gradient(rgb(168 85 247) ${goalPct}%, rgba(55,65,81,.85) 0)` }}>
+                  <div className="grid h-12 w-12 place-items-center rounded-full bg-gray-900">{goalPct.toFixed(0)}%</div>
+                </div>
               </div>
-              <p className="text-xs text-gray-600">{goalPct.toFixed(0)}% complete</p>
-            </div>
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-              <p className="text-xs text-gray-400 uppercase tracking-wider">Team Goal</p>
-              <p className="text-2xl font-bold text-cyan-400">
-                {teamDealsToday}<span className="text-sm font-normal text-gray-500 ml-1">/ {teamGoal}</span>
-              </p>
-              <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
+              <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-gray-700/80">
+                <div className="h-full rounded-full bg-purple-400 transition-all" style={{ width: `${goalPct}%` }} />
               </div>
-              <p className="text-xs text-gray-600">{teamGoalPct.toFixed(0)}% complete</p>
+              <p className="relative mt-2 text-xs text-gray-500">{goalPct.toFixed(0)}% complete</p>
             </div>
+
+            <div className="relative overflow-hidden rounded-xl border border-cyan-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-cyan-950/30 p-4 shadow-lg shadow-cyan-950/10">
+              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-cyan-500/10 blur-2xl" />
+              <div className="relative flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
+                      <Users className="h-4 w-4" />
+                    </div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300/80">Team Goal</p>
+                  </div>
+                  <p className="text-3xl font-bold text-cyan-300">
+                    {teamDealsToday}<span className="ml-1 text-base font-normal text-gray-500">/ {teamGoal}</span>
+                  </p>
+                </div>
+                <div className="grid h-16 w-16 place-items-center rounded-full bg-gray-950/40 text-sm font-bold text-cyan-200"
+                  style={{ background: `conic-gradient(rgb(34 211 238) ${teamGoalPct}%, rgba(55,65,81,.85) 0)` }}>
+                  <div className="grid h-12 w-12 place-items-center rounded-full bg-gray-900">{teamGoalPct.toFixed(0)}%</div>
+                </div>
+              </div>
+              <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-gray-700/80">
+                <div className="h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${teamGoalPct}%` }} />
+              </div>
+              <p className="relative mt-2 text-xs text-gray-500">{teamGoalPct.toFixed(0)}% complete</p>
+            </div>
+
             {currentUserRole === 'rep' ? (
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-                <p className="text-xs text-gray-400 uppercase tracking-wider">State Goal</p>
+              <div className="relative overflow-hidden rounded-xl border border-teal-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-teal-950/30 p-4 shadow-lg shadow-teal-950/10">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-teal-500/30 bg-teal-500/10 text-teal-300">
+                    <Target className="h-4 w-4" />
+                  </div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-teal-300/80">State Goal</p>
+                </div>
                 {repStates.length === 0 ? (
-                  <p className="text-xs text-gray-600 italic">No state assigned</p>
+                  <p className="text-xs text-gray-500 italic">No state assigned</p>
                 ) : (
-                  <div className="flex flex-col gap-2">
+                  <div className="space-y-2">
                     {repStates.map(state => {
                       const goal = stateGoals[state] || 0;
                       const deals = getStateDealsToday(state);
                       const pctVal = goal > 0 ? Math.min((deals / goal) * 100, 100) : 0;
                       return (
                         <div key={state}>
-                          <div className="flex items-baseline justify-between mb-1">
-                            <span className="text-xs text-gray-400 font-medium">{state}</span>
-                            <span className="text-sm font-bold text-teal-400">
-                              {deals}<span className="text-xs font-normal text-gray-500 ml-1">/ {goal > 0 ? goal : '—'}</span>
+                          <div className="mb-1 flex items-baseline justify-between">
+                            <span className="text-xs font-medium text-gray-400">{state}</span>
+                            <span className="text-sm font-bold text-teal-300">
+                              {deals}<span className="ml-1 text-xs font-normal text-gray-500">/ {goal > 0 ? goal : '—'}</span>
                             </span>
                           </div>
-                          <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                            <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${pctVal}%` }} />
+                          <div className="h-1.5 overflow-hidden rounded-full bg-gray-700">
+                            <div className="h-full rounded-full bg-teal-400 transition-all" style={{ width: `${pctVal}%` }} />
                           </div>
-                          {goal > 0 && <p className="text-xs text-gray-600 mt-0.5">{pctVal.toFixed(0)}% complete</p>}
                         </div>
                       );
                     })}
@@ -559,60 +601,154 @@ export default function CallsTab({
                 )}
               </div>
             ) : (
-              <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-2">
-                <p className="text-xs text-gray-400 uppercase tracking-wider">No Answer</p>
-                <p className="text-2xl font-bold text-orange-400">{noAnswerCount}</p>
-                <div className="h-1 bg-gray-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-500 rounded-full" style={{ width: pct(noAnswerCount) }} />
+              <div className="relative overflow-hidden rounded-xl border border-orange-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-orange-950/30 p-4 shadow-lg shadow-orange-950/10">
+                <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-orange-500/10 blur-2xl" />
+                <div className="relative flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-orange-500/30 bg-orange-500/10 text-orange-300">
+                        <PhoneCall className="h-4 w-4" />
+                      </div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-orange-300/80">No Answer</p>
+                    </div>
+                    <p className="text-3xl font-bold text-orange-300">{noAnswerCount}</p>
+                    <p className="mt-1 text-xs text-gray-500">of {filteredCalls.length} calls</p>
+                  </div>
+                  <div className="rounded-xl border border-orange-500/30 bg-orange-950/20 px-3 py-2 text-right">
+                    <p className="text-lg font-bold text-orange-300">{pctValue(noAnswerCount)}%</p>
+                    <p className="text-[10px] uppercase tracking-wider text-orange-300/70">retry</p>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-600">of {filteredCalls.length} calls</p>
+                <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-gray-700/80">
+                  <div className="h-full rounded-full bg-orange-400 transition-all" style={{ width: pct(noAnswerCount) }} />
+                </div>
               </div>
             )}
           </div>
 
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex-1">
-            <div className="flex items-baseline justify-between mb-4">
-              <p className="text-sm font-semibold text-gray-200">Call Status Breakdown</p>
-              <div>
-                <span className="text-xl font-bold text-blue-400">{filteredCalls.length}</span>
-                <span className="text-xs text-gray-500 ml-1.5">total calls</span>
+          <div className="overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 shadow-xl shadow-black/10">
+            <div className="flex items-center justify-between border-b border-gray-700/70 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-300">
+                  <ListChecks className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-100">Call Status Breakdown</p>
+                  <p className="text-xs text-gray-500">Current filtered view</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-bold text-blue-400">{filteredCalls.length}</span>
+                <span className="ml-1.5 text-xs text-gray-500">total calls</span>
               </div>
             </div>
-            <div className="space-y-3">
+
+            <div className="space-y-2.5 p-4">
               {[
-                { label: 'No Call', count: noCallCount, color: 'bg-gray-500', textColor: 'text-gray-400' },
-                { label: 'Pending', count: pendingCount, color: 'bg-yellow-400', textColor: 'text-yellow-400' },
-                { label: 'No Answer', count: noAnswerCount, color: 'bg-orange-400', textColor: 'text-orange-400' },
-                { label: 'Deal', count: dealTotalCount, color: 'bg-green-400', textColor: 'text-green-400' },
-                { label: 'No Deal', count: noDealCount, color: 'bg-red-400', textColor: 'text-red-400' },
-              ].map(({ label, count, color, textColor }) => (
-                <div key={label} className="flex items-center gap-3">
-                  <span className="text-xs text-gray-400 w-20 flex-shrink-0">{label}</span>
-                  <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                { label: 'No Call', count: noCallCount, color: 'bg-gray-400', textColor: 'text-gray-300', icon: PhoneCall, pill: 'NO CALL', pillCls: 'bg-gray-700 text-gray-300 border-gray-600' },
+                { label: 'Pending', count: pendingCount, color: 'bg-yellow-400', textColor: 'text-yellow-300', icon: Clock, pill: 'PENDING', pillCls: 'bg-yellow-900/40 text-yellow-300 border-yellow-700/70' },
+                { label: 'No Answer', count: noAnswerCount, color: 'bg-orange-400', textColor: 'text-orange-300', icon: RotateCcw, pill: 'NO ANSWER', pillCls: 'bg-orange-900/40 text-orange-300 border-orange-700/70' },
+                { label: 'Deal', count: dealTotalCount, color: 'bg-green-400', textColor: 'text-green-300', icon: CheckCircle2, pill: 'DEAL', pillCls: 'bg-green-900/40 text-green-300 border-green-700/70' },
+                { label: 'No Deal', count: noDealCount, color: 'bg-red-400', textColor: 'text-red-300', icon: XCircle, pill: 'NO DEAL', pillCls: 'bg-red-900/40 text-red-300 border-red-700/70' },
+              ].map(({ label, count, color, textColor, icon: Icon, pill, pillCls }) => (
+                <div key={label} className="grid grid-cols-[128px_minmax(0,1fr)_48px_42px_82px] items-center gap-3 rounded-lg border border-gray-700/50 bg-gray-900/20 px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-800 text-gray-400">
+                      <Icon className="h-3.5 w-3.5" />
+                    </div>
+                    <span className="truncate text-sm font-medium text-gray-300">{label}</span>
+                  </div>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-gray-700/80">
                     <div className={`h-full ${color} rounded-full transition-all`} style={{ width: pct(count) }} />
                   </div>
-                  <span className={`text-xs font-semibold ${textColor} w-8 text-right flex-shrink-0`}>{count}</span>
+                  <span className="text-right text-xs font-semibold text-gray-400">{pctValue(count)}%</span>
+                  <span className={`text-right text-xs font-bold ${textColor}`}>{count}</span>
+                  <span className={`rounded-md border px-2 py-1 text-center text-[10px] font-semibold ${pillCls}`}>{pill}</span>
                 </div>
               ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.7fr] gap-3 border-t border-gray-700/70 p-4">
+              <div className="rounded-xl border border-gray-700 bg-gray-900/30 p-4">
+                <div className="flex items-center gap-4">
+                  <div
+                    className="h-24 w-24 rounded-full border border-gray-700"
+                    style={{
+                      background: `conic-gradient(
+                        rgb(250 204 21) 0 ${pctValue(pendingCount)}%,
+                        rgb(251 146 60) ${pctValue(pendingCount)}% ${pctValue(pendingCount) + pctValue(noAnswerCount)}%,
+                        rgb(156 163 175) ${pctValue(pendingCount) + pctValue(noAnswerCount)}% ${pctValue(pendingCount) + pctValue(noAnswerCount) + pctValue(noCallCount)}%,
+                        rgb(74 222 128) ${pctValue(pendingCount) + pctValue(noAnswerCount) + pctValue(noCallCount)}% ${pctValue(pendingCount) + pctValue(noAnswerCount) + pctValue(noCallCount) + pctValue(dealTotalCount)}%,
+                        rgb(248 113 113) 0
+                      )`,
+                    }}
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-100">Overview</p>
+                    <p className="mt-1 text-3xl font-bold text-gray-100">{filteredCalls.length}</p>
+                    <p className="text-xs text-gray-500">total calls</p>
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                      <span className="text-purple-300">Today: <strong>{workedTodayCount}</strong></span>
+                      <span className="text-cyan-300">Queue: <strong>{activeQueueCount}</strong></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-700 bg-gray-900/30 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300">
+                      <Target className="h-4 w-4" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-100">Action Queue</p>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Focus: <span className="text-yellow-300">Pending</span>, then <span className="text-orange-300">No Answer</span>
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                  {[
+                    { label: 'Pending Follow-Up', count: pendingCount, icon: Clock, color: 'text-yellow-300', border: 'border-yellow-700/50', bg: 'bg-yellow-950/20', priority: 'Medium' },
+                    { label: 'Needs First Call', count: noCallCount, icon: PhoneCall, color: 'text-purple-300', border: 'border-purple-700/50', bg: 'bg-purple-950/20', priority: 'High' },
+                    { label: 'No Answer Retry', count: noAnswerCount, icon: RotateCcw, color: 'text-orange-300', border: 'border-orange-700/50', bg: 'bg-orange-950/20', priority: 'Retry' },
+                    { label: 'Stale / Aging', count: staleCount, icon: AlertTriangle, color: 'text-red-300', border: 'border-red-700/50', bg: 'bg-red-950/20', priority: 'Review' },
+                  ].map(({ label, count, icon: Icon, color, border, bg, priority }) => (
+                    <div key={label} className={`rounded-lg border ${border} ${bg} p-3`}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <Icon className={`h-4 w-4 ${color}`} />
+                        <span className={`text-xl font-bold ${color}`}>{count}</span>
+                      </div>
+                      <p className="min-h-[32px] text-xs font-medium leading-tight text-gray-300">{label}</p>
+                      <p className={`mt-2 rounded-md border ${border} px-2 py-1 text-center text-[10px] font-semibold ${color}`}>{priority}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
-            <span className="text-base">🏆</span>
-            <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
+        <div className="overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-b from-gray-800 to-gray-900 shadow-xl shadow-black/10 flex flex-col">
+          <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                <Trophy className="h-4 w-4" />
+              </div>
+              <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
+            </div>
+            <span className="rounded-full bg-gray-700 px-2 py-0.5 text-[10px] font-semibold text-gray-400">{leaderboard.length}</span>
           </div>
-          <div className="divide-y divide-gray-700 flex-1">
+          <div className="divide-y divide-gray-700/70 flex-1 overflow-hidden">
             {leaderboard.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-gray-500">No deals logged today</p>
             ) : leaderboard.map((rep, idx) => {
               const m = medal(idx);
               const isMe = rep.id === currentUserId;
               return (
-                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 ${isMe ? 'bg-blue-900 bg-opacity-20' : ''}`}>
-                  <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 text-sm">
-                    {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
+                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-blue-900/20 ring-1 ring-inset ring-blue-500/20' : 'hover:bg-gray-750'}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${idx < 3 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-gray-700 text-gray-400'}`}>
+                    {m || <span className="text-xs font-semibold">{idx + 1}</span>}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium truncate ${isMe ? 'text-blue-300' : 'text-gray-200'}`}>
@@ -623,8 +759,8 @@ export default function CallsTab({
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className={`text-lg font-bold leading-none ${rep.dealCount > 0 ? 'text-green-400' : 'text-gray-600'}`}>{rep.dealCount}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">deals</p>
+                    <p className={`text-xl font-bold leading-none ${rep.dealCount > 0 ? 'text-green-400' : 'text-gray-600'}`}>{rep.dealCount}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider">deals</p>
                   </div>
                 </div>
               );
