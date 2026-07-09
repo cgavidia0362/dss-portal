@@ -23,6 +23,8 @@ interface Call {
   isDuplicate?: boolean;
   dealBy?: string;
   dealByName?: string;
+  updatedBy?: string;
+  updatedByName?: string;
   customerName?: string;
 }
 
@@ -191,7 +193,7 @@ export default function CallsTab({
     return dateStr;
   };
 
-  const formatLastActivity = (call: Call): { text: string; isToday: boolean } => {
+  const formatLastActivity = (call: Call): { text: string; isToday: boolean; byName?: string } => {
     if (!call.updatedAt) return { text: '—', isToday: false };
     if (call.createdAt) {
       const diffMs = Math.abs(call.updatedAt.getTime() - new Date(call.createdAt).getTime());
@@ -201,10 +203,22 @@ export default function CallsTab({
     const todayFlag = isToday(date);
     const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
       .replace(' AM', 'am').replace(' PM', 'pm');
-    if (todayFlag) return { text: `Today ${timeStr}`, isToday: true };
+    const byName = call.updatedByName || undefined;
+    if (todayFlag) return { text: `Today ${timeStr}`, isToday: true, byName };
     const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    return { text: dateStr, isToday: false };
+    return { text: dateStr, isToday: false, byName };
   };
+
+  const actorUpdate = () => ({
+    updatedBy: currentUserId,
+    updatedByName: currentUser?.name || undefined,
+  });
+
+  const actorDbFields = () => ({
+    updated_by: currentUserId,
+    updated_by_name: currentUser?.name || null,
+    updated_at: new Date().toISOString(),
+  });
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -239,11 +253,15 @@ export default function CallsTab({
     return 'bg-gray-700 text-gray-300 border-gray-600';
   };
 
+  const isGlobalSearch = isRep && searchQuery.trim().length > 0;
+
   const roleFilteredCalls = calls.filter(c =>
     isRep ? c.assignedTo === currentUserId : true
   );
   const uniqueStatusLast = Array.from(new Set(roleFilteredCalls.map(c => c.statusLast).filter(Boolean))).sort();
-  const uniqueStates = Array.from(new Set(roleFilteredCalls.map(c => c.state))).sort();
+  const uniqueStates = Array.from(new Set(
+    (isGlobalSearch ? calls : roleFilteredCalls).map(c => c.state)
+  )).sort();
 
   const uniqueReps = (() => {
     const repMap: { [id: string]: string } = {};
@@ -261,8 +279,8 @@ export default function CallsTab({
     setFilterStatusLast(n);
   };
 
-  const filteredCalls = calls.filter(call => {
-    if (isRep && call.assignedTo !== currentUserId) return false;
+  const applyCallFilters = (call: Call, options?: { skipAssignment?: boolean; skipFuQueue?: boolean }) => {
+    if (isRep && !options?.skipAssignment && call.assignedTo !== currentUserId) return false;
     if (searchQuery &&
       !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -278,10 +296,10 @@ export default function CallsTab({
 
     const fuKey = call.fuStatus || 'No Call';
 
-    if (isRep) {
+    if (isRep && !options?.skipFuQueue) {
       // My Queue: unworked calls always show; worked calls show only if their FU chip is selected
       if (fuKey !== 'No Call' && !filterFuStatuses.has(fuKey)) return false;
-    } else {
+    } else if (!isRep) {
       // Admin/Manager: if FU chips selected, filter to those only
       if (filterFuStatuses.size > 0 && !filterFuStatuses.has(fuKey)) return false;
       // showCompleted toggle for admins
@@ -291,7 +309,18 @@ export default function CallsTab({
     }
 
     return true;
-  });
+  };
+
+  const filteredCalls = calls.filter(call =>
+    applyCallFilters(call, {
+      skipAssignment: isGlobalSearch,
+      skipFuQueue: isGlobalSearch,
+    })
+  );
+
+  const dashboardCalls = isGlobalSearch
+    ? calls.filter(call => applyCallFilters(call))
+    : filteredCalls;
 
   // Split for My Queue divider (reps only)
   const unworkedCalls = isRep ? filteredCalls.filter(c => !c.fuStatus) : [];
@@ -320,7 +349,7 @@ export default function CallsTab({
     setCurrentPage(1);
   }, [searchQuery, filterFuStatuses, filterState, filterRep, filterNewOnly, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
 
-  const csvDealsToday = filteredCalls.filter(c =>
+  const csvDealsToday = roleFilteredCalls.filter(c =>
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))
   ).length;
   const myDailyDealsToday = (todayDailyDeals || []).filter(d =>
@@ -359,21 +388,21 @@ export default function CallsTab({
     return c.fuStatus === 'No Deal' || c.fuStatus === 'Closed' || c.fuStatus === 'Duplicates';
   }).length;
 
-  const noCallCount = filteredCalls.filter(c => !c.fuStatus).length;
-  const pendingCount = filteredCalls.filter(c => c.fuStatus === 'Pending').length;
-  const noAnswerCount = filteredCalls.filter(c => c.fuStatus === 'No Answer').length;
-  const dealTotalCount = filteredCalls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
-  const noDealCount = filteredCalls.filter(c => c.fuStatus === 'No Deal').length;
-  const breakdownTotal = filteredCalls.length || 1;
+  const noCallCount = dashboardCalls.filter(c => !c.fuStatus).length;
+  const pendingCount = dashboardCalls.filter(c => c.fuStatus === 'Pending').length;
+  const noAnswerCount = dashboardCalls.filter(c => c.fuStatus === 'No Answer').length;
+  const dealTotalCount = dashboardCalls.filter(c => c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal').length;
+  const noDealCount = dashboardCalls.filter(c => c.fuStatus === 'No Deal').length;
+  const breakdownTotal = dashboardCalls.length || 1;
   const pct = (n: number) => `${Math.round((n / breakdownTotal) * 100)}%`;
   const pctValue = (n: number) => Math.round((n / breakdownTotal) * 100);
   const activeQueueCount = noCallCount + pendingCount + noAnswerCount;
-  const staleCount = filteredCalls.filter(c => {
+  const staleCount = dashboardCalls.filter(c => {
     if (!c.updatedAt) return false;
     if (['Deal', 'Confirmed Deal', 'No Deal', 'Closed', 'Duplicates'].includes(c.fuStatus || '')) return false;
     return Date.now() - new Date(c.updatedAt).getTime() > 3 * 24 * 60 * 60 * 1000;
   }).length;
-  const workedTodayCount = filteredCalls.filter(c => c.updatedAt && isToday(new Date(c.updatedAt)) && c.fuStatus).length;
+  const workedTodayCount = dashboardCalls.filter(c => c.updatedAt && isToday(new Date(c.updatedAt)) && c.fuStatus).length;
 
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
@@ -414,7 +443,8 @@ export default function CallsTab({
     setCalls(prev => prev.map(c => c.id === callId
       ? { ...c, fuStatus: newStatus, updatedAt: new Date(), dealDate,
           dealBy: newStatus === 'Deal' ? currentUserId : undefined,
-          dealByName: newStatus === 'Deal' ? (currentUser?.name || undefined) : undefined }
+          dealByName: newStatus === 'Deal' ? (currentUser?.name || undefined) : undefined,
+          ...actorUpdate() }
       : c
     ));
     await supabase.from('calls').update({
@@ -422,25 +452,25 @@ export default function CallsTab({
       deal_date: newStatus === 'Deal' ? new Date().toISOString() : (existingDealDate ? new Date(existingDealDate).toISOString() : null),
       deal_by: newStatus === 'Deal' ? currentUserId : null,
       deal_by_name: newStatus === 'Deal' ? (currentUser?.name || null) : null,
-      updated_at: new Date().toISOString(),
+      ...actorDbFields(),
     }).eq('id', callId);
   };
 
   const handleSaveStatusLast = async (callId: string) => {
-    setCalls(prev => prev.map(c => c.id === callId ? { ...c, statusLast: tempStatusLast, updatedAt: new Date() } : c));
+    setCalls(prev => prev.map(c => c.id === callId ? { ...c, statusLast: tempStatusLast, updatedAt: new Date(), ...actorUpdate() } : c));
     setEditingStatusLast(null);
     await supabase.from('calls').update({
       status_last: tempStatusLast,
-      updated_at: new Date().toISOString(),
+      ...actorDbFields(),
     }).eq('id', callId);
   };
 
   const handleSaveAmount = async (callId: string) => {
-    setCalls(prev => prev.map(c => c.id === callId ? { ...c, buyerFinal: tempAmount, updatedAt: new Date() } : c));
+    setCalls(prev => prev.map(c => c.id === callId ? { ...c, buyerFinal: tempAmount, updatedAt: new Date(), ...actorUpdate() } : c));
     setEditingAmount(null);
     await supabase.from('calls').update({
       buyer_final: tempAmount,
-      updated_at: new Date().toISOString(),
+      ...actorDbFields(),
     }).eq('id', callId);
   };
 
@@ -464,7 +494,7 @@ export default function CallsTab({
     if (!text) return;
     const call = calls.find(c => c.id === callId);
     setNewNoteText(prev => ({ ...prev, [callId]: '' }));
-    setCalls(prev => prev.map(c => c.id === callId ? { ...c, updatedAt: new Date() } : c));
+    setCalls(prev => prev.map(c => c.id === callId ? { ...c, updatedAt: new Date(), ...actorUpdate() } : c));
     const { data, error } = await supabase.from('call_notes').insert({
       call_id: callId,
       application_id: call?.applicationId || '',
@@ -479,6 +509,7 @@ export default function CallsTab({
         createdBy: currentUserId, createdByName: currentUser?.name || 'User',
         createdAt: new Date(data.created_at),
       }]);
+      await supabase.from('calls').update(actorDbFields()).eq('id', callId);
     }
   };
 
@@ -509,7 +540,7 @@ export default function CallsTab({
       <div>
         <h2 className="text-2xl font-bold text-gray-100">Calls</h2>
         <p className="text-sm text-gray-400 mt-0.5">
-          {isAdmin ? 'View and manage all calls' : 'View and manage your assigned calls'}
+          {isAdmin ? 'View and manage all calls' : 'View your assigned calls — search to find and update any call'}
         </p>
       </div>
 
@@ -612,7 +643,7 @@ export default function CallsTab({
                       <p className="text-xs font-semibold uppercase tracking-wider text-orange-300/80">No Answer</p>
                     </div>
                     <p className="text-3xl font-bold text-orange-300">{noAnswerCount}</p>
-                    <p className="mt-1 text-xs text-gray-500">of {filteredCalls.length} calls</p>
+                    <p className="mt-1 text-xs text-gray-500">of {dashboardCalls.length} calls</p>
                   </div>
                   <div className="rounded-xl border border-orange-500/30 bg-orange-950/20 px-3 py-2 text-right">
                     <p className="text-lg font-bold text-orange-300">{pctValue(noAnswerCount)}%</p>
@@ -638,7 +669,7 @@ export default function CallsTab({
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-2xl font-bold text-blue-400">{filteredCalls.length}</span>
+                <span className="text-2xl font-bold text-blue-400">{dashboardCalls.length}</span>
                 <span className="ml-1.5 text-xs text-gray-500">total calls</span>
               </div>
             </div>
@@ -685,7 +716,7 @@ export default function CallsTab({
                   />
                   <div>
                     <p className="text-sm font-semibold text-gray-100">Overview</p>
-                    <p className="mt-1 text-3xl font-bold text-gray-100">{filteredCalls.length}</p>
+                    <p className="mt-1 text-3xl font-bold text-gray-100">{dashboardCalls.length}</p>
                     <p className="text-xs text-gray-500">total calls</p>
                     <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                       <span className="text-purple-300">Today: <strong>{workedTodayCount}</strong></span>
@@ -773,7 +804,7 @@ export default function CallsTab({
       <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-3 flex gap-3 items-center flex-wrap">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <input type="text" placeholder="Search App ID, Dealer, Customer, State…"
+          <input type="text" placeholder={isRep ? 'Search all calls — App ID, Dealer, Customer, State…' : 'Search App ID, Dealer, Customer, State…'}
             value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
@@ -1142,6 +1173,9 @@ export default function CallsTab({
                           </svg>
                         )}
                         {activity.text}
+                        {activity.byName && (
+                          <span className="text-gray-600 truncate max-w-[72px]" title={activity.byName}>· {activity.byName}</span>
+                        )}
                       </span>
                     </td>
 

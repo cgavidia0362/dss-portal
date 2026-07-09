@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck } from 'lucide-react';
+import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck, Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { exportRowsToExcel } from '../lib/exportExcel';
 
 interface Call {
   id: string;
@@ -81,6 +82,7 @@ interface RepDealRow {
   activity: string;
   fuStatus: string;
   note: string;
+  repName: string;
 }
 
 interface ReportingTabProps {
@@ -146,7 +148,11 @@ export default function ReportingTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [repDealsModal, setRepDealsModal] = useState<{ repId: string; repName: string } | null>(null);
+  const [repDealsModal, setRepDealsModal] = useState<{
+    repId?: string;
+    repName: string;
+    dealType: 'deal' | 'confirmed';
+  } | null>(null);
   const [repDealsRows, setRepDealsRows] = useState<RepDealRow[]>([]);
   const [repDealsLoading, setRepDealsLoading] = useState(false);
 
@@ -401,7 +407,7 @@ export default function ReportingTab({
     const repData = filtered.reduce((acc: any[], call) => {
       if (!call.assignedTo || !call.assignedToName) return acc;
       const ex = acc.find(r => r.repId === call.assignedTo);
-      const isDeal = isDealStatus(call.fuStatus);
+      const isDeal = call.fuStatus === 'Deal';
       const isConfirmed = call.fuStatus === 'Confirmed Deal';
       const isPending = call.fuStatus === 'Pending';
       const isNoAnswer = call.fuStatus === 'No Answer';
@@ -432,14 +438,14 @@ export default function ReportingTab({
       if (!deal.addedBy) return;
       const ex = repData.find(r => r.repId === deal.addedBy);
       if (ex) {
-        ex.deals++;
+        if (deal.fuStatus === 'Deal') ex.deals++;
         if (deal.fuStatus === 'Confirmed Deal') ex.confirmedDeals++;
       } else {
         repData.push({
           repId: deal.addedBy,
           repName: deal.addedByName || 'Unknown',
           totalCalls: 0,
-          deals: 1,
+          deals: deal.fuStatus === 'Deal' ? 1 : 0,
           confirmedDeals: deal.fuStatus === 'Confirmed Deal' ? 1 : 0,
           pending: 0,
           noAnswer: 0,
@@ -455,22 +461,37 @@ export default function ReportingTab({
   };
 
   const repPerformance = calculateRepPerformance(repPeriod);
+  const teamDealTotals = repPerformance.reduce(
+    (acc, rep) => ({ deals: acc.deals + rep.deals, confirmedDeals: acc.confirmedDeals + rep.confirmedDeals }),
+    { deals: 0, confirmedDeals: 0 },
+  );
 
-  const openRepDealsModal = async (repId: string, repName: string) => {
-    setRepDealsModal({ repId, repName });
+  const openRepDealsModal = async (
+    repId: string | undefined,
+    repName: string,
+    dealType: 'deal' | 'confirmed',
+  ) => {
+    setRepDealsModal({ repId, repName, dealType });
     setRepDealsLoading(true);
     setRepDealsRows([]);
 
+    const targetStatus = dealType === 'deal' ? 'Deal' : 'Confirmed Deal';
     const bounds = getPeriodBounds(repPeriod);
     const repCalls = calls.filter(c => {
-      if (!isDealStatus(c.fuStatus)) return false;
-      const repMatch = c.assignedTo === repId || c.dealBy === repId;
-      if (!repMatch) return false;
+      if (c.fuStatus !== targetStatus) return false;
+      if (repId) {
+        const repMatch = c.assignedTo === repId || c.dealBy === repId;
+        if (!repMatch) return false;
+      }
       const d = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
       return isInBounds(d, bounds);
     });
 
-    const repManual = filterManualDealsByPeriod(repPeriod).filter(d => d.addedBy === repId);
+    const repManual = filterManualDealsByPeriod(repPeriod).filter(d => {
+      if (d.fuStatus !== targetStatus) return false;
+      if (repId && d.addedBy !== repId) return false;
+      return true;
+    });
     const seenApps = new Set(repCalls.map(c => c.applicationId));
 
     const callIds = repCalls.map(c => c.id);
@@ -506,6 +527,7 @@ export default function ReportingTab({
       activity: formatLastActivity(c),
       fuStatus: c.fuStatus || '',
       note: notesMap[`call-${c.id}`] || '—',
+      repName: c.dealByName || c.assignedToName || '—',
     }));
 
     repManual.forEach(d => {
@@ -526,6 +548,7 @@ export default function ReportingTab({
         activity: '—',
         fuStatus: d.fuStatus,
         note: notesMap[`manual-${d.id}`] || '—',
+        repName: d.addedByName || '—',
       });
     });
 
@@ -555,10 +578,39 @@ export default function ReportingTab({
       onRefreshDailyDeals?.();
     }
     setRepDealsRows(prev => {
-      if (!isDealStatus(newStatus)) return prev.filter(r => r.key !== row.key);
+      const targetStatus = repDealsModal?.dealType === 'deal' ? 'Deal' : 'Confirmed Deal';
+      if (newStatus !== targetStatus) return prev.filter(r => r.key !== row.key);
       return prev.map(r => r.key === row.key ? { ...r, fuStatus: newStatus } : r);
     });
   };
+
+  const exportRepDealsModal = () => {
+    if (!repDealsModal || repDealsRows.length === 0) return;
+    const label = repDealsModal.dealType === 'deal' ? 'deals' : 'confirmed-deals';
+    const scope = repDealsModal.repId ? repDealsModal.repName.replace(/\s+/g, '-') : 'team';
+    const dateStr = new Date().toISOString().slice(0, 10);
+    exportRowsToExcel(
+      repDealsRows.map(row => ({
+        Rep: row.repName,
+        'App ID': row.applicationId,
+        Dealer: row.dealerName,
+        Customer: row.customerName,
+        State: row.state,
+        Amount: row.amount,
+        Date: row.date.toLocaleDateString(),
+        'Status Last': row.statusLast,
+        Activity: row.activity,
+        'FU Status': row.fuStatus,
+        Note: row.note,
+        Source: row.source === 'call' ? 'Calls' : 'Manual',
+      })),
+      repDealsModal.dealType === 'deal' ? 'Deals' : 'Confirmed Deals',
+      `rep-${label}-${scope}-${repPeriod}-${dateStr}.xlsx`,
+    );
+  };
+
+  const dealCountButtonCls = 'inline-flex items-center rounded-full border border-green-700/60 bg-green-900/30 px-2.5 py-1 text-sm font-semibold text-green-300 hover:bg-green-800/40 transition';
+  const confirmedCountButtonCls = 'inline-flex items-center gap-1 rounded-full border border-emerald-700/60 bg-emerald-900/30 px-2.5 py-1 text-sm font-semibold text-emerald-300 hover:bg-emerald-800/40 transition';
 
   const handleSetGoal = async () => {
     if (!selectedState || !goalForm.monthlyGoal || !goalForm.fundingDays) {
@@ -1047,8 +1099,8 @@ export default function ReportingTab({
                       <td className="px-5 py-4">
                         {rep.deals > 0 ? (
                           <button
-                            onClick={() => openRepDealsModal(rep.repId, rep.repName)}
-                            className="inline-flex items-center rounded-full border border-green-700/60 bg-green-900/30 px-2.5 py-1 text-sm font-semibold text-green-300 hover:bg-green-800/40 transition"
+                            onClick={() => openRepDealsModal(rep.repId, rep.repName, 'deal')}
+                            className={dealCountButtonCls}
                           >
                             {rep.deals}
                           </button>
@@ -1057,21 +1109,67 @@ export default function ReportingTab({
                         )}
                       </td>
                       <td className="px-5 py-4">
-                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-700/60 bg-emerald-900/30 px-2.5 py-1 text-sm font-semibold text-emerald-300">
-                          <BadgeCheck className="h-3 w-3" /> {rep.confirmedDeals}
-                        </span>
+                        {rep.confirmedDeals > 0 ? (
+                          <button
+                            onClick={() => openRepDealsModal(rep.repId, rep.repName, 'confirmed')}
+                            className={confirmedCountButtonCls}
+                          >
+                            <BadgeCheck className="h-3 w-3" /> {rep.confirmedDeals}
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-400">
+                            <BadgeCheck className="h-3 w-3" /> 0
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-4"><span className="text-sm font-semibold text-blue-400">{rep.conversionRate}%</span></td>
                     </tr>
                     );
                   })}
                 </tbody>
+                <tfoot className="bg-gray-950/70 border-t-2 border-gray-600">
+                  <tr>
+                    <td className="px-5 py-4 text-sm font-bold text-gray-200">Team Total</td>
+                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
+                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
+                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
+                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
+                    <td className="px-5 py-4">
+                      {teamDealTotals.deals > 0 ? (
+                        <button
+                          onClick={() => openRepDealsModal(undefined, 'Team', 'deal')}
+                          className={dealCountButtonCls}
+                        >
+                          {teamDealTotals.deals}
+                        </button>
+                      ) : (
+                        <span className="text-sm font-bold text-green-400">0</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4">
+                      {teamDealTotals.confirmedDeals > 0 ? (
+                        <button
+                          onClick={() => openRepDealsModal(undefined, 'Team', 'confirmed')}
+                          className={confirmedCountButtonCls}
+                        >
+                          <BadgeCheck className="h-3 w-3" /> {teamDealTotals.confirmedDeals}
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-sm font-bold text-emerald-400">
+                          <BadgeCheck className="h-3 w-3" /> 0
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
+                  </tr>
+                </tfoot>
               </table>
               </div>
               <div className="px-5 py-3 bg-gray-950/40 border-t border-gray-700">
                 <p className="text-xs text-gray-500">
                   Showing <span className="text-gray-400 font-medium">{repPeriodLabel}</span> view for {viewMonthLabel}
-                  &nbsp;·&nbsp; Click deal count to view &amp; edit
+                  &nbsp;·&nbsp; Click deal or confirmed count to view &amp; edit
+                  &nbsp;·&nbsp; Team totals at bottom
                   &nbsp;·&nbsp; Conv. Rate = Confirmed Deals &divide; Total Calls
                 </p>
               </div>
@@ -1143,24 +1241,34 @@ export default function ReportingTab({
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 shrink-0">
               <div>
                 <h3 className="text-lg font-semibold text-gray-100">
-                  {repDealsModal.repName}&apos;s Deals
+                  {repDealsModal.repName}&apos;s {repDealsModal.dealType === 'deal' ? 'Deals' : 'Confirmed Deals'}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {repPeriodLabel} · {viewMonthLabel} · {repDealsRows.length} deal{repDealsRows.length !== 1 ? 's' : ''}
+                  {repPeriodLabel} · {viewMonthLabel} · {repDealsRows.length} {repDealsModal.dealType === 'deal' ? 'deal' : 'confirmed deal'}{repDealsRows.length !== 1 ? 's' : ''}
                 </p>
               </div>
-              <button onClick={() => setRepDealsModal(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={exportRepDealsModal}
+                  disabled={repDealsLoading || repDealsRows.length === 0}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-700 text-sm text-gray-200 hover:bg-gray-600 disabled:opacity-40 transition"
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                </button>
+                <button onClick={() => setRepDealsModal(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              </div>
             </div>
             <div className="overflow-auto flex-1">
               {repDealsLoading ? (
                 <p className="text-center text-gray-500 py-12">Loading deals…</p>
               ) : repDealsRows.length === 0 ? (
-                <p className="text-center text-gray-500 py-12">No deals found.</p>
+                <p className="text-center text-gray-500 py-12">No {repDealsModal.dealType === 'deal' ? 'deals' : 'confirmed deals'} found.</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead className="bg-gray-900 sticky top-0">
                     <tr>
-                      {['App ID', 'Dealer', 'Customer', 'State', 'Amount', 'Date', 'Status Last', 'Activity', 'FU Status', 'Note', 'Source'].map(h => (
+                      {['Rep', 'App ID', 'Dealer', 'Customer', 'State', 'Amount', 'Date', 'Status Last', 'Activity', 'FU Status', 'Note', 'Source'].map(h => (
                         <th key={h} className="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -1168,6 +1276,7 @@ export default function ReportingTab({
                   <tbody className="divide-y divide-gray-700">
                     {repDealsRows.map(row => (
                       <tr key={row.key} className="hover:bg-gray-750">
+                        <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.repName}</td>
                         <td className="px-3 py-2.5 text-blue-400 font-mono text-xs whitespace-nowrap">{row.applicationId}</td>
                         <td className="px-3 py-2.5 text-gray-300 max-w-[140px] truncate">{row.dealerName}</td>
                         <td className="px-3 py-2.5 text-gray-300 max-w-[120px] truncate">{row.customerName}</td>

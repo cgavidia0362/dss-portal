@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target } from 'lucide-react';
+import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target, Download } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
+import { exportRowsToExcel } from '../lib/exportExcel';
 
 interface DailyDeal {
   id: string;
@@ -701,6 +702,42 @@ export default function DailyDealsTab({
     })),
   ].sort((a, b) => b.sortTime - a.sortTime);
 
+  const exportTodayEntries = () => {
+    if (combinedEntries.length === 0) return;
+    exportRowsToExcel(
+      combinedEntries.map(entry => ({
+        'App ID': entry.appId,
+        Dealer: entry.dealerName,
+        Customer: entry.customerName,
+        Amount: parseAmount(entry.amount),
+        State: entry.state,
+        Status: entry.fuStatus,
+        Source: entry.source === 'call' ? 'Calls' : 'Manual',
+        By: entry.creditName,
+      })),
+      'Today Entries',
+      `daily-deals-today-${today}.xlsx`,
+    );
+  };
+
+  const exportHistoryDeals = () => {
+    if (!selectedDate || selectedDateDeals.length === 0) return;
+    exportRowsToExcel(
+      selectedDateDeals.map(deal => ({
+        'App ID': deal.appId,
+        Dealer: deal.dealerName,
+        Customer: deal.customerName,
+        Amount: parseAmount(deal.amount),
+        State: deal.state,
+        Status: deal.fuStatus,
+        By: deal.addedByName,
+        Source: deal.id.startsWith('call-') ? 'Calls' : 'Manual',
+      })),
+      'History',
+      `daily-deals-history-${selectedDate}.xlsx`,
+    );
+  };
+
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
     const roleMap: { [id: string]: string } = {};
@@ -1060,7 +1097,17 @@ export default function DailyDealsTab({
             <ClipboardList className="h-4 w-4 text-blue-300" />
             Today's entries
           </h3>
-          <span className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{combinedEntries.length} total</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportTodayEntries}
+              disabled={combinedEntries.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-700 text-xs text-gray-200 hover:bg-gray-600 disabled:opacity-40 transition"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </button>
+            <span className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{combinedEntries.length} total</span>
+          </div>
         </div>
         {loading ? (
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-400">Loading...</div>
@@ -1488,7 +1535,17 @@ export default function DailyDealsTab({
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-sm font-semibold text-gray-200">{formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}</p>
-                    <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-gray-400 hover:text-gray-200">clear</button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={exportHistoryDeals}
+                        disabled={selectedDateDeals.length === 0}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-700 text-xs text-gray-200 hover:bg-gray-600 disabled:opacity-40 transition"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Export
+                      </button>
+                      <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-gray-400 hover:text-gray-200">clear</button>
+                    </div>
                   </div>
                   <div className="rounded-lg border border-gray-700 overflow-hidden max-h-[45vh] overflow-y-auto">
                     <table className="w-full text-sm">

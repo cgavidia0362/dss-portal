@@ -43,6 +43,8 @@ interface Call {
   dealBy?: string;
   dealByName?: string;
   customerName?: string;
+  updatedBy?: string;
+  updatedByName?: string;
 }
 
 interface CallNote {
@@ -323,6 +325,8 @@ function App() {
           dealBy: c.deal_by || undefined,
           dealByName: c.deal_by_name || undefined,
           customerName: c.customer_full_name || undefined,
+          updatedBy: c.updated_by || undefined,
+          updatedByName: c.updated_by_name || undefined,
         })));
       }
     } catch (err) {
