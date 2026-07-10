@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { dealCreditDbFields, resolveDealCredit } from '../lib/dealCredit';
 import NoteItem from '../components/NoteItem';
 
 interface Call {
@@ -438,20 +439,30 @@ export default function CallsTab({
   // ── HANDLERS ────────────────────────────────────────────────────
 
   const handleStatusChange = async (callId: string, newStatus: Call['fuStatus']) => {
-    const existingDealDate = calls.find(c => c.id === callId)?.dealDate;
-    const dealDate = newStatus === 'Deal' ? new Date() : existingDealDate;
+    const existing = calls.find(c => c.id === callId);
+    const credit = resolveDealCredit(newStatus, {
+      dealBy: existing?.dealBy,
+      dealByName: existing?.dealByName,
+      dealDate: existing?.dealDate,
+    }, { id: currentUserId, name: currentUser?.name });
     setCalls(prev => prev.map(c => c.id === callId
-      ? { ...c, fuStatus: newStatus, updatedAt: new Date(), dealDate,
-          dealBy: newStatus === 'Deal' ? currentUserId : undefined,
-          dealByName: newStatus === 'Deal' ? (currentUser?.name || undefined) : undefined,
-          ...actorUpdate() }
+      ? {
+        ...c,
+        fuStatus: newStatus,
+        updatedAt: new Date(),
+        dealDate: credit.dealDate,
+        dealBy: credit.dealBy,
+        dealByName: credit.dealByName,
+        ...actorUpdate(),
+      }
       : c
     ));
     await supabase.from('calls').update({
-      fu_status: newStatus || null,
-      deal_date: newStatus === 'Deal' ? new Date().toISOString() : (existingDealDate ? new Date(existingDealDate).toISOString() : null),
-      deal_by: newStatus === 'Deal' ? currentUserId : null,
-      deal_by_name: newStatus === 'Deal' ? (currentUser?.name || null) : null,
+      ...dealCreditDbFields(newStatus, {
+        dealBy: existing?.dealBy,
+        dealByName: existing?.dealByName,
+        dealDate: existing?.dealDate,
+      }, { id: currentUserId, name: currentUser?.name }),
       ...actorDbFields(),
     }).eq('id', callId);
   };

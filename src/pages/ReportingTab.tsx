@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck, Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { exportRowsToExcel } from '../lib/exportExcel';
+import { dealCreditDbFields, resolveDealCredit } from '../lib/dealCredit';
+import { manualDealMatchedByCall } from '../lib/manualDealMatch';
 
 interface Call {
   id: string;
@@ -99,6 +101,44 @@ interface ReportingTabProps {
 
 type TimePeriod = 'daily' | 'weekly' | 'monthly';
 
+const getTodayString = () => {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+};
+
+const parseDateString = (s: string) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+const getRangeBounds = (startStr: string, endStr: string): { start: Date; end: Date } => {
+  const start = parseDateString(startStr);
+  start.setHours(0, 0, 0, 0);
+  const end = parseDateString(endStr);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
+
+const formatRangeLabel = (startStr: string, endStr: string) => {
+  if (startStr === endStr) {
+    return parseDateString(startStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  const fmt = (s: string) => parseDateString(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(startStr)} – ${fmt(endStr)}, ${parseDateString(endStr).getFullYear()}`;
+};
+
+interface RepPerformanceRow {
+  repId: string;
+  repName: string;
+  totalCalls: number;
+  noCall: number;
+  pending: number;
+  noAnswer: number;
+  deals: number;
+  confirmedDeals: number;
+  conversionRate: string;
+}
+
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const FU_OPTIONS = ['Deal', 'Confirmed Deal', 'No Deal', 'Pending', 'No Answer', 'Closed', 'Duplicates', 'Follow Up'];
 
@@ -134,6 +174,7 @@ export default function ReportingTab({
   const [stateGoals, setStateGoals] = useState<StateGoal[]>([]);
   const [stateStats, setStateStats] = useState<StateStats[]>([]);
   const [monthlyDailyDeals, setMonthlyDailyDeals] = useState<MonthlyDailyDeal[]>([]);
+  const [rangeDailyDeals, setRangeDailyDeals] = useState<MonthlyDailyDeal[]>([]);
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [selectedState, setSelectedState] = useState('');
   const [goalForm, setGoalForm] = useState({ monthlyGoal: '', fundingDays: '' });
@@ -143,8 +184,8 @@ export default function ReportingTab({
     weekly: goals.weekly.toString(),
     monthly: goals.monthly.toString(),
   });
-  const [period, setPeriod] = useState<TimePeriod>('daily');
-  const [repPeriod, setRepPeriod] = useState<TimePeriod>('daily');
+  const [rangeStart, setRangeStart] = useState(getTodayString);
+  const [rangeEnd, setRangeEnd] = useState(getTodayString);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -163,6 +204,19 @@ export default function ReportingTab({
 
   const viewMonthLabel = `${MONTH_NAMES[viewMonth - 1]} ${viewYear}`;
 
+  const mapDailyDealRow = (d: any): MonthlyDailyDeal => ({
+    id: d.id,
+    appId: d.app_id,
+    dealerName: d.dealer_name || '',
+    customerName: d.customer_name || '',
+    addedBy: d.added_by || '',
+    addedByName: d.added_by_name || '',
+    fuStatus: d.fu_status || '',
+    dealDate: d.deal_date,
+    amount: d.amount || '0',
+    state: d.state || '',
+  });
+
   const fetchMonthlyDailyDeals = useCallback(async () => {
     const start = `${viewYear}-${String(viewMonth).padStart(2, '0')}-01`;
     const lastDay = new Date(viewYear, viewMonth, 0).getDate();
@@ -173,20 +227,18 @@ export default function ReportingTab({
       .gte('deal_date', start)
       .lte('deal_date', end);
     if (data) {
-      setMonthlyDailyDeals(data.map((d: any) => ({
-        id: d.id,
-        appId: d.app_id,
-        dealerName: d.dealer_name || '',
-        customerName: d.customer_name || '',
-        addedBy: d.added_by || '',
-        addedByName: d.added_by_name || '',
-        fuStatus: d.fu_status || '',
-        dealDate: d.deal_date,
-        amount: d.amount || '0',
-        state: d.state || '',
-      })));
+      setMonthlyDailyDeals(data.map(mapDailyDealRow));
     }
   }, [viewYear, viewMonth]);
+
+  const fetchRangeDailyDeals = useCallback(async () => {
+    const { data } = await supabase
+      .from('daily_deals')
+      .select('id, app_id, dealer_name, customer_name, added_by, added_by_name, fu_status, deal_date, amount, state')
+      .gte('deal_date', rangeStart)
+      .lte('deal_date', rangeEnd);
+    if (data) setRangeDailyDeals(data.map(mapDailyDealRow));
+  }, [rangeStart, rangeEnd]);
 
   const fetchStateGoals = useCallback(async () => {
     try {
@@ -205,6 +257,7 @@ export default function ReportingTab({
   }, [viewMonth, viewYear]);
 
   useEffect(() => { fetchStateGoals(); fetchMonthlyDailyDeals(); }, [fetchStateGoals, fetchMonthlyDailyDeals]);
+  useEffect(() => { fetchRangeDailyDeals(); }, [fetchRangeDailyDeals, todayDailyDeals]);
 
   const countBusinessDaysElapsed = (year: number, month: number, toDay: number): number => {
     let count = 0;
@@ -318,28 +371,28 @@ export default function ReportingTab({
   const isInBounds = (date: Date, bounds: { start: Date; end: Date }) =>
     date >= bounds.start && date <= bounds.end;
 
-  const filterCallsByPeriod = (p: TimePeriod) => {
-    const bounds = getPeriodBounds(p);
-    return calls.filter(c => {
-      const d = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
-      return isInBounds(d, bounds);
+  const rangeBounds = getRangeBounds(rangeStart, rangeEnd);
+  const rangeLabel = formatRangeLabel(rangeStart, rangeEnd);
+
+  const filterManualDealsByRange = (bounds: { start: Date; end: Date }) => {
+    const dealMap = new Map<string, MonthlyDailyDeal>();
+    rangeDailyDeals.forEach(d => dealMap.set(d.id, d));
+
+    (todayDailyDeals || []).forEach(d => {
+      const existing = dealMap.get(d.id) || monthlyDailyDeals.find(m => m.id === d.id);
+      if (existing) {
+        dealMap.set(d.id, { ...existing, fuStatus: d.fuStatus });
+      } else if (d.dealDate && isInBounds(parseDateString(d.dealDate), bounds)) {
+        dealMap.set(d.id, {
+          id: d.id, appId: '', dealerName: '', customerName: '',
+          addedBy: d.addedBy, addedByName: '', fuStatus: d.fuStatus,
+          dealDate: d.dealDate, amount: d.amount, state: d.state,
+        });
+      }
     });
-  };
 
-  const filterManualDealsByPeriod = (p: TimePeriod) => {
-    const bounds = getPeriodBounds(p);
-    const deals = isViewingCurrentMonth && p === 'daily'
-      ? (todayDailyDeals || []).map(d => {
-          const full = monthlyDailyDeals.find(m => m.id === d.id);
-          return full || {
-            id: d.id, appId: '', dealerName: '', customerName: '',
-            addedBy: d.addedBy, addedByName: '', fuStatus: d.fuStatus,
-            dealDate: d.dealDate, amount: d.amount, state: d.state,
-          };
-        })
-      : monthlyDailyDeals;
-
-    return deals.filter(d => {
+    return Array.from(dealMap.values()).filter(d => {
+      if (!d.dealDate) return false;
       const parts = d.dealDate.split('-');
       const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
       return isInBounds(date, bounds) && isDealStatus(d.fuStatus);
@@ -348,45 +401,92 @@ export default function ReportingTab({
 
   const getAmount = (call: Call) => parseAmount(call.buyerFinal || '0');
 
-  const periodCalls = filterCallsByPeriod(period);
-  const periodDealCalls = periodCalls.filter(c => isDealStatus(c.fuStatus));
-  const periodManualDeals = filterManualDealsByPeriod(period);
+  const calculateRepPerformance = (bounds: { start: Date; end: Date }): RepPerformanceRow[] => {
+    const repMap = new Map<string, RepPerformanceRow>();
 
-  const seenPeriodApps = new Set(periodDealCalls.map(c => c.applicationId));
-  const uniqueManualForPeriod = periodManualDeals.filter(d => !seenPeriodApps.has(d.appId));
+    const ensureRep = (id: string, name: string) => {
+      if (!repMap.has(id)) {
+        repMap.set(id, {
+          repId: id, repName: name,
+          totalCalls: 0, noCall: 0, pending: 0, noAnswer: 0,
+          deals: 0, confirmedDeals: 0, conversionRate: '0',
+        });
+      }
+      return repMap.get(id)!;
+    };
 
-  const periodTotalDeals = periodDealCalls.length + uniqueManualForPeriod.length;
-  const csvTotalAmount = periodDealCalls.reduce((sum, c) => sum + getAmount(c), 0);
-  const manualTotalAmount = uniqueManualForPeriod.reduce((sum, d) => sum + parseAmount(d.amount), 0);
-  const periodTotalAmount = csvTotalAmount + manualTotalAmount;
-  const periodAvgDeal = periodTotalDeals > 0 ? periodTotalAmount / periodTotalDeals : 0;
+    calls.forEach(call => {
+      if (!call.assignedTo || !call.assignedToName) return;
+      if (!isInBounds(new Date(call.updatedAt), bounds)) return;
+      const row = ensureRep(call.assignedTo, call.assignedToName);
+      row.totalCalls++;
+      if (!call.fuStatus || call.fuStatus === '') row.noCall++;
+      if (call.fuStatus === 'Pending') row.pending++;
+      if (call.fuStatus === 'No Answer') row.noAnswer++;
+    });
 
-  const monthBounds = getPeriodBounds('monthly');
-  const monthDealCalls = calls.filter(c => {
-    if (!isDealStatus(c.fuStatus) || !c.dealDate) return false;
-    return isInBounds(new Date(c.dealDate), monthBounds);
+    calls.forEach(call => {
+      if (call.fuStatus !== 'Deal' && call.fuStatus !== 'Confirmed Deal') return;
+      const dealDate = call.dealDate ? new Date(call.dealDate) : null;
+      if (!dealDate || !isInBounds(dealDate, bounds)) return;
+      const creditId = call.dealBy || call.assignedTo;
+      const creditName = call.dealByName || call.assignedToName || 'Unknown';
+      if (!creditId) return;
+      const row = ensureRep(creditId, creditName);
+      if (call.fuStatus === 'Deal') row.deals++;
+      if (call.fuStatus === 'Confirmed Deal') row.confirmedDeals++;
+    });
+
+    filterManualDealsByRange(bounds).forEach(deal => {
+      if (!deal.addedBy) return;
+      if (manualDealMatchedByCall(deal, calls, date => isInBounds(date, bounds))) return;
+      const row = ensureRep(deal.addedBy, deal.addedByName || 'Unknown');
+      if (deal.fuStatus === 'Deal') row.deals++;
+      if (deal.fuStatus === 'Confirmed Deal') row.confirmedDeals++;
+    });
+
+    const rows = Array.from(repMap.values());
+    rows.forEach(r => {
+      const totalDeals = r.deals + r.confirmedDeals;
+      r.conversionRate = totalDeals > 0 ? ((r.confirmedDeals / totalDeals) * 100).toFixed(1) : '0';
+    });
+    return rows.sort((a, b) => b.deals - a.deals || b.confirmedDeals - a.confirmedDeals);
+  };
+
+  const repPerformance = calculateRepPerformance(rangeBounds);
+
+  const teamTotals = repPerformance.reduce(
+    (acc, rep) => ({
+      totalCalls: acc.totalCalls + rep.totalCalls,
+      noCall: acc.noCall + rep.noCall,
+      pending: acc.pending + rep.pending,
+      noAnswer: acc.noAnswer + rep.noAnswer,
+      deals: acc.deals + rep.deals,
+      confirmedDeals: acc.confirmedDeals + rep.confirmedDeals,
+    }),
+    { totalCalls: 0, noCall: 0, pending: 0, noAnswer: 0, deals: 0, confirmedDeals: 0 },
+  );
+  const teamTotalDeals = teamTotals.deals + teamTotals.confirmedDeals;
+  const teamConvRate = teamTotalDeals > 0
+    ? ((teamTotals.confirmedDeals / teamTotalDeals) * 100).toFixed(1)
+    : '0';
+
+  const rangeDealCalls = calls.filter(c => {
+    if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
+    if (!c.dealDate) return false;
+    return isInBounds(new Date(c.dealDate), rangeBounds);
   });
-  const monthManualDeals = monthlyDailyDeals.filter(d => isDealStatus(d.fuStatus));
-  const seenMonthApps = new Set(monthDealCalls.map(c => c.applicationId));
-  const uniqueMonthManual = monthManualDeals.filter(d => !seenMonthApps.has(d.appId));
-  const monthTotalDeals = monthDealCalls.length + uniqueMonthManual.length;
+  const rangeManualDeals = filterManualDealsByRange(rangeBounds);
+  const uniqueRangeManual = rangeManualDeals.filter(d =>
+    !manualDealMatchedByCall(d, calls, date => isInBounds(date, rangeBounds)),
+  );
+  const rangeTotalAmount = rangeDealCalls.reduce((sum, c) => sum + getAmount(c), 0)
+    + uniqueRangeManual.reduce((sum, d) => sum + parseAmount(d.amount), 0);
+  const rangeAvgDeal = (teamTotals.deals + teamTotals.confirmedDeals) > 0
+    ? rangeTotalAmount / (teamTotals.deals + teamTotals.confirmedDeals)
+    : 0;
 
-  const totalCalls = calls.length;
-  const totalNoCall = calls.filter(c => !c.fuStatus || c.fuStatus === '').length;
-  const totalPending = calls.filter(c => c.fuStatus === 'Pending').length;
-
-  const todayBounds = getPeriodBounds('daily');
-  const csvDealsToday = calls.filter(c =>
-    isDealStatus(c.fuStatus) && c.dealDate && isInBounds(new Date(c.dealDate), todayBounds)
-  ).length;
-  const manualDealsToday = isViewingCurrentMonth
-    ? (todayDailyDeals || []).filter(d => isDealStatus(d.fuStatus)).length
-    : filterManualDealsByPeriod('daily').length;
-  const dealsToday = csvDealsToday + manualDealsToday;
-  const teamGoalPct = goals.team > 0 ? Math.min((dealsToday / goals.team) * 100, 100) : 0;
-  const monthlyGoalPct = goals.monthly > 0 ? Math.min((monthTotalDeals / goals.monthly) * 100, 100) : 0;
-
-  const dealsByState = [...periodDealCalls, ...uniqueManualForPeriod.map(d => ({
+  const dealsByState = [...rangeDealCalls, ...uniqueRangeManual.map(d => ({
     state: d.state, amount: parseAmount(d.amount),
   }))].reduce((acc: { state: string; deals: number; amount: number }[], item: any) => {
     const state = item.state || '—';
@@ -397,74 +497,34 @@ export default function ReportingTab({
     return acc;
   }, []).sort((a, b) => b.deals - a.deals);
 
-  const calculateRepPerformance = (p: TimePeriod) => {
-    const bounds = getPeriodBounds(p);
-    const filtered = calls.filter(c => {
-      const d = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
-      return isInBounds(d, bounds);
-    });
+  const rangeDealCount = teamTotals.deals + teamTotals.confirmedDeals;
 
-    const repData = filtered.reduce((acc: any[], call) => {
-      if (!call.assignedTo || !call.assignedToName) return acc;
-      const ex = acc.find(r => r.repId === call.assignedTo);
-      const isDeal = call.fuStatus === 'Deal';
-      const isConfirmed = call.fuStatus === 'Confirmed Deal';
-      const isPending = call.fuStatus === 'Pending';
-      const isNoAnswer = call.fuStatus === 'No Answer';
-      const isNoCall = !call.fuStatus || call.fuStatus === '';
-      if (ex) {
-        ex.totalCalls++;
-        if (isDeal) ex.deals++;
-        if (isConfirmed) ex.confirmedDeals++;
-        if (isPending) ex.pending++;
-        if (isNoAnswer) ex.noAnswer++;
-        if (isNoCall) ex.noCall++;
-      } else {
-        acc.push({
-          repId: call.assignedTo, repName: call.assignedToName,
-          totalCalls: 1,
-          deals: isDeal ? 1 : 0,
-          confirmedDeals: isConfirmed ? 1 : 0,
-          pending: isPending ? 1 : 0,
-          noAnswer: isNoAnswer ? 1 : 0,
-          noCall: isNoCall ? 1 : 0,
-        });
-      }
-      return acc;
-    }, []);
-
-    const manualInPeriod = filterManualDealsByPeriod(p);
-    manualInPeriod.forEach(deal => {
-      if (!deal.addedBy) return;
-      const ex = repData.find(r => r.repId === deal.addedBy);
-      if (ex) {
-        if (deal.fuStatus === 'Deal') ex.deals++;
-        if (deal.fuStatus === 'Confirmed Deal') ex.confirmedDeals++;
-      } else {
-        repData.push({
-          repId: deal.addedBy,
-          repName: deal.addedByName || 'Unknown',
-          totalCalls: 0,
-          deals: deal.fuStatus === 'Deal' ? 1 : 0,
-          confirmedDeals: deal.fuStatus === 'Confirmed Deal' ? 1 : 0,
-          pending: 0,
-          noAnswer: 0,
-          noCall: 0,
-        });
-      }
-    });
-
-    repData.forEach(r => {
-      r.conversionRate = r.totalCalls > 0 ? ((r.confirmedDeals / r.totalCalls) * 100).toFixed(1) : '0';
-    });
-    return repData.sort((a: any, b: any) => b.deals - a.deals);
-  };
-
-  const repPerformance = calculateRepPerformance(repPeriod);
-  const teamDealTotals = repPerformance.reduce(
-    (acc, rep) => ({ deals: acc.deals + rep.deals, confirmedDeals: acc.confirmedDeals + rep.confirmedDeals }),
-    { deals: 0, confirmedDeals: 0 },
+  const monthBounds = getPeriodBounds('monthly');
+  const monthDealCalls = calls.filter(c => {
+    if (!isDealStatus(c.fuStatus) || !c.dealDate) return false;
+    return isInBounds(new Date(c.dealDate), monthBounds);
+  });
+  const monthManualDeals = monthlyDailyDeals.filter(d => {
+    if (!isDealStatus(d.fuStatus) || !d.dealDate) return false;
+    const parts = d.dealDate.split('-');
+    const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    return isInBounds(date, monthBounds);
+  });
+  const uniqueMonthManual = monthManualDeals.filter(d =>
+    !manualDealMatchedByCall(d, calls, date => isInBounds(date, monthBounds)),
   );
+  const monthTotalDeals = monthDealCalls.length + uniqueMonthManual.length;
+
+  const todayBounds = getPeriodBounds('daily');
+  const csvDealsToday = calls.filter(c =>
+    isDealStatus(c.fuStatus) && c.dealDate && isInBounds(new Date(c.dealDate), todayBounds)
+  ).length;
+  const manualDealsToday = isViewingCurrentMonth
+    ? (todayDailyDeals || []).filter(d => isDealStatus(d.fuStatus)).length
+    : filterManualDealsByRange(todayBounds).length;
+  const dealsToday = csvDealsToday + manualDealsToday;
+  const teamGoalPct = goals.team > 0 ? Math.min((dealsToday / goals.team) * 100, 100) : 0;
+  const monthlyGoalPct = goals.monthly > 0 ? Math.min((monthTotalDeals / goals.monthly) * 100, 100) : 0;
 
   const openRepDealsModal = async (
     repId: string | undefined,
@@ -476,23 +536,24 @@ export default function ReportingTab({
     setRepDealsRows([]);
 
     const targetStatus = dealType === 'deal' ? 'Deal' : 'Confirmed Deal';
-    const bounds = getPeriodBounds(repPeriod);
+    const bounds = rangeBounds;
     const repCalls = calls.filter(c => {
       if (c.fuStatus !== targetStatus) return false;
       if (repId) {
-        const repMatch = c.assignedTo === repId || c.dealBy === repId;
-        if (!repMatch) return false;
+        const creditId = c.dealBy || c.assignedTo;
+        if (creditId !== repId) return false;
       }
       const d = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
       return isInBounds(d, bounds);
     });
 
-    const repManual = filterManualDealsByPeriod(repPeriod).filter(d => {
+    const repManual = filterManualDealsByRange(bounds).filter(d => {
       if (d.fuStatus !== targetStatus) return false;
       if (repId && d.addedBy !== repId) return false;
+      if (manualDealMatchedByCall(d, calls, date => isInBounds(date, bounds))) return false;
       return true;
     });
-    const seenApps = new Set(repCalls.map(c => c.applicationId));
+    const seenApps = new Set(repCalls.map(c => c.applicationId.trim().toLowerCase()));
 
     const callIds = repCalls.map(c => c.id);
     const manualIds = repManual.map(d => d.id);
@@ -531,8 +592,9 @@ export default function ReportingTab({
     }));
 
     repManual.forEach(d => {
-      if (seenApps.has(d.appId)) return;
-      seenApps.add(d.appId);
+      const appKey = d.appId.trim().toLowerCase();
+      if (appKey && seenApps.has(appKey)) return;
+      if (appKey) seenApps.add(appKey);
       const parts = d.dealDate.split('-');
       rows.push({
         key: `manual-${d.id}`,
@@ -559,23 +621,37 @@ export default function ReportingTab({
 
   const handleRepDealStatusChange = async (row: RepDealRow, newStatus: string) => {
     if (row.source === 'call') {
-      const existingDealDate = calls.find(c => c.id === row.id)?.dealDate;
-      const dealDate = newStatus === 'Deal' && !existingDealDate ? new Date() : existingDealDate;
+      const existing = calls.find(c => c.id === row.id);
+      const credit = resolveDealCredit(newStatus, {
+        dealBy: existing?.dealBy,
+        dealByName: existing?.dealByName,
+        dealDate: existing?.dealDate,
+      }, { id: currentUserId, name: undefined });
       setCalls(prev => prev.map(c => c.id === row.id
-        ? { ...c, fuStatus: newStatus, updatedAt: new Date(), dealDate: isDealStatus(newStatus) ? dealDate : c.dealDate }
+        ? {
+          ...c,
+          fuStatus: newStatus,
+          updatedAt: new Date(),
+          dealDate: isDealStatus(newStatus) ? credit.dealDate : c.dealDate,
+          dealBy: credit.dealBy,
+          dealByName: credit.dealByName,
+        }
         : c
       ));
       await supabase.from('calls').update({
-        fu_status: newStatus || null,
-        deal_date: newStatus === 'Deal' && !existingDealDate
-          ? new Date().toISOString()
-          : (existingDealDate ? new Date(existingDealDate).toISOString() : null),
+        ...dealCreditDbFields(newStatus, {
+          dealBy: existing?.dealBy,
+          dealByName: existing?.dealByName,
+          dealDate: existing?.dealDate,
+        }),
         updated_at: new Date().toISOString(),
       }).eq('id', row.id);
     } else {
       await supabase.from('daily_deals').update({ fu_status: newStatus }).eq('id', row.id);
       setMonthlyDailyDeals(prev => prev.map(d => d.id === row.id ? { ...d, fuStatus: newStatus } : d));
+      setRangeDailyDeals(prev => prev.map(d => d.id === row.id ? { ...d, fuStatus: newStatus } : d));
       onRefreshDailyDeals?.();
+      fetchRangeDailyDeals();
     }
     setRepDealsRows(prev => {
       const targetStatus = repDealsModal?.dealType === 'deal' ? 'Deal' : 'Confirmed Deal';
@@ -588,7 +664,6 @@ export default function ReportingTab({
     if (!repDealsModal || repDealsRows.length === 0) return;
     const label = repDealsModal.dealType === 'deal' ? 'deals' : 'confirmed-deals';
     const scope = repDealsModal.repId ? repDealsModal.repName.replace(/\s+/g, '-') : 'team';
-    const dateStr = new Date().toISOString().slice(0, 10);
     exportRowsToExcel(
       repDealsRows.map(row => ({
         Rep: row.repName,
@@ -605,7 +680,7 @@ export default function ReportingTab({
         Source: row.source === 'call' ? 'Calls' : 'Manual',
       })),
       repDealsModal.dealType === 'deal' ? 'Deals' : 'Confirmed Deals',
-      `rep-${label}-${scope}-${repPeriod}-${dateStr}.xlsx`,
+      `rep-${label}-${scope}-${rangeStart}-to-${rangeEnd}.xlsx`,
     );
   };
 
@@ -660,8 +735,21 @@ export default function ReportingTab({
   const getProgressColor = (p: number) => p >= 90 ? 'bg-green-500' : p >= 70 ? 'bg-blue-500' : p >= 50 ? 'bg-yellow-500' : 'bg-red-500';
   const getProgressTextColor = (p: number) => p >= 90 ? 'text-green-400' : p >= 70 ? 'text-blue-400' : p >= 50 ? 'text-yellow-400' : 'text-red-400';
 
-  const periodLabel = period.charAt(0).toUpperCase() + period.slice(1);
-  const repPeriodLabel = repPeriod.charAt(0).toUpperCase() + repPeriod.slice(1);
+  const resetRangeToToday = () => {
+    const today = getTodayString();
+    setRangeStart(today);
+    setRangeEnd(today);
+  };
+
+  const handleRangeStartChange = (value: string) => {
+    setRangeStart(value);
+    if (value > rangeEnd) setRangeEnd(value);
+  };
+
+  const handleRangeEndChange = (value: string) => {
+    setRangeEnd(value);
+    if (value < rangeStart) setRangeStart(value);
+  };
 
   const goToMonth = (year: number, month: number) => {
     setViewYear(year);
@@ -680,7 +768,7 @@ export default function ReportingTab({
           <div>
             <p className="text-sm font-medium text-gray-200">Reporting Period</p>
             <p className="text-xs text-gray-500">
-              {isViewingCurrentMonth ? 'Current month' : 'Historical view'} · Daily/Weekly relative to {isViewingCurrentMonth ? 'today' : 'end of month'}
+              {isViewingCurrentMonth ? 'Current month' : 'Historical view'} · Use date range below for performance metrics
             </p>
           </div>
         </div>
@@ -723,6 +811,43 @@ export default function ReportingTab({
         </div>
       </div>
 
+      {/* Shared date range */}
+      <div className="bg-gray-800 rounded-xl border border-gray-700 px-5 py-4 shadow-lg shadow-black/10">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-100">Date Range</p>
+            <p className="text-xs text-gray-500 mt-0.5">Shared by Performance Overview and Rep Performance · {rangeLabel}</p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">From</label>
+              <input
+                type="date"
+                value={rangeStart}
+                onChange={e => handleRangeStartChange(e.target.value)}
+                className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <span className="text-gray-500 pb-2 hidden sm:inline">→</span>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">To</label>
+              <input
+                type="date"
+                value={rangeEnd}
+                onChange={e => handleRangeEndChange(e.target.value)}
+                className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <button
+              onClick={resetRangeToToday}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-gray-300 rounded-lg text-sm transition"
+            >
+              Reset to Today
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* ── SECTION 1: PERFORMANCE OVERVIEW ── */}
       <div>
         <div className="flex items-start justify-between gap-4 mb-5">
@@ -734,7 +859,7 @@ export default function ReportingTab({
               <div>
                 <h2 className="text-2xl font-bold text-gray-100">Performance Overview</h2>
                 <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
-                  <Calendar className="h-3.5 w-3.5" /> {viewMonthLabel}
+                  <Calendar className="h-3.5 w-3.5" /> {rangeLabel}
                 </p>
               </div>
             </div>
@@ -748,23 +873,16 @@ export default function ReportingTab({
                 <Target className="w-4 h-4" /> Set Goals
               </button>
             )}
-            <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden p-1 shadow-lg shadow-black/10">
-              {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
-                <button key={p} onClick={() => setPeriod(p)}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition ${period === p ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}>
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Deal results</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
           {[
             {
               label: 'Total Deals',
-              value: periodTotalDeals,
-              sub: periodLabel,
+              value: teamTotals.deals,
+              sub: 'Marked as Deal',
               Icon: Handshake,
               color: 'text-green-300',
               accent: 'border-green-500/30 bg-green-500/10',
@@ -772,17 +890,51 @@ export default function ReportingTab({
             },
             {
               label: 'Total Amount',
-              value: formatCurrency(periodTotalAmount),
-              sub: `Avg: ${formatCurrency(periodAvgDeal)}`,
+              value: formatCurrency(rangeTotalAmount),
+              sub: `Avg: ${formatCurrency(rangeAvgDeal)}`,
               Icon: DollarSign,
               color: 'text-emerald-300',
               accent: 'border-emerald-500/30 bg-emerald-500/10',
               card: 'to-emerald-950/25',
             },
             {
+              label: 'Total Confirmed Deals',
+              value: teamTotals.confirmedDeals,
+              sub: 'Confirmed status',
+              Icon: BadgeCheck,
+              color: 'text-emerald-300',
+              accent: 'border-emerald-500/30 bg-emerald-500/10',
+              card: 'to-emerald-950/25',
+            },
+            {
+              label: 'Conversion Rate',
+              value: `${teamConvRate}%`,
+              sub: 'Confirmed ÷ Total Deals',
+              Icon: BarChart3,
+              color: 'text-blue-300',
+              accent: 'border-blue-500/30 bg-blue-500/10',
+              card: 'to-blue-950/25',
+            },
+          ].map(({ label, value, sub, Icon, color, accent, card }) => (
+            <div key={label} className={`relative overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 ${card} p-4 shadow-xl shadow-black/10`}>
+              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
+              <div className={`relative mb-4 flex h-11 w-11 items-center justify-center rounded-xl border ${accent} ${color}`}>
+                <Icon className="h-5 w-5" />
+              </div>
+              <p className="relative text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+              <p className={`relative mt-1 text-3xl font-bold ${color}`}>{value}</p>
+              <p className="relative mt-2 inline-flex rounded-full border border-gray-700 bg-gray-900/40 px-2 py-1 text-xs text-gray-500">{sub}</p>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Call workload (assigned rep)</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+          {[
+            {
               label: 'Total Calls',
-              value: totalCalls,
-              sub: 'All time',
+              value: teamTotals.totalCalls,
+              sub: 'Assigned in range',
               Icon: Phone,
               color: 'text-blue-300',
               accent: 'border-blue-500/30 bg-blue-500/10',
@@ -790,7 +942,7 @@ export default function ReportingTab({
             },
             {
               label: 'No Call',
-              value: totalNoCall,
+              value: teamTotals.noCall,
               sub: 'Not yet called',
               Icon: PhoneOff,
               color: 'text-gray-300',
@@ -799,12 +951,21 @@ export default function ReportingTab({
             },
             {
               label: 'Pending',
-              value: totalPending,
+              value: teamTotals.pending,
               sub: 'Waiting on response',
               Icon: Hourglass,
               color: 'text-yellow-300',
               accent: 'border-yellow-500/30 bg-yellow-500/10',
               card: 'to-yellow-950/25',
+            },
+            {
+              label: 'No Answer',
+              value: teamTotals.noAnswer,
+              sub: 'Needs retry',
+              Icon: PhoneOff,
+              color: 'text-orange-300',
+              accent: 'border-orange-500/30 bg-orange-500/10',
+              card: 'to-orange-950/25',
             },
           ].map(({ label, value, sub, Icon, color, accent, card }) => (
             <div key={label} className={`relative overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 ${card} p-4 shadow-xl shadow-black/10`}>
@@ -869,13 +1030,13 @@ export default function ReportingTab({
                 <MapPin className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-gray-100">Deals by State — {periodLabel}</p>
+                <p className="text-sm font-semibold text-gray-100">Deals by State — {rangeLabel}</p>
                 <p className="text-xs text-gray-500">Share of funded deals by state</p>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {dealsByState.map(item => {
-                const share = periodTotalDeals > 0 ? Math.round((item.deals / periodTotalDeals) * 100) : 0;
+                const share = rangeDealCount > 0 ? Math.round((item.deals / rangeDealCount) * 100) : 0;
                 return (
                   <div key={item.state} className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-gray-900/80 to-emerald-950/20 p-5">
                     <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
@@ -1043,17 +1204,9 @@ export default function ReportingTab({
               <div>
                 <h2 className="text-2xl font-bold text-gray-100">Rep Performance</h2>
                 <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
-                  <Calendar className="h-3.5 w-3.5" /> {viewMonthLabel}
+                  <Calendar className="h-3.5 w-3.5" /> {rangeLabel} · Deals credited to who marked them
                 </p>
               </div>
-            </div>
-            <div className="flex gap-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden p-1 shadow-lg shadow-black/10">
-              {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
-                <button key={p} onClick={() => setRepPeriod(p)}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition ${repPeriod === p ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'}`}>
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
-                </button>
-              ))}
             </div>
           </div>
 
@@ -1130,29 +1283,29 @@ export default function ReportingTab({
                 <tfoot className="bg-gray-950/70 border-t-2 border-gray-600">
                   <tr>
                     <td className="px-5 py-4 text-sm font-bold text-gray-200">Team Total</td>
-                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
-                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
-                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
-                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
+                    <td className="px-5 py-4"><span className="text-sm font-bold text-blue-400">{teamTotals.totalCalls}</span></td>
+                    <td className="px-5 py-4"><span className="text-sm font-bold text-gray-300">{teamTotals.noCall}</span></td>
+                    <td className="px-5 py-4"><span className="text-sm font-bold text-yellow-400">{teamTotals.pending}</span></td>
+                    <td className="px-5 py-4"><span className="text-sm font-bold text-orange-400">{teamTotals.noAnswer}</span></td>
                     <td className="px-5 py-4">
-                      {teamDealTotals.deals > 0 ? (
+                      {teamTotals.deals > 0 ? (
                         <button
                           onClick={() => openRepDealsModal(undefined, 'Team', 'deal')}
                           className={dealCountButtonCls}
                         >
-                          {teamDealTotals.deals}
+                          {teamTotals.deals}
                         </button>
                       ) : (
                         <span className="text-sm font-bold text-green-400">0</span>
                       )}
                     </td>
                     <td className="px-5 py-4">
-                      {teamDealTotals.confirmedDeals > 0 ? (
+                      {teamTotals.confirmedDeals > 0 ? (
                         <button
                           onClick={() => openRepDealsModal(undefined, 'Team', 'confirmed')}
                           className={confirmedCountButtonCls}
                         >
-                          <BadgeCheck className="h-3 w-3" /> {teamDealTotals.confirmedDeals}
+                          <BadgeCheck className="h-3 w-3" /> {teamTotals.confirmedDeals}
                         </button>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-sm font-bold text-emerald-400">
@@ -1160,17 +1313,17 @@ export default function ReportingTab({
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-sm text-gray-500">—</td>
+                    <td className="px-5 py-4"><span className="text-sm font-bold text-blue-400">{teamConvRate}%</span></td>
                   </tr>
                 </tfoot>
               </table>
               </div>
               <div className="px-5 py-3 bg-gray-950/40 border-t border-gray-700">
                 <p className="text-xs text-gray-500">
-                  Showing <span className="text-gray-400 font-medium">{repPeriodLabel}</span> view for {viewMonthLabel}
+                  Showing <span className="text-gray-400 font-medium">{rangeLabel}</span>
                   &nbsp;·&nbsp; Click deal or confirmed count to view &amp; edit
-                  &nbsp;·&nbsp; Team totals at bottom
-                  &nbsp;·&nbsp; Conv. Rate = Confirmed Deals &divide; Total Calls
+                  &nbsp;·&nbsp; Deals credited to who marked them
+                  &nbsp;·&nbsp; Conv. Rate = Confirmed Deals &divide; Total Deals (Deal + Confirmed)
                 </p>
               </div>
             </div>
@@ -1244,7 +1397,7 @@ export default function ReportingTab({
                   {repDealsModal.repName}&apos;s {repDealsModal.dealType === 'deal' ? 'Deals' : 'Confirmed Deals'}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {repPeriodLabel} · {viewMonthLabel} · {repDealsRows.length} {repDealsModal.dealType === 'deal' ? 'deal' : 'confirmed deal'}{repDealsRows.length !== 1 ? 's' : ''}
+                  {rangeLabel} · {repDealsRows.length} {repDealsModal.dealType === 'deal' ? 'deal' : 'confirmed deal'}{repDealsRows.length !== 1 ? 's' : ''}
                 </p>
               </div>
               <div className="flex items-center gap-2">

@@ -32,6 +32,8 @@ interface Call {
   fiType?: 'Independent' | 'Franchise';
   updatedAt: Date;
   dealDate?: Date;
+  dealBy?: string;
+  dealByName?: string;
   isDuplicate?: boolean;
   customerName?: string;
 }
@@ -124,22 +126,37 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
       const processedCalls = parsedCalls.map(call => {
         const match = dealMap[call.applicationId];
         if (match) {
+          let dealDate: Date;
+          if (match.deal_date) {
+            const parts = String(match.deal_date).split('-');
+            dealDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          } else {
+            dealDate = new Date(match.created_at);
+          }
+          const fuStatus = match.fu_status === 'Confirmed Deal' ? 'Confirmed Deal' as const : 'Deal' as const;
           return {
             ...call,
             assignedTo: match.added_by,
             assignedToName: match.added_by_name,
-            fuStatus: 'Deal' as const,
-            dealDate: new Date(match.created_at),
+            dealBy: match.added_by,
+            dealByName: match.added_by_name,
+            fuStatus,
+            dealDate,
           };
         }
         return call;
       });
 
-      const matches: MatchedDeal[] = data.map((d: any) => ({
-        appId: d.app_id,
-        repName: d.added_by_name,
-        dealDate: new Date(d.created_at),
-      }));
+      const matches: MatchedDeal[] = data.map((d: any) => {
+        let dealDate: Date;
+        if (d.deal_date) {
+          const parts = String(d.deal_date).split('-');
+          dealDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        } else {
+          dealDate = new Date(d.created_at);
+        }
+        return { appId: d.app_id, repName: d.added_by_name, dealDate };
+      });
 
       return { calls: processedCalls, matches };
     } catch (err) {
@@ -292,12 +309,16 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
             customer_full_name: c.customerName || null,
           };
           if (isNew) {
-            // New call — set all fields including fu_status and updated_at
+            // New call — set all fields including rep-managed deal data from Daily Deals match
             return {
               ...base,
               fu_status: c.fuStatus || null,
               updated_at: new Date().toISOString(),
               deal_date: c.dealDate ? c.dealDate.toISOString() : null,
+              assigned_to: c.assignedTo || null,
+              assigned_to_name: c.assignedToName || null,
+              deal_by: c.dealBy || null,
+              deal_by_name: c.dealByName || null,
             };
           }
           // Existing call — only update safe fields, never touch
@@ -516,6 +537,9 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
                 {matchedDeals.length} app{matchedDeals.length !== 1 ? 's' : ''} auto-matched from Daily Deals
               </p>
             </div>
+            <p className="text-xs text-green-400 mb-3">
+              Daily Deals status, credit, and deal date carry over to the new call. Reporting counts the call once the match exists.
+            </p>
             <div className="space-y-1.5">
               {matchedDeals.map((m, i) => (
                 <div key={i} className="flex items-center gap-3 text-xs">

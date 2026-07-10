@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { dealCreditDbFields } from '../lib/dealCredit';
 import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare, Users, Trash2, Trophy, DollarSign, ClipboardList, PlusCircle, Target } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
@@ -404,8 +405,17 @@ export default function PublicDealsPage() {
   };
 
   const handlePopupFuStatus = async (callId: string, newStatus: string) => {
+    const existing = dealerPopupCalls.find((c: any) => c.id === callId);
+    const user = users.find(u => u.id === selectedUser);
     setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
-    await supabase.from('calls').update({ fu_status: newStatus || null, updated_at: new Date().toISOString() }).eq('id', callId);
+    await supabase.from('calls').update({
+      ...dealCreditDbFields(newStatus, {
+        dealBy: existing?.deal_by,
+        dealByName: existing?.deal_by_name,
+        dealDate: existing?.deal_date ? new Date(existing.deal_date) : undefined,
+      }, user ? { id: user.id, name: user.name } : undefined),
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
   };
 
   const handlePopupSaveStatusLast = async (callId: string) => {
@@ -528,8 +538,18 @@ export default function PublicDealsPage() {
         if (err) throw err;
         await fetchTodayDeals();
       } else {
+        const existing = callDealsToday.find(c => c.id === entry.id);
+        const user = users.find(u => u.id === selectedUser);
         const { error: err } = await supabase.from('calls')
-          .update({ buyer_final: editAmount.trim(), fu_status: editFuStatus, updated_at: new Date().toISOString() })
+          .update({
+            buyer_final: editAmount.trim(),
+            ...dealCreditDbFields(editFuStatus, {
+              dealBy: existing?.dealBy,
+              dealByName: existing?.dealByName,
+              dealDate: existing?.dealDate ? new Date(existing.dealDate) : undefined,
+            }, user ? { id: user.id, name: user.name } : undefined),
+            updated_at: new Date().toISOString(),
+          })
           .eq('id', entry.id);
         if (err) throw err;
         setCallOverrides(prev => ({ ...prev, [entry.id]: { amount: editAmount.trim(), fuStatus: editFuStatus } }));

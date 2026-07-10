@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { dealCreditDbFields } from '../lib/dealCredit';
 import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target, Download } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
@@ -396,9 +397,15 @@ export default function DailyDealsTab({
   };
 
   const handlePopupFuStatus = async (callId: string, newStatus: string) => {
+    const existing = calls.find(c => c.id === callId);
+    const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
     setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
     await supabase.from('calls').update({
-      fu_status: newStatus || null,
+      ...dealCreditDbFields(newStatus, {
+        dealBy: existing?.dealBy,
+        dealByName: existing?.dealByName,
+        dealDate: existing?.dealDate,
+      }, { id: creditUser.id, name: creditUser.name }),
       updated_at: new Date().toISOString(),
     }).eq('id', callId);
     onRefresh();
@@ -550,9 +557,15 @@ export default function DailyDealsTab({
         if (err) throw err;
         await fetchTodayDeals();
       } else {
+        const existing = calls.find(c => c.id === entry.id);
+        const creditUser = allUsers.find(u => u.id === (editCreditId || selectedUser)) || currentUser;
         const { error: err } = await supabase.from('calls').update({
           buyer_final: editAmount.trim(),
-          fu_status: editFuStatus,
+          ...dealCreditDbFields(editFuStatus, {
+            dealBy: existing?.dealBy,
+            dealByName: existing?.dealByName,
+            dealDate: existing?.dealDate,
+          }, { id: creditUser.id, name: creditUser.name }),
           updated_at: new Date().toISOString(),
         }).eq('id', entry.id);
         if (err) throw err;
