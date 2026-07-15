@@ -14,6 +14,8 @@ interface Call {
   submittedDate: string;
   assignedTo?: string;
   assignedToName?: string;
+  dealBy?: string;
+  dealByName?: string;
   fuStatus?: 'Deal' | 'Confirmed Deal' | 'No Deal' | 'Pending' | 'No Answer' | 'Closed' | 'Duplicates' | 'Follow Up';
   customerName?: string;
   updatedAt: Date;
@@ -256,12 +258,24 @@ const handleConfirmAssign = async () => {
   }
 
   // Update local state optimistically (valid IDs only)
-  setCalls(prev => prev.map(c => callIds.includes(c.id)
-    ? { ...c, assignedTo: pendingAssignRepId, assignedToName: pendingAssignRepName }
-    : c
-  ));
+  const needCreditIds = filteredCalls
+    .filter(c => callIds.includes(c.id) && (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && !c.dealBy)
+    .map(c => c.id);
+
+  setCalls(prev => prev.map(c => {
+    if (!callIds.includes(c.id)) return c;
+    const needsDealCredit = needCreditIds.includes(c.id);
+    return {
+      ...c,
+      assignedTo: pendingAssignRepId,
+      assignedToName: pendingAssignRepName,
+      ...(needsDealCredit ? { dealBy: pendingAssignRepId, dealByName: pendingAssignRepName } : {}),
+    };
+  }));
 
   const count = callIds.length;
+  const assignRepId = pendingAssignRepId;
+  const assignRepName = pendingAssignRepName;
   setSelectedDealers(new Set());
   setSelectedCalls(new Set());
   setAssignToId('');
@@ -272,15 +286,16 @@ const handleConfirmAssign = async () => {
     const BATCH_SIZE = 200;
     for (let i = 0; i < callIds.length; i += BATCH_SIZE) {
       const batch = callIds.slice(i, i + BATCH_SIZE);
+
+      // Standard assignment for all
       const { error: updateError } = await supabase.from('calls').update({
-        assigned_to: pendingAssignRepId,
-        assigned_to_name: pendingAssignRepName,
+        assigned_to: assignRepId,
+        assigned_to_name: assignRepName,
         updated_at: new Date().toISOString(),
       }).in('id', batch);
 
       if (updateError) {
         console.error('Supabase assign error:', updateError);
-        // Revert optimistic update so UI matches database
         setCalls(prev => prev.map(c => callIds.includes(c.id)
           ? { ...c, assignedTo: undefined, assignedToName: undefined }
           : c
@@ -289,11 +304,20 @@ const handleConfirmAssign = async () => {
         setTimeout(() => setError(''), 6000);
         return;
       }
+
+      // If already Deal/Confirmed with no deal_by, credit the assignee as deal getter
+      const batchCreditIds = needCreditIds.filter(id => batch.includes(id));
+      if (batchCreditIds.length > 0) {
+        await supabase.from('calls').update({
+          deal_by: assignRepId,
+          deal_by_name: assignRepName,
+        }).in('id', batchCreditIds);
+      }
     }
 
     const msg = skippedInvalid > 0
-      ? `${count} call${count !== 1 ? 's' : ''} assigned to ${pendingAssignRepName}. ${skippedInvalid} call${skippedInvalid !== 1 ? 's' : ''} skipped (temporary IDs — re-upload those calls to fix).`
-      : `${count} call${count !== 1 ? 's' : ''} assigned to ${pendingAssignRepName}`;
+      ? `${count} call${count !== 1 ? 's' : ''} assigned to ${assignRepName}. ${skippedInvalid} call${skippedInvalid !== 1 ? 's' : ''} skipped (temporary IDs — re-upload those calls to fix).`
+      : `${count} call${count !== 1 ? 's' : ''} assigned to ${assignRepName}`;
     setSuccess(msg);
     setTimeout(() => setSuccess(''), 6000);
 

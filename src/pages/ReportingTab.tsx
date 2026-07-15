@@ -3,7 +3,7 @@ import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, Dolla
 import { supabase } from '../lib/supabase';
 import { exportRowsToExcel } from '../lib/exportExcel';
 import { dealCreditDbFields, resolveDealCredit } from '../lib/dealCredit';
-import { manualDealMatchedByCall } from '../lib/manualDealMatch';
+import { manualDealMatchedByCall, buildManualCreditByApp, resolveCallDealCredit, normalizeAppId } from '../lib/manualDealMatch';
 
 interface Call {
   id: string;
@@ -259,6 +259,73 @@ export default function ReportingTab({
   useEffect(() => { fetchStateGoals(); fetchMonthlyDailyDeals(); }, [fetchStateGoals, fetchMonthlyDailyDeals]);
   useEffect(() => { fetchRangeDailyDeals(); }, [fetchRangeDailyDeals, todayDailyDeals]);
 
+  // Heal credited reps from Daily Deals; clear Accepted→Deal orphans with no rep
+  useEffect(() => {
+    if (!calls.length) return;
+
+    const manuals = [...rangeDailyDeals, ...monthlyDailyDeals];
+    const manualByApp = buildManualCreditByApp(manuals);
+
+    const toHeal = calls.filter(c => {
+      if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
+      if (c.dealBy || c.assignedTo) return false;
+      return !!manualByApp.get(normalizeAppId(c.applicationId))?.addedBy;
+    });
+
+    const toClean = calls.filter(c => {
+      if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
+      if (c.dealBy || c.assignedTo) return false;
+      if (manualByApp.get(normalizeAppId(c.applicationId))?.addedBy) return false;
+      return (c.statusLast || '').toLowerCase().includes('accept');
+    });
+
+    if (!toHeal.length && !toClean.length) return;
+
+    let cancelled = false;
+    (async () => {
+      for (const call of toHeal) {
+        if (cancelled) return;
+        const credit = resolveCallDealCredit(call, manualByApp);
+        if (!credit?.fromManual) continue;
+        const { error } = await supabase.from('calls').update({
+          deal_by: credit.id,
+          deal_by_name: credit.name,
+          assigned_to: call.assignedTo || credit.id,
+          assigned_to_name: call.assignedToName || credit.name,
+        }).eq('id', call.id);
+        if (!error) {
+          setCalls(prev => prev.map(c => c.id === call.id
+            ? {
+              ...c,
+              dealBy: credit.id,
+              dealByName: credit.name,
+              assignedTo: c.assignedTo || credit.id,
+              assignedToName: c.assignedToName || credit.name,
+            }
+            : c
+          ));
+        }
+      }
+
+      if (toClean.length > 0 && !cancelled) {
+        const ids = toClean.map(c => c.id);
+        const { error } = await supabase.from('calls').update({
+          fu_status: null,
+          deal_date: null,
+        }).in('id', ids);
+        if (!error) {
+          setCalls(prev => prev.map(c =>
+            ids.includes(c.id)
+              ? { ...c, fuStatus: undefined, dealDate: undefined }
+              : c
+          ));
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [calls, rangeDailyDeals, monthlyDailyDeals, setCalls]);
+
   const countBusinessDaysElapsed = (year: number, month: number, toDay: number): number => {
     let count = 0;
     for (let d = 1; d <= toDay; d++) {
@@ -403,6 +470,8 @@ export default function ReportingTab({
 
   const calculateRepPerformance = (bounds: { start: Date; end: Date }): RepPerformanceRow[] => {
     const repMap = new Map<string, RepPerformanceRow>();
+    const manualsInRange = filterManualDealsByRange(bounds);
+    const manualByApp = buildManualCreditByApp(manualsInRange);
 
     const ensureRep = (id: string, name: string) => {
       if (!repMap.has(id)) {
@@ -429,15 +498,14 @@ export default function ReportingTab({
       if (call.fuStatus !== 'Deal' && call.fuStatus !== 'Confirmed Deal') return;
       const dealDate = call.dealDate ? new Date(call.dealDate) : null;
       if (!dealDate || !isInBounds(dealDate, bounds)) return;
-      const creditId = call.dealBy || call.assignedTo;
-      const creditName = call.dealByName || call.assignedToName || 'Unknown';
-      if (!creditId) return;
-      const row = ensureRep(creditId, creditName);
+      const credit = resolveCallDealCredit(call, manualByApp);
+      if (!credit) return; // no credited rep — do not count
+      const row = ensureRep(credit.id, credit.name);
       if (call.fuStatus === 'Deal') row.deals++;
       if (call.fuStatus === 'Confirmed Deal') row.confirmedDeals++;
     });
 
-    filterManualDealsByRange(bounds).forEach(deal => {
+    manualsInRange.forEach(deal => {
       if (!deal.addedBy) return;
       if (manualDealMatchedByCall(deal, calls, date => isInBounds(date, bounds))) return;
       const row = ensureRep(deal.addedBy, deal.addedByName || 'Unknown');
@@ -471,17 +539,24 @@ export default function ReportingTab({
     ? ((teamTotals.confirmedDeals / teamTotalDeals) * 100).toFixed(1)
     : '0';
 
+  const rangeManualDeals = filterManualDealsByRange(rangeBounds);
+  const rangeManualByApp = buildManualCreditByApp(rangeManualDeals);
   const rangeDealCalls = calls.filter(c => {
     if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
     if (!c.dealDate) return false;
-    return isInBounds(new Date(c.dealDate), rangeBounds);
+    if (!isInBounds(new Date(c.dealDate), rangeBounds)) return false;
+    return !!resolveCallDealCredit(c, rangeManualByApp);
   });
-  const rangeManualDeals = filterManualDealsByRange(rangeBounds);
   const uniqueRangeManual = rangeManualDeals.filter(d =>
     !manualDealMatchedByCall(d, calls, date => isInBounds(date, rangeBounds)),
   );
-  const rangeTotalAmount = rangeDealCalls.reduce((sum, c) => sum + getAmount(c), 0)
-    + uniqueRangeManual.reduce((sum, d) => sum + parseAmount(d.amount), 0);
+  const dealsOnTheWayAmount =
+    rangeDealCalls.filter(c => c.fuStatus === 'Deal').reduce((sum, c) => sum + getAmount(c), 0)
+    + uniqueRangeManual.filter(d => d.fuStatus === 'Deal').reduce((sum, d) => sum + parseAmount(d.amount), 0);
+  const confirmedDealAmount =
+    rangeDealCalls.filter(c => c.fuStatus === 'Confirmed Deal').reduce((sum, c) => sum + getAmount(c), 0)
+    + uniqueRangeManual.filter(d => d.fuStatus === 'Confirmed Deal').reduce((sum, d) => sum + parseAmount(d.amount), 0);
+  const rangeTotalAmount = dealsOnTheWayAmount + confirmedDealAmount;
   const rangeAvgDeal = (teamTotals.deals + teamTotals.confirmedDeals) > 0
     ? rangeTotalAmount / (teamTotals.deals + teamTotals.confirmedDeals)
     : 0;
@@ -537,23 +612,26 @@ export default function ReportingTab({
 
     const targetStatus = dealType === 'deal' ? 'Deal' : 'Confirmed Deal';
     const bounds = rangeBounds;
+    const manualsInRange = filterManualDealsByRange(bounds);
+    const manualByApp = buildManualCreditByApp(manualsInRange);
+
+    // Same inclusion as Performance Overview: Deal/Confirmed with dealDate + credited rep.
     const repCalls = calls.filter(c => {
       if (c.fuStatus !== targetStatus) return false;
-      if (repId) {
-        const creditId = c.dealBy || c.assignedTo;
-        if (creditId !== repId) return false;
-      }
-      const d = c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt);
-      return isInBounds(d, bounds);
+      if (!c.dealDate || !isInBounds(new Date(c.dealDate), bounds)) return false;
+      const credit = resolveCallDealCredit(c, manualByApp);
+      if (!credit) return false;
+      if (repId && credit.id !== repId) return false;
+      return true;
     });
 
-    const repManual = filterManualDealsByRange(bounds).filter(d => {
+    const repManual = manualsInRange.filter(d => {
       if (d.fuStatus !== targetStatus) return false;
       if (repId && d.addedBy !== repId) return false;
       if (manualDealMatchedByCall(d, calls, date => isInBounds(date, bounds))) return false;
       return true;
     });
-    const seenApps = new Set(repCalls.map(c => c.applicationId.trim().toLowerCase()));
+    const seenApps = new Set(repCalls.map(c => normalizeAppId(c.applicationId)));
 
     const callIds = repCalls.map(c => c.id);
     const manualIds = repManual.map(d => d.id);
@@ -574,22 +652,25 @@ export default function ReportingTab({
       });
     }
 
-    const rows: RepDealRow[] = repCalls.map(c => ({
-      key: `call-${c.id}`,
-      source: 'call',
-      id: c.id,
-      applicationId: c.applicationId,
-      dealerName: c.dealerName,
-      customerName: c.customerName || '—',
-      state: c.state,
-      amount: getAmount(c),
-      date: c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt),
-      statusLast: c.statusLast || '—',
-      activity: formatLastActivity(c),
-      fuStatus: c.fuStatus || '',
-      note: notesMap[`call-${c.id}`] || '—',
-      repName: c.dealByName || c.assignedToName || '—',
-    }));
+    const rows: RepDealRow[] = repCalls.map(c => {
+      const credit = resolveCallDealCredit(c, manualByApp);
+      return {
+        key: `call-${c.id}`,
+        source: 'call' as const,
+        id: c.id,
+        applicationId: c.applicationId,
+        dealerName: c.dealerName,
+        customerName: c.customerName || '—',
+        state: c.state,
+        amount: getAmount(c),
+        date: c.dealDate ? new Date(c.dealDate) : new Date(c.updatedAt),
+        statusLast: c.statusLast || '—',
+        activity: formatLastActivity(c),
+        fuStatus: c.fuStatus || '',
+        note: notesMap[`call-${c.id}`] || '—',
+        repName: credit?.name || 'Unknown',
+      };
+    });
 
     repManual.forEach(d => {
       const appKey = d.appId.trim().toLowerCase();
@@ -877,30 +958,23 @@ export default function ReportingTab({
         </div>
 
         <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Deal results</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
           {[
             {
-              label: 'Total Deals',
+              label: 'Deals on the Way',
               value: teamTotals.deals,
-              sub: 'Marked as Deal',
+              amount: formatCurrency(dealsOnTheWayAmount),
+              sub: 'Status: Deal',
               Icon: Handshake,
               color: 'text-green-300',
               accent: 'border-green-500/30 bg-green-500/10',
               card: 'to-green-950/25',
             },
             {
-              label: 'Total Amount',
-              value: formatCurrency(rangeTotalAmount),
-              sub: `Avg: ${formatCurrency(rangeAvgDeal)}`,
-              Icon: DollarSign,
-              color: 'text-emerald-300',
-              accent: 'border-emerald-500/30 bg-emerald-500/10',
-              card: 'to-emerald-950/25',
-            },
-            {
-              label: 'Total Confirmed Deals',
+              label: 'Confirmed Deals',
               value: teamTotals.confirmedDeals,
-              sub: 'Confirmed status',
+              amount: formatCurrency(confirmedDealAmount),
+              sub: 'Status: Confirmed Deal',
               Icon: BadgeCheck,
               color: 'text-emerald-300',
               accent: 'border-emerald-500/30 bg-emerald-500/10',
@@ -909,13 +983,14 @@ export default function ReportingTab({
             {
               label: 'Conversion Rate',
               value: `${teamConvRate}%`,
-              sub: 'Confirmed ÷ Total Deals',
+              amount: null as string | null,
+              sub: `Confirmed ÷ Total · Avg ${formatCurrency(rangeAvgDeal)}`,
               Icon: BarChart3,
               color: 'text-blue-300',
               accent: 'border-blue-500/30 bg-blue-500/10',
               card: 'to-blue-950/25',
             },
-          ].map(({ label, value, sub, Icon, color, accent, card }) => (
+          ].map(({ label, value, amount, sub, Icon, color, accent, card }) => (
             <div key={label} className={`relative overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 ${card} p-4 shadow-xl shadow-black/10`}>
               <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
               <div className={`relative mb-4 flex h-11 w-11 items-center justify-center rounded-xl border ${accent} ${color}`}>
@@ -923,6 +998,9 @@ export default function ReportingTab({
               </div>
               <p className="relative text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
               <p className={`relative mt-1 text-3xl font-bold ${color}`}>{value}</p>
+              {amount !== null && (
+                <p className="relative mt-1 text-lg font-semibold text-gray-200">{amount}</p>
+              )}
               <p className="relative mt-2 inline-flex rounded-full border border-gray-700 bg-gray-900/40 px-2 py-1 text-xs text-gray-500">{sub}</p>
             </div>
           ))}

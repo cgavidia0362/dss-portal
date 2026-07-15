@@ -50,6 +50,7 @@ interface Call {
 interface CallNote {
   id: string;
   callId: string;
+  applicationId?: string;
   noteText: string;
   createdBy: string;
   createdByName: string;
@@ -264,19 +265,34 @@ function App() {
 
   const fetchCallNotes = async () => {
     try {
-      const { data } = await supabase
-        .from('call_notes').select('*')
-        .order('created_at', { ascending: true });
-      if (data) {
-        setNotes(data.map((n: any) => ({
-          id: n.id,
-          callId: n.call_id,
-          noteText: n.note_text,
-          createdBy: n.created_by,
-          createdByName: n.created_by_name,
-          createdAt: new Date(n.created_at),
-        })));
+      // Paginate — Supabase caps a single select at 1000 rows; oldest-first
+      // truncation was dropping newer notes from the Calls tab.
+      const BATCH_SIZE = 1000;
+      let allData: any[] = [];
+      let from = 0;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from('call_notes')
+          .select('*')
+          .order('created_at', { ascending: true })
+          .range(from, from + BATCH_SIZE - 1);
+        if (error) { console.error('Error fetching call notes batch:', error); break; }
+        if (!data || data.length === 0) break;
+        allData = [...allData, ...data];
+        if (data.length < BATCH_SIZE) break;
+        from += BATCH_SIZE;
       }
+
+      setNotes(allData.map((n: any) => ({
+        id: n.id,
+        callId: n.call_id,
+        applicationId: n.application_id || '',
+        noteText: n.note_text,
+        createdBy: n.created_by,
+        createdByName: n.created_by_name,
+        createdAt: new Date(n.created_at),
+      })));
     } catch (err) {
       console.error('Error fetching call notes:', err);
     }
@@ -301,6 +317,30 @@ function App() {
         allData = [...allData, ...data];
         if (data.length < BATCH_SIZE) break;
         from += BATCH_SIZE;
+      }
+
+      // Clear old Accepted→Deal orphans that have no credited/assigned rep
+      const orphanAcceptedIds = allData
+        .filter((c: any) =>
+          (c.fu_status === 'Deal' || c.fu_status === 'Confirmed Deal') &&
+          !c.deal_by &&
+          !c.assigned_to &&
+          String(c.status_last || '').toLowerCase().includes('accept')
+        )
+        .map((c: any) => c.id as string);
+
+      if (orphanAcceptedIds.length > 0) {
+        await supabase.from('calls').update({
+          fu_status: null,
+          deal_date: null,
+        }).in('id', orphanAcceptedIds);
+
+        const orphanSet = new Set(orphanAcceptedIds);
+        allData = allData.map((c: any) =>
+          orphanSet.has(c.id)
+            ? { ...c, fu_status: null, deal_date: null }
+            : c
+        );
       }
 
       if (allData.length > 0) {

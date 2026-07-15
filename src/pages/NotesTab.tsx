@@ -7,6 +7,7 @@ interface CombinedNote {
   source: 'calls' | 'daily_deals';
   appId: string;
   dealerName: string;
+  customerName: string;
   noteText: string;
   createdBy: string;
   createdByName: string;
@@ -90,21 +91,26 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       const { data: callNotes } = await callQuery;
 
       const appIds = [...new Set((callNotes || []).map((n: { application_id: string }) => n.application_id).filter(Boolean))];
-      const callStatusMap: Record<string, string> = {};
+      const callMetaMap: Record<string, { fuStatus: string; customerName: string }> = {};
       if (appIds.length > 0) {
         const { data: callsData } = await supabase
           .from('calls')
-          .select('application_id, fu_status')
+          .select('application_id, fu_status, customer_full_name')
           .in('application_id', appIds);
-        (callsData || []).forEach((c: { application_id: string; fu_status?: string }) => {
-          if (c.application_id) callStatusMap[c.application_id] = c.fu_status || '';
+        (callsData || []).forEach((c: { application_id: string; fu_status?: string; customer_full_name?: string }) => {
+          if (c.application_id) {
+            callMetaMap[c.application_id] = {
+              fuStatus: c.fu_status || '',
+              customerName: c.customer_full_name || '',
+            };
+          }
         });
       }
 
       // Daily deal notes (joined with parent deal)
       let dealQuery = supabase
         .from('daily_deal_notes')
-        .select(`id, note_text, created_by, created_by_name, created_at, daily_deals (app_id, dealer_name, fu_status)`)
+        .select(`id, note_text, created_by, created_by_name, created_at, daily_deals (app_id, dealer_name, customer_name, fu_status)`)
         .gte('created_at', fromTs)
         .lte('created_at', toTs)
         .order('created_at', { ascending: false });
@@ -123,17 +129,19 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
           source: 'calls' as const,
           appId: n.application_id,
           dealerName: n.dealer_name,
+          customerName: callMetaMap[n.application_id]?.customerName || '',
           noteText: n.note_text,
           createdBy: n.created_by,
           createdByName: n.created_by_name,
           createdAt: n.created_at,
-          fuStatus: callStatusMap[n.application_id] || undefined,
+          fuStatus: callMetaMap[n.application_id]?.fuStatus || undefined,
         })),
         ...(dealNotes || []).map((n: any) => ({
           id: n.id,
           source: 'daily_deals' as const,
           appId: n.daily_deals?.app_id || '',
           dealerName: n.daily_deals?.dealer_name || '',
+          customerName: n.daily_deals?.customer_name || '',
           noteText: n.note_text,
           createdBy: n.created_by,
           createdByName: n.created_by_name,
@@ -460,6 +468,9 @@ Only include reps who have at least one substantive note. If a competitor bank/f
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <span className="text-sm font-semibold text-blue-400">{note.appId || '—'}</span>
                   <span className="text-sm text-gray-200">{note.dealerName || '—'}</span>
+                  {note.customerName && (
+                    <span className="text-sm text-gray-400">{note.customerName}</span>
+                  )}
                   <span className={`text-xs px-2 py-0.5 rounded-full border ${
                     note.source === 'calls'
                       ? 'bg-blue-900 bg-opacity-40 text-blue-300 border-blue-800'

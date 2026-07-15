@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Upload, CheckCircle, AlertCircle, FileSpreadsheet, DollarSign } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, FileSpreadsheet, DollarSign, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import {
+  applyMatchActionToCall,
+  findUploadDealMatches,
+  mapDailyDealRow,
+  type ManualDealForMatch,
+  type UploadMatchCandidate,
+  type UploadMatchAction,
+} from '../lib/uploadDealMatch';
 
 declare const XLSX: any;
 
@@ -55,10 +63,18 @@ interface UploadTabProps {
   onUploadSuccess?: () => Promise<void>;
 }
 
-interface MatchedDeal {
+interface AppliedMatchSummary {
   appId: string;
   repName: string;
-  dealDate: Date;
+  action: UploadMatchAction;
+  matchType: 'exact' | 'soft';
+}
+
+interface PendingUpload {
+  calls: Call[];
+  duplicates: string[];
+  discoveredDealers: Dealer[];
+  matches: UploadMatchCandidate[];
 }
 
 export default function UploadTab({ dealers, setDealers, fundingData, setFundingData, onUploadSuccess }: UploadTabProps) {
@@ -66,8 +82,9 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
   const [uploading, setUploading] = useState(false);
   const [uploadingFunding, setUploadingFunding] = useState(false);
   const [xlsxLoaded, setXlsxLoaded] = useState(false);
-  const [matchedDeals, setMatchedDeals] = useState<MatchedDeal[]>([]);
+  const [matchedDeals, setMatchedDeals] = useState<AppliedMatchSummary[]>([]);
   const [duplicateApps, setDuplicateApps] = useState<string[]>([]);
+  const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
 
   const [uploadResult, setUploadResult] = useState<{
     success: boolean;
@@ -106,62 +123,16 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
     return isNaN(parsed.getTime()) ? null : parsed;
   };
 
-  // Match parsed calls against Daily Deals in Supabase
-  const applyDailyDealsMatches = async (parsedCalls: Call[]): Promise<{ calls: Call[]; matches: MatchedDeal[] }> => {
-    const appIds = parsedCalls.map(c => c.applicationId).filter(Boolean);
-    if (!appIds.length) return { calls: parsedCalls, matches: [] };
-
+  const fetchManualDealsForMatch = async (): Promise<ManualDealForMatch[]> => {
     try {
       const { data } = await supabase
         .from('daily_deals')
-        .select('*')
-        .in('app_id', appIds)
+        .select('id, app_id, dealer_name, customer_name, amount, fu_status, added_by, added_by_name, deal_date')
         .in('fu_status', ['Deal', 'Confirmed Deal']);
-
-      if (!data || data.length === 0) return { calls: parsedCalls, matches: [] };
-
-      const dealMap: { [appId: string]: any } = {};
-      data.forEach((d: any) => { dealMap[d.app_id] = d; });
-
-      const processedCalls = parsedCalls.map(call => {
-        const match = dealMap[call.applicationId];
-        if (match) {
-          let dealDate: Date;
-          if (match.deal_date) {
-            const parts = String(match.deal_date).split('-');
-            dealDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-          } else {
-            dealDate = new Date(match.created_at);
-          }
-          const fuStatus = match.fu_status === 'Confirmed Deal' ? 'Confirmed Deal' as const : 'Deal' as const;
-          return {
-            ...call,
-            assignedTo: match.added_by,
-            assignedToName: match.added_by_name,
-            dealBy: match.added_by,
-            dealByName: match.added_by_name,
-            fuStatus,
-            dealDate,
-          };
-        }
-        return call;
-      });
-
-      const matches: MatchedDeal[] = data.map((d: any) => {
-        let dealDate: Date;
-        if (d.deal_date) {
-          const parts = String(d.deal_date).split('-');
-          dealDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-        } else {
-          dealDate = new Date(d.created_at);
-        }
-        return { appId: d.app_id, repName: d.added_by_name, dealDate };
-      });
-
-      return { calls: processedCalls, matches };
+      return (data || []).map(mapDailyDealRow);
     } catch (err) {
-      console.error('Error matching daily deals:', err);
-      return { calls: parsedCalls, matches: [] };
+      console.error('Error loading daily deals for match:', err);
+      return [];
     }
   };
 
@@ -209,6 +180,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
     setUploadResult(null);
     setMatchedDeals([]);
     setDuplicateApps([]);
+    setPendingUpload(null);
 
     try {
       const data = await file.arrayBuffer();
@@ -244,14 +216,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
         const timestampSubmit = parsedDate ?? new Date();
         const statusLast = String(row['Status Last'] || '').trim();
 
-        let initialFuStatus: Call['fuStatus'] | undefined = undefined;
-        let initialDealDate: Date | undefined = undefined;
-
-        if (statusLast === 'Accepted') {
-          initialFuStatus = 'Deal';
-          initialDealDate = timestampSubmit;
-        }
-
+        // Accepted stays Status Last only — do NOT auto-set FU to Deal
         newCalls.push({
           id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           applicationId: String(row['Application Id'] || ''),
@@ -264,39 +229,82 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
           submittedDate: timestampSubmit.toISOString().split('T')[0],
           assignedTo: undefined,
           assignedToName: undefined,
-          fuStatus: initialFuStatus,
+          fuStatus: undefined,
           fiType: undefined,
           updatedAt: new Date(),
-          dealDate: initialDealDate,
+          dealDate: undefined,
           isDuplicate: false,
           customerName: toTitleCase(String(row['customerFullName'] || '')),
         });
       });
 
-      // Check for duplicates
       const { calls: deduplicatedCalls, duplicates } = await checkDuplicates(newCalls);
+      const manuals = await fetchManualDealsForMatch();
+      const matches = findUploadDealMatches(deduplicatedCalls, manuals);
+      const discoveredList = Array.from(discoveredDealers.values());
 
-      // Apply Daily Deals matching
-      const { calls: processedCalls, matches } = await applyDailyDealsMatches(deduplicatedCalls);
+      if (matches.length > 0) {
+        // Pause for review before writing to the database
+        setPendingUpload({
+          calls: deduplicatedCalls,
+          duplicates,
+          discoveredDealers: discoveredList,
+          matches,
+        });
+        setUploading(false);
+        event.target.value = '';
+        return;
+      }
 
-      // Save calls to Supabase (upsert by application_id)
+      await commitCallsUpload(deduplicatedCalls, duplicates, discoveredList, []);
+    } catch (error) {
+      setUploadResult({
+        success: false,
+        message: `Error processing file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      });
+    } finally {
+      setUploading(false);
+      event.target.value = '';
+    }
+  };
+
+  const commitCallsUpload = async (
+    sourceCalls: Call[],
+    duplicates: string[],
+    discoveredDealersList: Dealer[],
+    matches: UploadMatchCandidate[],
+  ) => {
+    setUploading(true);
+    setUploadResult(null);
+
+    try {
+      const matchByApp = new Map(matches.map(m => [m.applicationId, m]));
+      const processedCalls = sourceCalls.map(c => {
+        const match = matchByApp.get(c.applicationId);
+        return match ? applyMatchActionToCall(c, match) : c;
+      });
+
       if (processedCalls.length > 0) {
-        // Check which app IDs already exist so we don't overwrite
-        // rep-managed fields (fu_status, updated_at) on existing calls
         const batchAppIds = processedCalls.map(c => c.applicationId).filter(Boolean);
         const existingAppIds = new Set<string>();
         try {
           const CHUNK = 200;
           for (let i = 0; i < batchAppIds.length; i += CHUNK) {
             const chunk = batchAppIds.slice(i, i + CHUNK);
-            const { data } = await supabase.from('calls').select('application_id').in('application_id', chunk);
+            const { data } = await supabase
+              .from('calls')
+              .select('application_id')
+              .in('application_id', chunk);
             if (data) data.forEach((d: any) => existingAppIds.add(d.application_id));
           }
-        } catch { /* non-critical — fall through to full upsert */ }
+        } catch { /* non-critical */ }
 
-        const callsToUpsert = processedCalls.map(c => {
-          const isNew = !existingAppIds.has(c.applicationId);
-          const base = {
+        const toInsert: Record<string, unknown>[] = [];
+        const toUpdate: { applicationId: string; row: Record<string, unknown> }[] = [];
+
+        processedCalls.forEach(c => {
+          const match = matchByApp.get(c.applicationId);
+          const base: Record<string, unknown> = {
             application_id: c.applicationId,
             dealer_cif_number: c.dealerCifNumber,
             dealer_name: c.dealerName,
@@ -308,9 +316,25 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
             is_duplicate: c.isDuplicate || false,
             customer_full_name: c.customerName || null,
           };
-          if (isNew) {
-            // New call — set all fields including rep-managed deal data from Daily Deals match
-            return {
+
+          if (existingAppIds.has(c.applicationId)) {
+            // Linked / Duplicate actions may update FU + credit on existing rows
+            if (match && match.action === 'link') {
+              base.fu_status = c.fuStatus || null;
+              base.deal_date = c.dealDate ? c.dealDate.toISOString() : null;
+              base.deal_by = c.dealBy || null;
+              base.deal_by_name = c.dealByName || null;
+              base.assigned_to = c.assignedTo || null;
+              base.assigned_to_name = c.assignedToName || null;
+              base.updated_at = new Date().toISOString();
+            } else if (match && match.action === 'duplicate') {
+              base.fu_status = 'Duplicates';
+              base.is_duplicate = true;
+              base.updated_at = new Date().toISOString();
+            }
+            toUpdate.push({ applicationId: c.applicationId, row: base });
+          } else {
+            toInsert.push({
               ...base,
               fu_status: c.fuStatus || null,
               updated_at: new Date().toISOString(),
@@ -319,59 +343,112 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
               assigned_to_name: c.assignedToName || null,
               deal_by: c.dealBy || null,
               deal_by_name: c.dealByName || null,
-            };
+            });
           }
-          // Existing call — only update safe fields, never touch
-          // fu_status, updated_at, deal_date, assigned_to, assigned_to_name
-          return base;
         });
 
-        const { error: upsertError } = await supabase
-        .from('calls')
-        .upsert(callsToUpsert, { onConflict: 'application_id' });
-
-        if (upsertError) {
-          console.error('Error saving calls to Supabase:', upsertError);
-          setUploadResult({
-            success: false,
-            message: `Calls processed but failed to save: ${upsertError.message}`,
-          });
-          setUploading(false);
-          return;
+        if (toInsert.length > 0) {
+          const { error: insertError } = await supabase.from('calls').insert(toInsert);
+          if (insertError) {
+            setUploadResult({
+              success: false,
+              message: `Calls processed but failed to save new apps: ${insertError.message}`,
+            });
+            return;
+          }
         }
-  
-        // Re-fetch from Supabase so local state has real UUIDs for assignments
+
+        if (toUpdate.length > 0) {
+          const UPDATE_CHUNK = 50;
+          for (let i = 0; i < toUpdate.length; i += UPDATE_CHUNK) {
+            const chunk = toUpdate.slice(i, i + UPDATE_CHUNK);
+            const results = await Promise.all(
+              chunk.map(({ applicationId, row }) =>
+                supabase.from('calls').update(row).eq('application_id', applicationId)
+              )
+            );
+            const failed = results.find(r => r.error);
+            if (failed?.error) {
+              setUploadResult({
+                success: false,
+                message: `Updating existing apps failed: ${failed.error.message}`,
+              });
+              return;
+            }
+          }
+        }
+
         if (onUploadSuccess) await onUploadSuccess();
       }
 
-      // Delete calls older than 30 days (based on timestamp_submit)
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       await supabase.from('calls').delete()
         .lt('timestamp_submit', thirtyDaysAgo.toISOString());
 
-      // Update local state (calls already refreshed via onUploadSuccess above)
-      const newDealersList = Array.from(discoveredDealers.values());
-      if (newDealersList.length > 0) setDealers(prev => [...prev, ...newDealersList]);
+      if (discoveredDealersList.length > 0) {
+        setDealers(prev => [...prev, ...discoveredDealersList]);
+      }
 
-      if (matches.length > 0) setMatchedDeals(matches);
+      const applied = matches.filter(m => m.action !== 'leave');
+      setMatchedDeals(applied.map(m => ({
+        appId: m.applicationId,
+        repName: m.manual.addedByName,
+        action: m.action,
+        matchType: m.matchType,
+      })));
       if (duplicates.length > 0) setDuplicateApps(duplicates);
+
+      const linked = matches.filter(m => m.action === 'link').length;
+      const duped = matches.filter(m => m.action === 'duplicate').length;
+      const left = matches.filter(m => m.action === 'leave').length;
+      const reviewNote = matches.length > 0
+        ? ` · ${linked} linked, ${duped} marked duplicate, ${left} left as-is`
+        : '';
 
       setUploadResult({
         success: true,
-        message: `Successfully processed ${processedCalls.length} calls`,
+        message: `Successfully processed ${processedCalls.length} calls${reviewNote}`,
         callsCount: processedCalls.length,
-        newDealersCount: newDealersList.length,
+        newDealersCount: discoveredDealersList.length,
       });
+      setPendingUpload(null);
     } catch (error) {
       setUploadResult({
         success: false,
-        message: `Error processing file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Error saving upload: ${error instanceof Error ? error.message : 'Unknown error'}`,
       });
     } finally {
       setUploading(false);
-      event.target.value = '';
     }
+  };
+
+  const setMatchAction = (matchId: string, action: UploadMatchAction) => {
+    setPendingUpload(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        matches: prev.matches.map(m => m.id === matchId ? { ...m, action } : m),
+      };
+    });
+  };
+
+  const cancelPendingUpload = () => {
+    setPendingUpload(null);
+    setUploadResult({
+      success: false,
+      message: 'Upload cancelled — no calls were imported.',
+    });
+  };
+
+  const confirmPendingUpload = async () => {
+    if (!pendingUpload) return;
+    await commitCallsUpload(
+      pendingUpload.calls,
+      pendingUpload.duplicates,
+      pendingUpload.discoveredDealers,
+      pendingUpload.matches,
+    );
   };
 
   // ── FUNDING UPLOAD ────────────────────────────────────────────
@@ -470,8 +547,8 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
             <Upload className="w-14 h-14 text-gray-400 mb-4" />
             <h4 className="text-lg font-semibold text-gray-100 mb-2">Upload Calls CSV</h4>
             <p className="text-sm text-gray-400 mb-6 text-center max-w-md">
-              Upload your call data. Calls save permanently to Supabase, auto-delete after 30 days,
-              and auto-match with Daily Deals entries.
+              Upload your call data. Calls save to Supabase and auto-delete after 30 days.
+              If rows match Daily Deals, you&apos;ll review links before import. Accepted is not auto-marked as Deal.
             </p>
             <label className="cursor-pointer">
               <input
@@ -528,32 +605,141 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
           </div>
         )}
 
-        {/* Daily Deals match notification */}
+        {/* Daily Deals match results (after confirmed review) */}
         {matchedDeals.length > 0 && (
           <div className="bg-green-900 border border-green-700 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-lg">🎯</span>
+              <CheckCircle className="w-4 h-4 text-green-300" />
               <p className="text-sm font-semibold text-green-300">
-                {matchedDeals.length} app{matchedDeals.length !== 1 ? 's' : ''} auto-matched from Daily Deals
+                {matchedDeals.length} Daily Deals match{matchedDeals.length !== 1 ? 'es' : ''} applied
               </p>
             </div>
             <p className="text-xs text-green-400 mb-3">
-              Daily Deals status, credit, and deal date carry over to the new call. Reporting counts the call once the match exists.
+              Linked deals keep credit with the Daily Deals / Public Deals rep.
             </p>
             <div className="space-y-1.5">
               {matchedDeals.map((m, i) => (
-                <div key={i} className="flex items-center gap-3 text-xs">
+                <div key={i} className="flex items-center gap-3 text-xs flex-wrap">
                   <span className="font-semibold text-green-300">{m.appId}</span>
                   <span className="text-green-500">→</span>
                   <span className="text-green-200">{m.repName}</span>
-                  <span className="text-green-600">·</span>
-                  <span className="text-green-500">
-                    Deal logged {m.dealDate.toLocaleDateString('en-US', {
-                      month: 'short', day: 'numeric', year: 'numeric',
-                    })}
+                  <span className="px-1.5 py-0.5 rounded border border-green-700 text-green-300">
+                    {m.action === 'link' ? 'Linked' : m.action === 'duplicate' ? 'Duplicate' : 'Left as-is'}
                   </span>
+                  <span className="text-green-600">{m.matchType === 'exact' ? 'App ID' : 'Dealer+Customer'}</span>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Match review modal */}
+        {pendingUpload && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+            <div className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-2xl flex flex-col">
+              <div className="flex items-start justify-between gap-4 border-b border-gray-700 px-5 py-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-100">Review Daily Deals matches</h3>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {pendingUpload.matches.length} spreadsheet row{pendingUpload.matches.length !== 1 ? 's' : ''} match
+                    existing Deal / Confirmed entries. Credit always stays with the Daily Deals / Public Deals rep.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelPendingUpload}
+                  className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+                  aria-label="Cancel upload"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+                {pendingUpload.matches.map((m, idx) => (
+                  <div key={m.id} className="rounded-lg border border-gray-700 bg-gray-800/80 p-4">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Match {idx + 1} of {pendingUpload.matches.length}
+                      </span>
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                        m.matchType === 'exact'
+                          ? 'border-emerald-700 bg-emerald-900/40 text-emerald-300'
+                          : 'border-amber-700 bg-amber-900/40 text-amber-300'
+                      }`}>
+                        {m.matchType === 'exact' ? 'Exact (App ID)' : 'Possible (Dealer + Customer)'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-4">
+                      <div className="rounded-lg border border-gray-700 bg-gray-900/50 p-3 space-y-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-400 mb-2">From spreadsheet</p>
+                        <p className="text-gray-200"><span className="text-gray-500">App ID</span> {m.applicationId}</p>
+                        <p className="text-gray-200"><span className="text-gray-500">Dealer</span> {m.callDealerName || '—'}</p>
+                        <p className="text-gray-200"><span className="text-gray-500">Customer</span> {m.callCustomerName || '—'}</p>
+                        <p className="text-gray-200"><span className="text-gray-500">Amount</span> {m.callAmount || '—'}</p>
+                        <p className="text-gray-200"><span className="text-gray-500">Status Last</span> {m.callStatusLast || '—'}</p>
+                      </div>
+                      <div className="rounded-lg border border-gray-700 bg-gray-900/50 p-3 space-y-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-green-400 mb-2">Existing manual deal</p>
+                        <p className="text-gray-200"><span className="text-gray-500">App ID</span> {m.manual.appId || '—'}</p>
+                        <p className="text-gray-200"><span className="text-gray-500">Dealer</span> {m.manual.dealerName || '—'}</p>
+                        <p className="text-gray-200"><span className="text-gray-500">Customer</span> {m.manual.customerName || '—'}</p>
+                        <p className="text-gray-200"><span className="text-gray-500">Amount</span> {m.manual.amount || '—'}</p>
+                        <p className="text-gray-200"><span className="text-gray-500">FU Status</span> {m.manual.fuStatus}</p>
+                        <p className="text-emerald-300 font-medium">
+                          Credited to {m.manual.addedByName}
+                          {m.manual.dealDate ? ` · ${m.manual.dealDate}` : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        { key: 'link' as const, label: 'Link as same deal', hint: `Call → ${m.manual.fuStatus} for ${m.manual.addedByName}` },
+                        { key: 'duplicate' as const, label: 'Mark call Duplicate', hint: 'Manual deal kept; call FU = Duplicates' },
+                        { key: 'leave' as const, label: 'Leave as-is', hint: 'Import call with no auto Deal/credit' },
+                      ]).map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setMatchAction(m.id, opt.key)}
+                          className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
+                            m.action === opt.key
+                              ? 'border-blue-500 bg-blue-900/40 text-blue-100'
+                              : 'border-gray-600 bg-gray-900/40 text-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          <span className="font-semibold block">{opt.label}</span>
+                          <span className="text-gray-500">{opt.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-gray-500">
+                  Non-matched rows ({pendingUpload.calls.length - pendingUpload.matches.length}) will import as usual — no review needed.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 border-t border-gray-700 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={cancelPendingUpload}
+                  disabled={uploading}
+                  className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800"
+                >
+                  Cancel upload
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmPendingUpload}
+                  disabled={uploading}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {uploading ? 'Importing...' : `Confirm import (${pendingUpload.matches.length} reviewed)`}
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -32,6 +32,7 @@ interface Call {
 interface CallNote {
   id: string;
   callId: string;
+  applicationId?: string;
   noteText: string;
   createdBy: string;
   createdByName: string;
@@ -254,7 +255,7 @@ export default function CallsTab({
     return 'bg-gray-700 text-gray-300 border-gray-600';
   };
 
-  const isGlobalSearch = isRep && searchQuery.trim().length > 0;
+  const isGlobalSearch = searchQuery.trim().length > 0;
 
   const roleFilteredCalls = calls.filter(c =>
     isRep ? c.assignedTo === currentUserId : true
@@ -295,18 +296,19 @@ export default function CallsTab({
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
     if (dateTo && new Date(call.submittedDate) > new Date(dateTo)) return false;
 
-    const fuKey = call.fuStatus || 'No Call';
-
-    if (isRep && !options?.skipFuQueue) {
-      // My Queue: unworked calls always show; worked calls show only if their FU chip is selected
-      if (fuKey !== 'No Call' && !filterFuStatuses.has(fuKey)) return false;
-    } else if (!isRep) {
-      // Admin/Manager: if FU chips selected, filter to those only
-      if (filterFuStatuses.size > 0 && !filterFuStatuses.has(fuKey)) return false;
-      // showCompleted toggle for admins
-      const isCompleted = call.fuStatus === 'No Deal' || call.fuStatus === 'Closed' || call.fuStatus === 'Duplicates';
-      const explicitlyFiltering = filterFuStatuses.has('No Deal') || filterFuStatuses.has('Closed') || filterFuStatuses.has('Duplicates');
-      if (!showCompleted && isCompleted && !explicitlyFiltering) return false;
+    // When searching, show all FU statuses (including No Deal / Closed / Duplicates)
+    if (!options?.skipFuQueue) {
+      const fuKey = call.fuStatus || 'No Call';
+      if (isRep) {
+        // My Queue: unworked calls always show; worked calls show only if their FU chip is selected
+        if (fuKey !== 'No Call' && !filterFuStatuses.has(fuKey)) return false;
+      } else {
+        // Admin/Manager: if FU chips selected, filter to those only
+        if (filterFuStatuses.size > 0 && !filterFuStatuses.has(fuKey)) return false;
+        const isCompleted = call.fuStatus === 'No Deal' || call.fuStatus === 'Closed' || call.fuStatus === 'Duplicates';
+        const explicitlyFiltering = filterFuStatuses.has('No Deal') || filterFuStatuses.has('Closed') || filterFuStatuses.has('Duplicates');
+        if (!showCompleted && isCompleted && !explicitlyFiltering) return false;
+      }
     }
 
     return true;
@@ -440,11 +442,57 @@ export default function CallsTab({
 
   const handleStatusChange = async (callId: string, newStatus: Call['fuStatus']) => {
     const existing = calls.find(c => c.id === callId);
-    const credit = resolveDealCredit(newStatus, {
-      dealBy: existing?.dealBy,
-      dealByName: existing?.dealByName,
-      dealDate: existing?.dealDate,
-    }, { id: currentUserId, name: currentUser?.name });
+    if (!existing) return;
+
+    let actor = { id: currentUserId, name: currentUser?.name };
+    let existingCredit = {
+      dealBy: existing.dealBy,
+      dealByName: existing.dealByName,
+      dealDate: existing.dealDate,
+    };
+
+    // Block silent duplicate deal credit when a Daily Deals entry already owns this app
+    if (newStatus === 'Deal' || newStatus === 'Confirmed Deal') {
+      if (existing.dealBy && existing.dealBy !== currentUserId) {
+        const keep = window.confirm(
+          `This call is already credited to ${existing.dealByName || 'another rep'}.\n\n` +
+          `OK = keep their credit and set status to ${newStatus}\n` +
+          `Cancel = don't change status`
+        );
+        if (!keep) return;
+      } else if (!existing.dealBy) {
+        const { data: manuals } = await supabase
+          .from('daily_deals')
+          .select('app_id, added_by, added_by_name, fu_status, deal_date')
+          .eq('app_id', existing.applicationId)
+          .in('fu_status', ['Deal', 'Confirmed Deal'])
+          .limit(1);
+        const manual = manuals?.[0];
+        if (manual?.added_by && manual.added_by !== currentUserId) {
+          const link = window.confirm(
+            `A Daily Deals / Public Deals entry for ${existing.applicationId} is already credited to ${manual.added_by_name || 'another rep'}.\n\n` +
+            `OK = link and keep their credit (recommended)\n` +
+            `Cancel = don't change status`
+          );
+          if (!link) return;
+          existingCredit = {
+            dealBy: manual.added_by,
+            dealByName: manual.added_by_name || 'Unknown',
+            dealDate: manual.deal_date
+              ? new Date(
+                parseInt(String(manual.deal_date).split('-')[0]),
+                parseInt(String(manual.deal_date).split('-')[1]) - 1,
+                parseInt(String(manual.deal_date).split('-')[2]),
+              )
+              : existing.dealDate,
+          };
+          // Actor ignored for new credit when existingCredit.dealBy is already set
+          actor = { id: currentUserId, name: currentUser?.name };
+        }
+      }
+    }
+
+    const credit = resolveDealCredit(newStatus, existingCredit, actor);
     setCalls(prev => prev.map(c => c.id === callId
       ? {
         ...c,
@@ -458,11 +506,7 @@ export default function CallsTab({
       : c
     ));
     await supabase.from('calls').update({
-      ...dealCreditDbFields(newStatus, {
-        dealBy: existing?.dealBy,
-        dealByName: existing?.dealByName,
-        dealDate: existing?.dealDate,
-      }, { id: currentUserId, name: currentUser?.name }),
+      ...dealCreditDbFields(newStatus, existingCredit, actor),
       ...actorDbFields(),
     }).eq('id', callId);
   };
@@ -486,16 +530,81 @@ export default function CallsTab({
   };
 
   const toggleRow = (id: string) => {
-    const n = new Set(expandedRows);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    setExpandedRows(n);
+    setExpandedRows(prev => {
+      const n = new Set(prev);
+      const opening = !n.has(id);
+      if (opening) {
+        n.add(id);
+        const call = calls.find(c => c.id === id);
+        if (call) void syncNotesForCall(call);
+      } else {
+        n.delete(id);
+      }
+      return n;
+    });
+  };
+
+  const syncNotesForCall = async (call: Call) => {
+    const appId = (call.applicationId || '').trim();
+    if (!appId && !call.id) return;
+
+    let query = supabase.from('call_notes').select('*').order('created_at', { ascending: true });
+    if (appId) {
+      query = query.or(`call_id.eq.${call.id},application_id.eq.${appId}`);
+    } else {
+      query = query.eq('call_id', call.id);
+    }
+
+    const { data, error } = await query;
+    if (error || !data) return;
+
+    const appKey = appId.toLowerCase();
+    for (const n of data) {
+      const noteApp = (n.application_id || '').trim().toLowerCase();
+      const needsRelink = n.call_id !== call.id && (!!noteApp && noteApp === appKey || !n.application_id);
+      const needsAppId = !(n.application_id || '').trim() && !!appId;
+      if (needsRelink || needsAppId) {
+        await supabase.from('call_notes').update({
+          call_id: call.id,
+          application_id: appId || n.application_id || '',
+          dealer_name: call.dealerName || n.dealer_name || '',
+        }).eq('id', n.id);
+        n.call_id = call.id;
+        n.application_id = appId || n.application_id || '';
+      }
+    }
+
+    setNotes(prev => {
+      const byId = new Map(prev.map(n => [n.id, n]));
+      data.forEach((n: any) => {
+        byId.set(n.id, {
+          id: n.id,
+          callId: n.call_id,
+          applicationId: n.application_id || '',
+          noteText: n.note_text,
+          createdBy: n.created_by,
+          createdByName: n.created_by_name,
+          createdAt: new Date(n.created_at),
+        });
+      });
+      return Array.from(byId.values()).sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+      );
+    });
   };
 
   const openNotes = (e: React.MouseEvent, callId: string) => {
     e.stopPropagation();
     setExpandedRows(prev => {
       const n = new Set(prev);
-      if (n.has(callId)) n.delete(callId); else n.add(callId);
+      const opening = !n.has(callId);
+      if (opening) {
+        n.add(callId);
+        const call = calls.find(c => c.id === callId);
+        if (call) void syncNotesForCall(call);
+      } else {
+        n.delete(callId);
+      }
       return n;
     });
   };
@@ -516,7 +625,8 @@ export default function CallsTab({
     }).select().single();
     if (!error && data) {
       setNotes(prev => [...prev, {
-        id: data.id, callId, noteText: text,
+        id: data.id, callId, applicationId: call?.applicationId || '',
+        noteText: text,
         createdBy: currentUserId, createdByName: currentUser?.name || 'User',
         createdAt: new Date(data.created_at),
       }]);
@@ -524,7 +634,19 @@ export default function CallsTab({
     }
   };
 
-  const getCallNotes = (callId: string) => notes.filter(n => n.callId === callId);
+  const getCallNotes = (callId: string) => {
+    const call = calls.find(c => c.id === callId);
+    const appKey = (call?.applicationId || '').trim().toLowerCase();
+    const matched = notes.filter(n =>
+      n.callId === callId ||
+      (!!appKey && (n.applicationId || '').trim().toLowerCase() === appKey)
+    );
+    // Dedupe by note id (call_id + app_id match can both hit)
+    const byId = new Map(matched.map(n => [n.id, n]));
+    return Array.from(byId.values()).sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+    );
+  };
 
   const handleUpdateNote = async (noteId: string, text: string) => {
     const { error } = await supabase.from('call_notes').update({ note_text: text }).eq('id', noteId);
