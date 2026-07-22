@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck, Download } from 'lucide-react';
+import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck, Download, Edit2, Check, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { exportRowsToExcel } from '../lib/exportExcel';
 import { dealCreditDbFields, resolveDealCredit } from '../lib/dealCredit';
@@ -196,6 +196,8 @@ export default function ReportingTab({
   } | null>(null);
   const [repDealsRows, setRepDealsRows] = useState<RepDealRow[]>([]);
   const [repDealsLoading, setRepDealsLoading] = useState(false);
+  const [editingRepDealAmount, setEditingRepDealAmount] = useState<string | null>(null);
+  const [tempRepDealAmount, setTempRepDealAmount] = useState('');
 
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
@@ -609,6 +611,8 @@ export default function ReportingTab({
     setRepDealsModal({ repId, repName, dealType });
     setRepDealsLoading(true);
     setRepDealsRows([]);
+    setEditingRepDealAmount(null);
+    setTempRepDealAmount('');
 
     const targetStatus = dealType === 'deal' ? 'Deal' : 'Confirmed Deal';
     const bounds = rangeBounds;
@@ -698,6 +702,32 @@ export default function ReportingTab({
     rows.sort((a, b) => b.date.getTime() - a.date.getTime());
     setRepDealsRows(rows);
     setRepDealsLoading(false);
+  };
+
+  const handleRepDealAmountSave = async (row: RepDealRow) => {
+    const cleaned = tempRepDealAmount.trim() || '0';
+    const numeric = parseAmount(cleaned);
+
+    if (row.source === 'call') {
+      setCalls(prev => prev.map(c => c.id === row.id
+        ? { ...c, buyerFinal: cleaned, updatedAt: new Date() }
+        : c
+      ));
+      await supabase.from('calls').update({
+        buyer_final: cleaned,
+        updated_at: new Date().toISOString(),
+      }).eq('id', row.id);
+    } else {
+      await supabase.from('daily_deals').update({ amount: cleaned }).eq('id', row.id);
+      setMonthlyDailyDeals(prev => prev.map(d => d.id === row.id ? { ...d, amount: cleaned } : d));
+      setRangeDailyDeals(prev => prev.map(d => d.id === row.id ? { ...d, amount: cleaned } : d));
+      onRefreshDailyDeals?.();
+      fetchRangeDailyDeals();
+    }
+
+    setRepDealsRows(prev => prev.map(r => r.key === row.key ? { ...r, amount: numeric } : r));
+    setEditingRepDealAmount(null);
+    setTempRepDealAmount('');
   };
 
   const handleRepDealStatusChange = async (row: RepDealRow, newStatus: string) => {
@@ -1512,7 +1542,50 @@ export default function ReportingTab({
                         <td className="px-3 py-2.5 text-gray-300 max-w-[140px] truncate">{row.dealerName}</td>
                         <td className="px-3 py-2.5 text-gray-300 max-w-[120px] truncate">{row.customerName}</td>
                         <td className="px-3 py-2.5"><span className="px-1.5 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{row.state}</span></td>
-                        <td className="px-3 py-2.5 text-green-400 whitespace-nowrap">{formatCurrency(row.amount)}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                          {editingRepDealAmount === row.key ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                autoFocus
+                                value={tempRepDealAmount}
+                                onChange={e => setTempRepDealAmount(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleRepDealAmountSave(row);
+                                  if (e.key === 'Escape') { setEditingRepDealAmount(null); setTempRepDealAmount(''); }
+                                }}
+                                className="w-24 px-1.5 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                              <button
+                                onClick={() => handleRepDealAmountSave(row)}
+                                className="text-green-400 hover:text-green-300"
+                                title="Save amount"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => { setEditingRepDealAmount(null); setTempRepDealAmount(''); }}
+                                className="text-gray-400 hover:text-gray-200"
+                                title="Cancel"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 group">
+                              <span className="text-green-400">{formatCurrency(row.amount)}</span>
+                              <button
+                                onClick={() => {
+                                  setEditingRepDealAmount(row.key);
+                                  setTempRepDealAmount(String(row.amount || 0));
+                                }}
+                                className="text-gray-500 hover:text-blue-300 opacity-60 group-hover:opacity-100 transition"
+                                title="Edit amount"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
                         <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.date.toLocaleDateString()}</td>
                         <td className="px-3 py-2.5 text-gray-400 text-xs">{row.statusLast}</td>
                         <td className="px-3 py-2.5 text-gray-500 text-xs whitespace-nowrap">{row.activity}</td>
