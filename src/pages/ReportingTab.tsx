@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck, Download, Edit2, Check, X } from 'lucide-react';
+import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck, Download, Edit2, Check, X, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { exportRowsToExcel } from '../lib/exportExcel';
 import { dealCreditDbFields, resolveDealCredit } from '../lib/dealCredit';
@@ -196,6 +196,7 @@ export default function ReportingTab({
   } | null>(null);
   const [repDealsRows, setRepDealsRows] = useState<RepDealRow[]>([]);
   const [repDealsLoading, setRepDealsLoading] = useState(false);
+  const [repDealsSearch, setRepDealsSearch] = useState('');
   const [editingRepDealAmount, setEditingRepDealAmount] = useState<string | null>(null);
   const [tempRepDealAmount, setTempRepDealAmount] = useState('');
 
@@ -611,6 +612,7 @@ export default function ReportingTab({
     setRepDealsModal({ repId, repName, dealType });
     setRepDealsLoading(true);
     setRepDealsRows([]);
+    setRepDealsSearch('');
     setEditingRepDealAmount(null);
     setTempRepDealAmount('');
 
@@ -771,12 +773,22 @@ export default function ReportingTab({
     });
   };
 
+  const repDealsSearchQuery = repDealsSearch.trim().toLowerCase();
+  const filteredRepDealsRows = repDealsSearchQuery
+    ? repDealsRows.filter(row =>
+        row.applicationId.toLowerCase().includes(repDealsSearchQuery) ||
+        row.customerName.toLowerCase().includes(repDealsSearchQuery) ||
+        row.dealerName.toLowerCase().includes(repDealsSearchQuery) ||
+        row.repName.toLowerCase().includes(repDealsSearchQuery)
+      )
+    : repDealsRows;
+
   const exportRepDealsModal = () => {
-    if (!repDealsModal || repDealsRows.length === 0) return;
+    if (!repDealsModal || filteredRepDealsRows.length === 0) return;
     const label = repDealsModal.dealType === 'deal' ? 'deals' : 'confirmed-deals';
     const scope = repDealsModal.repId ? repDealsModal.repName.replace(/\s+/g, '-') : 'team';
     exportRowsToExcel(
-      repDealsRows.map(row => ({
+      filteredRepDealsRows.map(row => ({
         Rep: row.repName,
         'App ID': row.applicationId,
         Dealer: row.dealerName,
@@ -1496,7 +1508,7 @@ export default function ReportingTab({
       {/* Rep deals modal */}
       {repDealsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
-          onClick={() => setRepDealsModal(null)}>
+          onClick={() => { setRepDealsModal(null); setRepDealsSearch(''); }}>
           <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 shrink-0">
@@ -1505,26 +1517,52 @@ export default function ReportingTab({
                   {repDealsModal.repName}&apos;s {repDealsModal.dealType === 'deal' ? 'Deals' : 'Confirmed Deals'}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {rangeLabel} · {repDealsRows.length} {repDealsModal.dealType === 'deal' ? 'deal' : 'confirmed deal'}{repDealsRows.length !== 1 ? 's' : ''}
+                  {rangeLabel} ·{' '}
+                  {repDealsSearchQuery
+                    ? `${filteredRepDealsRows.length} of ${repDealsRows.length}`
+                    : repDealsRows.length}{' '}
+                  {repDealsModal.dealType === 'deal' ? 'deal' : 'confirmed deal'}
+                  {(repDealsSearchQuery ? filteredRepDealsRows.length : repDealsRows.length) !== 1 ? 's' : ''}
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={exportRepDealsModal}
-                  disabled={repDealsLoading || repDealsRows.length === 0}
+                  disabled={repDealsLoading || filteredRepDealsRows.length === 0}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-700 text-sm text-gray-200 hover:bg-gray-600 disabled:opacity-40 transition"
                 >
                   <Download className="h-4 w-4" />
                   Export
                 </button>
-                <button onClick={() => setRepDealsModal(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+                <button
+                  onClick={() => { setRepDealsModal(null); setRepDealsSearch(''); }}
+                  className="text-gray-400 hover:text-gray-200 text-2xl font-light"
+                >
+                  &times;
+                </button>
               </div>
             </div>
+            {!repDealsLoading && repDealsRows.length > 0 && (
+              <div className="px-6 py-3 border-b border-gray-700 shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  <input
+                    type="text"
+                    value={repDealsSearch}
+                    onChange={e => setRepDealsSearch(e.target.value)}
+                    placeholder="Search App ID, customer, dealer, or rep…"
+                    className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            )}
             <div className="overflow-auto flex-1">
               {repDealsLoading ? (
                 <p className="text-center text-gray-500 py-12">Loading deals…</p>
               ) : repDealsRows.length === 0 ? (
                 <p className="text-center text-gray-500 py-12">No {repDealsModal.dealType === 'deal' ? 'deals' : 'confirmed deals'} found.</p>
+              ) : filteredRepDealsRows.length === 0 ? (
+                <p className="text-center text-gray-500 py-12">No deals match your search.</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead className="bg-gray-900 sticky top-0">
@@ -1535,7 +1573,7 @@ export default function ReportingTab({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
-                    {repDealsRows.map(row => (
+                    {filteredRepDealsRows.map(row => (
                       <tr key={row.key} className="hover:bg-gray-750">
                         <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.repName}</td>
                         <td className="px-3 py-2.5 text-blue-400 font-mono text-xs whitespace-nowrap">{row.applicationId}</td>

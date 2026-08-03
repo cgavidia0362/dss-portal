@@ -4,6 +4,16 @@ export function normalizeAppId(appId?: string | null): string {
   return (appId || '').trim().toLowerCase();
 }
 
+/** Exact App ID match (case/whitespace-insensitive) against a list of calls. */
+export function findCallsByAppId<T extends { applicationId?: string | null; application_id?: string | null }>(
+  calls: T[],
+  appId: string,
+): T[] {
+  const key = normalizeAppId(appId);
+  if (!key) return [];
+  return calls.filter(c => normalizeAppId(c.applicationId ?? c.application_id) === key);
+}
+
 export function getCallDealCreditId(call: {
   dealBy?: string;
   assignedTo?: string;

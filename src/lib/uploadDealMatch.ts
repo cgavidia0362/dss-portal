@@ -42,6 +42,62 @@ export function normalizeDealerName(name?: string | null): string {
     .trim();
 }
 
+/** True when every word in the shorter name appears in the longer name. */
+export function personNamesSoftMatch(a?: string | null, b?: string | null): boolean {
+  const left = normalizePersonName(a);
+  const right = normalizePersonName(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+
+  const leftTokens = left.split(' ').filter(Boolean);
+  const rightTokens = right.split(' ').filter(Boolean);
+  if (leftTokens.length === 0 || rightTokens.length === 0) return false;
+
+  const [shorter, longer] =
+    leftTokens.length <= rightTokens.length
+      ? [leftTokens, rightTokens]
+      : [rightTokens, leftTokens];
+
+  // Require at least 2 tokens on the shorter side to avoid loose single-name hits.
+  if (shorter.length < 2) return false;
+
+  const longerSet = new Set(longer);
+  return shorter.every(token => longerSet.has(token));
+}
+
+type SoftMatchCall = {
+  applicationId?: string | null;
+  application_id?: string | null;
+  dealerName?: string | null;
+  dealer_name?: string | null;
+  customerName?: string | null;
+  customer_full_name?: string | null;
+};
+
+/**
+ * Same dealer + soft customer match, optionally excluding an App ID
+ * (so exact App ID conflicts stay in the hard-block UI).
+ */
+export function findCallsByDealerCustomer<T extends SoftMatchCall>(
+  calls: T[],
+  dealerName: string,
+  customerName: string,
+  excludeAppId?: string,
+): T[] {
+  const dealerKey = normalizeDealerName(dealerName);
+  const customerKey = normalizePersonName(customerName);
+  if (!dealerKey || !customerKey) return [];
+
+  const exclude = normalizeAppId(excludeAppId);
+  return calls.filter(c => {
+    const app = normalizeAppId(c.applicationId ?? c.application_id);
+    if (exclude && app === exclude) return false;
+    const d = normalizeDealerName(c.dealerName ?? c.dealer_name);
+    if (!d || d !== dealerKey) return false;
+    return personNamesSoftMatch(customerName, c.customerName ?? c.customer_full_name);
+  });
+}
+
 function parseManualDealDate(dealDate: string, createdAt?: string): Date {
   if (dealDate) {
     const parts = String(dealDate).split('-');
@@ -120,8 +176,8 @@ export function findUploadDealMatches(
     const manual = manuals.find(m => {
       if (usedManualIds.has(m.id)) return false;
       const mDealer = normalizeDealerName(m.dealerName);
-      const mCustomer = normalizePersonName(m.customerName);
-      return !!mDealer && !!mCustomer && mDealer === callDealer && mCustomer === callCustomer;
+      if (!mDealer || mDealer !== callDealer) return false;
+      return personNamesSoftMatch(m.customerName, call.customerName);
     });
     if (!manual) return;
 

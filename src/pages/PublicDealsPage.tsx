@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields } from '../lib/dealCredit';
+import { findCallsByAppId } from '../lib/manualDealMatch';
+import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
 import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare, Users, Trash2, Trophy, DollarSign, ClipboardList, PlusCircle, Target } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
@@ -161,6 +163,10 @@ export default function PublicDealsPage() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [linkedCall, setLinkedCall] = useState<any | null>(null);
   const [searching, setSearching] = useState(false);
+  const [appIdConflicts, setAppIdConflicts] = useState<any[]>([]);
+  const [checkingAppId, setCheckingAppId] = useState(false);
+  const [softMatches, setSoftMatches] = useState<any[]>([]);
+  const [checkingSoftMatch, setCheckingSoftMatch] = useState(false);
 
   const [dealerPopup, setDealerPopup] = useState<string | null>(null);
   const [showAllPopupStatuses, setShowAllPopupStatuses] = useState(false);
@@ -477,6 +483,8 @@ export default function PublicDealsPage() {
 
   const handleSelectCall = (call: any) => {
     setLinkedCall(call);
+    setAppIdConflicts([]);
+    setSoftMatches([]);
     setForm(prev => ({ ...prev, appId: call.application_id, dealerName: call.dealer_name, amount: call.buyer_final || '', state: call.state, fuStatus: 'Deal', customerName: call.customer_full_name || '' }));
     setSearchResults([]);
     setSearchQuery('');
@@ -486,13 +494,96 @@ export default function PublicDealsPage() {
     setLinkedCall(null);
     setSearchQuery('');
     setSearchResults([]);
+    setAppIdConflicts([]);
+    setSoftMatches([]);
     setForm(prev => ({ ...prev, appId: '', dealerName: '', customerName: '', amount: '', state: '' }));
   };
+
+  useEffect(() => {
+    if (linkedCall) {
+      setAppIdConflicts([]);
+      setCheckingAppId(false);
+      return;
+    }
+    const appId = form.appId.trim();
+    if (!appId) {
+      setAppIdConflicts([]);
+      setCheckingAppId(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCheckingAppId(true);
+    const timer = window.setTimeout(async () => {
+      const { data } = await supabase.from('calls')
+        .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
+        .ilike('application_id', appId)
+        .limit(10);
+      if (cancelled) return;
+      const matches = findCallsByAppId(data || [], appId);
+      setAppIdConflicts(matches);
+      setCheckingAppId(false);
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.appId, linkedCall]);
+
+  useEffect(() => {
+    if (linkedCall || appIdConflicts.length > 0) {
+      setSoftMatches([]);
+      setCheckingSoftMatch(false);
+      return;
+    }
+    const dealer = form.dealerName.trim();
+    const customer = form.customerName.trim();
+    if (!dealer || !customer) {
+      setSoftMatches([]);
+      setCheckingSoftMatch(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCheckingSoftMatch(true);
+    const timer = window.setTimeout(async () => {
+      const dealerToken = dealer.split(/\s+/)[0] || dealer;
+      const customerToken = customer.split(/\s+/)[0] || customer;
+      const { data } = await supabase.from('calls')
+        .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
+        .ilike('dealer_name', `%${dealerToken}%`)
+        .ilike('customer_full_name', `%${customerToken}%`)
+        .limit(40);
+      if (cancelled) return;
+      const matches = findCallsByDealerCustomer(data || [], dealer, customer, form.appId).slice(0, 8);
+      setSoftMatches(matches);
+      setCheckingSoftMatch(false);
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.dealerName, form.customerName, form.appId, linkedCall, appIdConflicts.length]);
 
   const handleSubmit = async () => {
     if (!selectedUser) { setError('Please select your name.'); return; }
     if (!form.appId || !form.dealerName || !form.amount || !form.state) { setError('App ID, dealer, amount and state are required.'); return; }
     if (!linkedCall && !form.customerName) { setError('Customer name is required.'); return; }
+    if (!linkedCall) {
+      const appId = form.appId.trim();
+      const { data } = await supabase.from('calls')
+        .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
+        .ilike('application_id', appId)
+        .limit(10);
+      const matches = findCallsByAppId(data || [], appId);
+      if (matches.length > 0) {
+        setAppIdConflicts(matches);
+        setError('This App ID already exists in Calls. Select the existing app — Manual entry is blocked to prevent duplicates.');
+        return;
+      }
+    }
     setError('');
     setSubmitting(true);
     try {
@@ -517,6 +608,8 @@ export default function PublicDealsPage() {
       await fetchTodayDeals();
       setSuccess(`Deal logged successfully for ${user?.name}!`);
       setForm({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
+      setAppIdConflicts([]);
+      setSoftMatches([]);
       setTimeout(() => setSuccess(''), 4000);
     } catch (e: any) {
       setError('Failed to log deal: ' + e.message);
@@ -816,7 +909,7 @@ export default function PublicDealsPage() {
 
                 {!linkedCall && (
                   <div className="bg-gray-900/40 border border-gray-700 rounded-xl p-4">
-                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
+                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app first</label>
                     <div className="flex gap-2">
                       <input type="text" value={searchQuery}
                         onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults([]); }}
@@ -850,8 +943,37 @@ export default function PublicDealsPage() {
                         ))}
                       </div>
                     )}
-                    {searchResults.length === 0 && searchQuery && !searching && <p className="text-xs text-gray-500 mt-2">No match found — fill in the details manually below.</p>}
+                    {searchResults.length === 0 && searchQuery && !searching && (
+                      <p className="text-xs text-gray-500 mt-2">No match in search — you can enter a new App ID below only if it is not already in Calls.</p>
+                    )}
                   </div>
+                )}
+
+                {appIdConflicts.length > 0 && !linkedCall && (
+                  <div className="rounded-xl border border-amber-700/70 bg-amber-950/40 px-4 py-3">
+                    <p className="text-sm font-medium text-amber-200">
+                      This App ID already exists in Calls. Manual entry is blocked — select the existing app to avoid duplicates.
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {appIdConflicts.map((call: any) => (
+                        <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-800/80 rounded-lg border border-amber-800/50">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-sm text-blue-400 font-medium">{call.application_id}</span>
+                            <span className="text-xs text-gray-300">{call.dealer_name}</span>
+                            <span className="text-xs text-gray-500">{call.state}</span>
+                            {call.customer_full_name && <span className="text-xs text-gray-400 italic">{call.customer_full_name}</span>}
+                          </div>
+                          <button onClick={() => handleSelectCall(call)}
+                            className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition flex-shrink-0">
+                            Use this app →
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {checkingAppId && !linkedCall && form.appId.trim() && (
+                  <p className="text-xs text-gray-500">Checking App ID against Calls…</p>
                 )}
 
                 <div>
@@ -906,7 +1028,7 @@ export default function PublicDealsPage() {
                         <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
                         <input type="text" value={form.appId} onChange={e => setForm({ ...form, appId: e.target.value })}
                           placeholder="e.g. DTBFE001"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                          className={`w-full px-3 py-2 bg-gray-700 border rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ${appIdConflicts.length > 0 ? 'border-amber-600' : 'border-gray-600'}`} />
                       </div>
                       <div>
                         <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
@@ -925,6 +1047,33 @@ export default function PublicDealsPage() {
                           className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                       </div>
                     </div>
+                    {softMatches.length > 0 && appIdConflicts.length === 0 && (
+                      <div className="rounded-xl border border-sky-700/70 bg-sky-950/30 px-4 py-3">
+                        <p className="text-sm font-medium text-sky-200">
+                          Possible match: same dealer &amp; customer, different App ID. This may be the same deal — link it, or continue as a new Manual entry.
+                        </p>
+                        <div className="mt-2 space-y-1">
+                          {softMatches.map((call: any) => (
+                            <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-800/80 rounded-lg border border-sky-800/50">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <span className="text-sm text-blue-400 font-medium">{call.application_id}</span>
+                                <span className="text-xs text-gray-300">{call.dealer_name}</span>
+                                <span className="text-xs text-gray-500">{call.state}</span>
+                                {call.customer_full_name && <span className="text-xs text-gray-400 italic">{call.customer_full_name}</span>}
+                              </div>
+                              <button onClick={() => handleSelectCall(call)}
+                                className="text-xs px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition flex-shrink-0">
+                                Use this app →
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-sky-300/80 mt-2">Add Deal stays available if this is truly a different deal.</p>
+                      </div>
+                    )}
+                    {checkingSoftMatch && appIdConflicts.length === 0 && form.dealerName.trim() && form.customerName.trim() && (
+                      <p className="text-xs text-gray-500">Checking dealer + customer for possible matches…</p>
+                    )}
                     <div className="grid grid-cols-4 gap-3">
                       <div>
                         <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Amount *</label>
@@ -946,8 +1095,8 @@ export default function PublicDealsPage() {
                         </select>
                       </div>
                       <div className="flex flex-col justify-end">
-                        <button onClick={handleSubmit} disabled={submitting}
-                          className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
+                        <button onClick={handleSubmit} disabled={submitting || appIdConflicts.length > 0 || checkingAppId}
+                          className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
                           {submitting ? 'Saving…' : 'Add Deal'}
                         </button>
                       </div>

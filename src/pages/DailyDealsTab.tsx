@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields } from '../lib/dealCredit';
+import { findCallsByAppId } from '../lib/manualDealMatch';
+import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
 import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target, Download } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
@@ -189,6 +191,10 @@ export default function DailyDealsTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Call[]>([]);
   const [linkedCall, setLinkedCall] = useState<Call | null>(null);
+  const [appIdConflicts, setAppIdConflicts] = useState<Array<Call | { id: string; applicationId: string; dealerName: string; state: string; customerName?: string; buyerFinal?: string }>>([]);
+  const [checkingAppId, setCheckingAppId] = useState(false);
+  const [softMatches, setSoftMatches] = useState<Array<Call | { id: string; applicationId: string; dealerName: string; state: string; customerName?: string; buyerFinal?: string }>>([]);
+  const [checkingSoftMatch, setCheckingSoftMatch] = useState(false);
 
   // Dealer popup state
   const [dealerPopup, setDealerPopup] = useState<string | null>(null);
@@ -468,16 +474,39 @@ export default function DailyDealsTab({
     setSearchResults(results);
   };
 
-  const handleSelectCall = (call: Call) => {
-    setLinkedCall(call);
+  const handleSelectCall = (call: {
+    id: string;
+    applicationId: string;
+    dealerName: string;
+    state: string;
+    customerName?: string;
+    buyerFinal?: string;
+    dealerCifNumber?: string;
+    statusLast?: string;
+    submittedDate?: string;
+  }) => {
+    const full: Call = {
+      id: call.id,
+      applicationId: call.applicationId,
+      dealerCifNumber: call.dealerCifNumber || '',
+      dealerName: call.dealerName,
+      state: call.state,
+      buyerFinal: call.buyerFinal || '',
+      statusLast: call.statusLast || '',
+      submittedDate: call.submittedDate || '',
+      customerName: call.customerName,
+    };
+    setLinkedCall(full);
+    setAppIdConflicts([]);
+    setSoftMatches([]);
     setForm(prev => ({
       ...prev,
-      appId: call.applicationId,
-      dealerName: call.dealerName,
-      amount: call.buyerFinal || '',
-      state: call.state,
+      appId: full.applicationId,
+      dealerName: full.dealerName,
+      amount: full.buyerFinal || '',
+      state: full.state,
       fuStatus: 'Deal',
-      customerName: call.customerName || '',
+      customerName: full.customerName || '',
     }));
     setSearchResults([]);
     setSearchQuery('');
@@ -487,8 +516,107 @@ export default function DailyDealsTab({
     setLinkedCall(null);
     setSearchQuery('');
     setSearchResults([]);
+    setAppIdConflicts([]);
+    setSoftMatches([]);
     setForm(prev => ({ ...prev, appId: '', dealerName: '', customerName: '', amount: '', state: '' }));
   };
+
+  useEffect(() => {
+    if (linkedCall) {
+      setAppIdConflicts([]);
+      setCheckingAppId(false);
+      return;
+    }
+    const appId = form.appId.trim();
+    if (!appId) {
+      setAppIdConflicts([]);
+      setCheckingAppId(false);
+      return;
+    }
+
+    const localMatches = findCallsByAppId(calls, appId);
+    setAppIdConflicts(localMatches);
+
+    let cancelled = false;
+    setCheckingAppId(true);
+    const timer = window.setTimeout(async () => {
+      const { data } = await supabase.from('calls')
+        .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
+        .ilike('application_id', appId)
+        .limit(10);
+      if (cancelled) return;
+      const remote = findCallsByAppId(data || [], appId).map(c => ({
+        id: c.id,
+        applicationId: c.application_id,
+        dealerName: c.dealer_name || '',
+        state: c.state || '',
+        customerName: c.customer_full_name || undefined,
+        buyerFinal: c.buyer_final || '',
+      }));
+      const byId = new Map<string, typeof remote[number] | Call>();
+      [...localMatches, ...remote].forEach(c => byId.set(c.id, c));
+      setAppIdConflicts(Array.from(byId.values()));
+      setCheckingAppId(false);
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.appId, linkedCall, calls]);
+
+  useEffect(() => {
+    if (linkedCall || appIdConflicts.length > 0) {
+      setSoftMatches([]);
+      setCheckingSoftMatch(false);
+      return;
+    }
+    const dealer = form.dealerName.trim();
+    const customer = form.customerName.trim();
+    if (!dealer || !customer) {
+      setSoftMatches([]);
+      setCheckingSoftMatch(false);
+      return;
+    }
+
+    const localMatches = findCallsByDealerCustomer(calls, dealer, customer, form.appId).slice(0, 8);
+    setSoftMatches(localMatches);
+
+    let cancelled = false;
+    setCheckingSoftMatch(true);
+    const timer = window.setTimeout(async () => {
+      const dealerToken = dealer.split(/\s+/)[0] || dealer;
+      const customerToken = customer.split(/\s+/)[0] || customer;
+      const { data } = await supabase.from('calls')
+        .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
+        .ilike('dealer_name', `%${dealerToken}%`)
+        .ilike('customer_full_name', `%${customerToken}%`)
+        .limit(40);
+      if (cancelled) return;
+      const remote = findCallsByDealerCustomer(
+        (data || []).map(c => ({
+          id: c.id,
+          applicationId: c.application_id,
+          dealerName: c.dealer_name || '',
+          state: c.state || '',
+          customerName: c.customer_full_name || undefined,
+          buyerFinal: c.buyer_final || '',
+        })),
+        dealer,
+        customer,
+        form.appId,
+      );
+      const byId = new Map<string, typeof remote[number] | Call>();
+      [...localMatches, ...remote].forEach(c => byId.set(c.id, c));
+      setSoftMatches(Array.from(byId.values()).slice(0, 8));
+      setCheckingSoftMatch(false);
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.dealerName, form.customerName, form.appId, linkedCall, calls, appIdConflicts.length]);
 
   // ── HANDLERS ─────────────────────────────────────────────────────
 
@@ -501,6 +629,21 @@ export default function DailyDealsTab({
     }
     if (!linkedCall && !form.customerName) {
       setFormError('Customer name is required'); return;
+    }
+    if (!linkedCall && findCallsByAppId(calls, form.appId).length > 0) {
+      setFormError('This App ID already exists in Calls. Select the existing app above — Manual entry is blocked to prevent duplicates.');
+      return;
+    }
+    if (!linkedCall) {
+      const appId = form.appId.trim();
+      const { data } = await supabase.from('calls')
+        .select('id, application_id, dealer_name, buyer_final, state, customer_full_name')
+        .ilike('application_id', appId)
+        .limit(10);
+      if (findCallsByAppId(data || [], appId).length > 0) {
+        setFormError('This App ID already exists in Calls. Select the existing app above — Manual entry is blocked to prevent duplicates.');
+        return;
+      }
     }
     try {
       setFormError('');
@@ -526,6 +669,7 @@ export default function DailyDealsTab({
       setSuccess('Deal added!');
       setTimeout(() => setSuccess(''), 3000);
       setForm({ appId: '', dealerName: '', customerName: '', amount: '', state: '', fuStatus: 'Deal' });
+      setSoftMatches([]);
       onRefresh();
     } catch (e: any) {
       setFormError('Failed to add deal: ' + e.message);
@@ -918,7 +1062,7 @@ export default function DailyDealsTab({
                 {/* Search — only when no call linked */}
                 {!linkedCall && (
                   <div className="bg-gray-900/40 border border-gray-700 rounded-xl p-4 mb-4">
-                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app (optional)</label>
+                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app first</label>
                     <div className="flex gap-2">
                       <input type="text" value={searchQuery}
                         onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults([]); }}
@@ -951,8 +1095,37 @@ export default function DailyDealsTab({
                         ))}
                       </div>
                     )}
-                    {searchResults.length === 0 && searchQuery && <p className="text-xs text-gray-500 mt-2">No match found — fill in the details manually below.</p>}
+                    {searchResults.length === 0 && searchQuery && (
+                      <p className="text-xs text-gray-500 mt-2">No match in search — you can enter a new App ID below only if it is not already in Calls.</p>
+                    )}
                   </div>
+                )}
+
+                {appIdConflicts.length > 0 && !linkedCall && (
+                  <div className="mb-4 rounded-xl border border-amber-700/70 bg-amber-950/40 px-4 py-3">
+                    <p className="text-sm font-medium text-amber-200">
+                      This App ID already exists in Calls. Manual entry is blocked — select the existing app to avoid duplicates.
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {appIdConflicts.map(call => (
+                        <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-800/80 rounded-lg border border-amber-800/50">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
+                            <span className="text-xs text-gray-300">{call.dealerName}</span>
+                            <span className="text-xs text-gray-500">{call.state}</span>
+                            {call.customerName && <span className="text-xs text-gray-400 italic">{call.customerName}</span>}
+                          </div>
+                          <button onClick={() => handleSelectCall(call)}
+                            className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition flex-shrink-0">
+                            Use this app →
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {checkingAppId && !linkedCall && form.appId.trim() && (
+                  <p className="text-xs text-gray-500 mb-4">Checking App ID against Calls…</p>
                 )}
 
                 <div className="mb-4">
@@ -1008,7 +1181,7 @@ export default function DailyDealsTab({
                         <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
                         <input type="text" value={form.appId} onChange={e => setForm({ ...form, appId: e.target.value })}
                           placeholder="e.g. DTBFE001"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                          className={`w-full px-3 py-2 bg-gray-700 border rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 ${appIdConflicts.length > 0 ? 'border-amber-600' : 'border-gray-600'}`} />
                       </div>
                       <div>
                         <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
@@ -1027,6 +1200,33 @@ export default function DailyDealsTab({
                           className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
                       </div>
                     </div>
+                    {softMatches.length > 0 && appIdConflicts.length === 0 && (
+                      <div className="mb-3 rounded-xl border border-sky-700/70 bg-sky-950/30 px-4 py-3">
+                        <p className="text-sm font-medium text-sky-200">
+                          Possible match: same dealer &amp; customer, different App ID. This may be the same deal — link it, or continue as a new Manual entry.
+                        </p>
+                        <div className="mt-2 space-y-1">
+                          {softMatches.map(call => (
+                            <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-800/80 rounded-lg border border-sky-800/50">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
+                                <span className="text-xs text-gray-300">{call.dealerName}</span>
+                                <span className="text-xs text-gray-500">{call.state}</span>
+                                {call.customerName && <span className="text-xs text-gray-400 italic">{call.customerName}</span>}
+                              </div>
+                              <button onClick={() => handleSelectCall(call)}
+                                className="text-xs px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition flex-shrink-0">
+                                Use this app →
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-sky-300/80 mt-2">Add Deal stays available if this is truly a different deal.</p>
+                      </div>
+                    )}
+                    {checkingSoftMatch && appIdConflicts.length === 0 && form.dealerName.trim() && form.customerName.trim() && (
+                      <p className="text-xs text-gray-500 mb-3">Checking dealer + customer for possible matches…</p>
+                    )}
                     <div className="grid grid-cols-4 gap-3">
                       <div>
                         <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Amount *</label>
@@ -1049,7 +1249,8 @@ export default function DailyDealsTab({
                       </div>
                       <div className="flex items-end">
                         <button onClick={handleAddDeal}
-                          className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
+                          disabled={appIdConflicts.length > 0 || checkingAppId}
+                          className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
                           Add Deal
                         </button>
                       </div>
