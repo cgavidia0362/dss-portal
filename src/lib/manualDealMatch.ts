@@ -97,3 +97,28 @@ export function manualDealMatchedByCall(
     return true;
   });
 }
+
+/**
+ * Sticky / conversion dedupe: match Manual to a Call that was booked
+ * (has deal_date), even if FU status later left Deal/Confirmed.
+ */
+export function manualDealMatchedByBookedCall(
+  manual: DealMatchManual,
+  calls: DealMatchCall[],
+  isInBounds?: (date: Date) => boolean,
+): boolean {
+  const appKey = normalizeAppId(manual.appId);
+  if (!appKey) return false;
+
+  return calls.some(c => {
+    if (normalizeAppId(c.applicationId) !== appKey) return false;
+    if (!c.dealDate) return false;
+    if (isInBounds) {
+      const d = c.dealDate instanceof Date ? c.dealDate : new Date(c.dealDate);
+      if (Number.isNaN(d.getTime()) || !isInBounds(d)) return false;
+    }
+    const stored = getCallDealCreditId(c);
+    if (stored && manual.addedBy && stored !== manual.addedBy) return false;
+    return true;
+  });
+}

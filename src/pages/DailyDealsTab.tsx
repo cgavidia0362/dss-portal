@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { dealCreditDbFields } from '../lib/dealCredit';
+import { dealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { findCallsByAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
 import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target, Download } from 'lucide-react';
@@ -692,11 +692,15 @@ export default function DailyDealsTab({
     try {
       if (entry.source === 'manual') {
         const creditUser = allUsers.find(u => u.id === editCreditId);
+        const manualRow = todayDeals.find(d => d.id === entry.id);
+        const lockStart = manualRow?.createdAt || manualRow?.dealDate;
+        const shouldEarlyUnbook = !isDealLikeStatus(editFuStatus) && !isDealCreditLocked(lockStart);
         const { error: err } = await supabase.from('daily_deals').update({
           app_id: editAppId.trim(), dealer_name: editDealerName.trim(),
           customer_name: editCustomerName.trim(), amount: editAmount.trim(),
           state: editState.trim().toUpperCase(), fu_status: editFuStatus,
           added_by: editCreditId || null, added_by_name: creditUser?.name || editCreditName,
+          ...(shouldEarlyUnbook ? { deal_date: null } : {}),
         }).eq('id', entry.id);
         if (err) throw err;
         await fetchTodayDeals();

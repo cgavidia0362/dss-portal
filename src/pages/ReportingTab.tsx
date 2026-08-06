@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck, Download, Edit2, Check, X, Search } from 'lucide-react';
+import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck, Download, Edit2, Check, X, Search, ArrowUp, ArrowDown, ArrowUpDown, Layers } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { exportRowsToExcel } from '../lib/exportExcel';
-import { dealCreditDbFields, resolveDealCredit } from '../lib/dealCredit';
-import { manualDealMatchedByCall, buildManualCreditByApp, resolveCallDealCredit, normalizeAppId } from '../lib/manualDealMatch';
+import { dealCreditDbFields, resolveDealCredit, countsAsStickyBookedDeal, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
+import { manualDealMatchedByCall, buildManualCreditByApp, resolveCallDealCredit, normalizeAppId, manualDealMatchedByBookedCall } from '../lib/manualDealMatch';
 
 interface Call {
   id: string;
@@ -68,6 +68,7 @@ interface MonthlyDailyDeal {
   dealDate: string;
   amount: string;
   state: string;
+  createdAt?: string;
 }
 
 interface RepDealRow {
@@ -197,8 +198,13 @@ export default function ReportingTab({
   const [repDealsRows, setRepDealsRows] = useState<RepDealRow[]>([]);
   const [repDealsLoading, setRepDealsLoading] = useState(false);
   const [repDealsSearch, setRepDealsSearch] = useState('');
+  const [repDealsStatusFilter, setRepDealsStatusFilter] = useState<string>('all');
+  const [repDealsSortKey, setRepDealsSortKey] = useState<keyof RepDealRow>('date');
+  const [repDealsSortDir, setRepDealsSortDir] = useState<'asc' | 'desc'>('desc');
   const [editingRepDealAmount, setEditingRepDealAmount] = useState<string | null>(null);
   const [tempRepDealAmount, setTempRepDealAmount] = useState('');
+  const [repSortKey, setRepSortKey] = useState<keyof RepPerformanceRow>('deals');
+  const [repSortDir, setRepSortDir] = useState<'asc' | 'desc'>('desc');
 
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
@@ -218,6 +224,7 @@ export default function ReportingTab({
     dealDate: d.deal_date,
     amount: d.amount || '0',
     state: d.state || '',
+    createdAt: d.created_at || undefined,
   });
 
   const fetchMonthlyDailyDeals = useCallback(async () => {
@@ -226,7 +233,7 @@ export default function ReportingTab({
     const end = `${viewYear}-${String(viewMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     const { data } = await supabase
       .from('daily_deals')
-      .select('id, app_id, dealer_name, customer_name, added_by, added_by_name, fu_status, deal_date, amount, state')
+      .select('id, app_id, dealer_name, customer_name, added_by, added_by_name, fu_status, deal_date, amount, state, created_at')
       .gte('deal_date', start)
       .lte('deal_date', end);
     if (data) {
@@ -237,7 +244,7 @@ export default function ReportingTab({
   const fetchRangeDailyDeals = useCallback(async () => {
     const { data } = await supabase
       .from('daily_deals')
-      .select('id, app_id, dealer_name, customer_name, added_by, added_by_name, fu_status, deal_date, amount, state')
+      .select('id, app_id, dealer_name, customer_name, added_by, added_by_name, fu_status, deal_date, amount, state, created_at')
       .gte('deal_date', rangeStart)
       .lte('deal_date', rangeEnd);
     if (data) setRangeDailyDeals(data.map(mapDailyDealRow));
@@ -444,7 +451,11 @@ export default function ReportingTab({
   const rangeBounds = getRangeBounds(rangeStart, rangeEnd);
   const rangeLabel = formatRangeLabel(rangeStart, rangeEnd);
 
-  const filterManualDealsByRange = (bounds: { start: Date; end: Date }) => {
+  const filterManualDealsByRange = (
+    bounds: { start: Date; end: Date },
+    opts?: { requireDealStatus?: boolean },
+  ) => {
+    const requireDealStatus = opts?.requireDealStatus !== false;
     const dealMap = new Map<string, MonthlyDailyDeal>();
     rangeDailyDeals.forEach(d => dealMap.set(d.id, d));
 
@@ -465,7 +476,9 @@ export default function ReportingTab({
       if (!d.dealDate) return false;
       const parts = d.dealDate.split('-');
       const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-      return isInBounds(date, bounds) && isDealStatus(d.fuStatus);
+      if (!isInBounds(date, bounds)) return false;
+      if (requireDealStatus && !isDealStatus(d.fuStatus)) return false;
+      return true;
     });
   };
 
@@ -473,8 +486,9 @@ export default function ReportingTab({
 
   const calculateRepPerformance = (bounds: { start: Date; end: Date }): RepPerformanceRow[] => {
     const repMap = new Map<string, RepPerformanceRow>();
-    const manualsInRange = filterManualDealsByRange(bounds);
-    const manualByApp = buildManualCreditByApp(manualsInRange);
+    // Sticky manuals: keep deal_date in range even after status leaves Deal/Confirmed
+    const stickyManuals = filterManualDealsByRange(bounds, { requireDealStatus: false });
+    const manualByApp = buildManualCreditByApp(stickyManuals);
 
     const ensureRep = (id: string, name: string) => {
       if (!repMap.has(id)) {
@@ -497,36 +511,61 @@ export default function ReportingTab({
       if (call.fuStatus === 'No Answer') row.noAnswer++;
     });
 
+    // Sticky booked deals: Deal/Confirmed always; other statuses only after 24h lock
     calls.forEach(call => {
-      if (call.fuStatus !== 'Deal' && call.fuStatus !== 'Confirmed Deal') return;
+      if (!countsAsStickyBookedDeal(call.fuStatus, call.dealDate)) return;
       const dealDate = call.dealDate ? new Date(call.dealDate) : null;
       if (!dealDate || !isInBounds(dealDate, bounds)) return;
       const credit = resolveCallDealCredit(call, manualByApp);
-      if (!credit) return; // no credited rep — do not count
+      if (!credit) return;
       const row = ensureRep(credit.id, credit.name);
-      if (call.fuStatus === 'Deal') row.deals++;
+      row.deals++;
       if (call.fuStatus === 'Confirmed Deal') row.confirmedDeals++;
     });
 
-    manualsInRange.forEach(deal => {
+    stickyManuals.forEach(deal => {
       if (!deal.addedBy) return;
-      if (manualDealMatchedByCall(deal, calls, date => isInBounds(date, bounds))) return;
+      const lockStart = deal.createdAt || deal.dealDate;
+      if (!countsAsStickyBookedDeal(deal.fuStatus, lockStart)) return;
+      if (manualDealMatchedByBookedCall(deal, calls, date => isInBounds(date, bounds))) return;
       const row = ensureRep(deal.addedBy, deal.addedByName || 'Unknown');
-      if (deal.fuStatus === 'Deal') row.deals++;
+      row.deals++;
       if (deal.fuStatus === 'Confirmed Deal') row.confirmedDeals++;
     });
 
     const rows = Array.from(repMap.values());
     rows.forEach(r => {
-      const totalDeals = r.deals + r.confirmedDeals;
-      r.conversionRate = totalDeals > 0 ? ((r.confirmedDeals / totalDeals) * 100).toFixed(1) : '0';
+      // Confirmed is a subset of sticky Deals
+      r.conversionRate = r.deals > 0 ? ((r.confirmedDeals / r.deals) * 100).toFixed(1) : '0';
     });
     return rows.sort((a, b) => b.deals - a.deals || b.confirmedDeals - a.confirmedDeals);
   };
 
-  const repPerformance = calculateRepPerformance(rangeBounds);
+  const repPerformanceRaw = calculateRepPerformance(rangeBounds);
 
-  const teamTotals = repPerformance.reduce(
+  const toggleRepSort = (key: keyof RepPerformanceRow) => {
+    if (repSortKey === key) {
+      setRepSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setRepSortKey(key);
+      setRepSortDir(key === 'repName' ? 'asc' : 'desc');
+    }
+  };
+
+  const repPerformance = [...repPerformanceRaw].sort((a, b) => {
+    const dir = repSortDir === 'asc' ? 1 : -1;
+    if (repSortKey === 'repName') {
+      return a.repName.localeCompare(b.repName) * dir;
+    }
+    if (repSortKey === 'conversionRate') {
+      return (parseFloat(a.conversionRate) - parseFloat(b.conversionRate)) * dir;
+    }
+    const av = Number(a[repSortKey]) || 0;
+    const bv = Number(b[repSortKey]) || 0;
+    return (av - bv) * dir;
+  });
+
+  const teamTotals = repPerformanceRaw.reduce(
     (acc, rep) => ({
       totalCalls: acc.totalCalls + rep.totalCalls,
       noCall: acc.noCall + rep.noCall,
@@ -537,34 +576,49 @@ export default function ReportingTab({
     }),
     { totalCalls: 0, noCall: 0, pending: 0, noAnswer: 0, deals: 0, confirmedDeals: 0 },
   );
-  const teamTotalDeals = teamTotals.deals + teamTotals.confirmedDeals;
-  const teamConvRate = teamTotalDeals > 0
-    ? ((teamTotals.confirmedDeals / teamTotalDeals) * 100).toFixed(1)
+  // Rep Performance / Team row: sticky conversion
+  const teamConvRate = teamTotals.deals > 0
+    ? ((teamTotals.confirmedDeals / teamTotals.deals) * 100).toFixed(1)
     : '0';
 
-  const rangeManualDeals = filterManualDealsByRange(rangeBounds);
-  const rangeManualByApp = buildManualCreditByApp(rangeManualDeals);
-  const rangeDealCalls = calls.filter(c => {
-    if (c.fuStatus !== 'Deal' && c.fuStatus !== 'Confirmed Deal') return false;
-    if (!c.dealDate) return false;
-    if (!isInBounds(new Date(c.dealDate), rangeBounds)) return false;
-    return !!resolveCallDealCredit(c, rangeManualByApp);
+  // Sticky all booked deals (same set as Team Total Deals)
+  const stickyManuals = filterManualDealsByRange(rangeBounds, { requireDealStatus: false });
+  const stickyManualByApp = buildManualCreditByApp(stickyManuals);
+  const stickyDealCalls = calls.filter(c => {
+    if (!countsAsStickyBookedDeal(c.fuStatus, c.dealDate)) return false;
+    if (!c.dealDate || !isInBounds(new Date(c.dealDate), rangeBounds)) return false;
+    return !!resolveCallDealCredit(c, stickyManualByApp);
   });
-  const uniqueRangeManual = rangeManualDeals.filter(d =>
-    !manualDealMatchedByCall(d, calls, date => isInBounds(date, rangeBounds)),
-  );
+  const uniqueStickyManual = stickyManuals.filter(d => {
+    const lockStart = d.createdAt || d.dealDate;
+    if (!countsAsStickyBookedDeal(d.fuStatus, lockStart)) return false;
+    return !manualDealMatchedByBookedCall(d, calls, date => isInBounds(date, rangeBounds));
+  });
+  const kpiAllDeals = stickyDealCalls.length + uniqueStickyManual.length;
+  const allDealsAmount =
+    stickyDealCalls.reduce((sum, c) => sum + getAmount(c), 0)
+    + uniqueStickyManual.reduce((sum, d) => sum + parseAmount(d.amount), 0);
+
+  const kpiDealsOnWay =
+    stickyDealCalls.filter(c => c.fuStatus === 'Deal').length
+    + uniqueStickyManual.filter(d => d.fuStatus === 'Deal').length;
+  const kpiConfirmed =
+    stickyDealCalls.filter(c => c.fuStatus === 'Confirmed Deal').length
+    + uniqueStickyManual.filter(d => d.fuStatus === 'Confirmed Deal').length;
+  const kpiConvRate = kpiAllDeals > 0
+    ? ((kpiConfirmed / kpiAllDeals) * 100).toFixed(1)
+    : '0';
   const dealsOnTheWayAmount =
-    rangeDealCalls.filter(c => c.fuStatus === 'Deal').reduce((sum, c) => sum + getAmount(c), 0)
-    + uniqueRangeManual.filter(d => d.fuStatus === 'Deal').reduce((sum, d) => sum + parseAmount(d.amount), 0);
+    stickyDealCalls.filter(c => c.fuStatus === 'Deal').reduce((sum, c) => sum + getAmount(c), 0)
+    + uniqueStickyManual.filter(d => d.fuStatus === 'Deal').reduce((sum, d) => sum + parseAmount(d.amount), 0);
   const confirmedDealAmount =
-    rangeDealCalls.filter(c => c.fuStatus === 'Confirmed Deal').reduce((sum, c) => sum + getAmount(c), 0)
-    + uniqueRangeManual.filter(d => d.fuStatus === 'Confirmed Deal').reduce((sum, d) => sum + parseAmount(d.amount), 0);
-  const rangeTotalAmount = dealsOnTheWayAmount + confirmedDealAmount;
-  const rangeAvgDeal = (teamTotals.deals + teamTotals.confirmedDeals) > 0
-    ? rangeTotalAmount / (teamTotals.deals + teamTotals.confirmedDeals)
+    stickyDealCalls.filter(c => c.fuStatus === 'Confirmed Deal').reduce((sum, c) => sum + getAmount(c), 0)
+    + uniqueStickyManual.filter(d => d.fuStatus === 'Confirmed Deal').reduce((sum, d) => sum + parseAmount(d.amount), 0);
+  const rangeAvgDeal = kpiAllDeals > 0
+    ? allDealsAmount / kpiAllDeals
     : 0;
 
-  const dealsByState = [...rangeDealCalls, ...uniqueRangeManual.map(d => ({
+  const dealsByState = [...stickyDealCalls, ...uniqueStickyManual.map(d => ({
     state: d.state, amount: parseAmount(d.amount),
   }))].reduce((acc: { state: string; deals: number; amount: number }[], item: any) => {
     const state = item.state || '—';
@@ -575,7 +629,7 @@ export default function ReportingTab({
     return acc;
   }, []).sort((a, b) => b.deals - a.deals);
 
-  const rangeDealCount = teamTotals.deals + teamTotals.confirmedDeals;
+  const rangeDealCount = kpiAllDeals;
 
   const monthBounds = getPeriodBounds('monthly');
   const monthDealCalls = calls.filter(c => {
@@ -613,17 +667,25 @@ export default function ReportingTab({
     setRepDealsLoading(true);
     setRepDealsRows([]);
     setRepDealsSearch('');
+    setRepDealsStatusFilter('all');
+    setRepDealsSortKey('date');
+    setRepDealsSortDir('desc');
     setEditingRepDealAmount(null);
     setTempRepDealAmount('');
 
-    const targetStatus = dealType === 'deal' ? 'Deal' : 'Confirmed Deal';
     const bounds = rangeBounds;
-    const manualsInRange = filterManualDealsByRange(bounds);
+    const manualsInRange = dealType === 'deal'
+      ? filterManualDealsByRange(bounds, { requireDealStatus: false })
+      : filterManualDealsByRange(bounds);
     const manualByApp = buildManualCreditByApp(manualsInRange);
 
-    // Same inclusion as Performance Overview: Deal/Confirmed with dealDate + credited rep.
+    // Deals popup: sticky booked deals (24h lock). Confirmed: Confirmed only.
     const repCalls = calls.filter(c => {
-      if (c.fuStatus !== targetStatus) return false;
+      if (dealType === 'confirmed') {
+        if (c.fuStatus !== 'Confirmed Deal') return false;
+      } else if (!countsAsStickyBookedDeal(c.fuStatus, c.dealDate)) {
+        return false;
+      }
       if (!c.dealDate || !isInBounds(new Date(c.dealDate), bounds)) return false;
       const credit = resolveCallDealCredit(c, manualByApp);
       if (!credit) return false;
@@ -632,9 +694,16 @@ export default function ReportingTab({
     });
 
     const repManual = manualsInRange.filter(d => {
-      if (d.fuStatus !== targetStatus) return false;
+      if (dealType === 'confirmed' && d.fuStatus !== 'Confirmed Deal') return false;
+      if (dealType === 'deal') {
+        const lockStart = d.createdAt || d.dealDate;
+        if (!countsAsStickyBookedDeal(d.fuStatus, lockStart)) return false;
+      }
       if (repId && d.addedBy !== repId) return false;
-      if (manualDealMatchedByCall(d, calls, date => isInBounds(date, bounds))) return false;
+      const matched = dealType === 'deal'
+        ? manualDealMatchedByBookedCall(d, calls, date => isInBounds(date, bounds))
+        : manualDealMatchedByCall(d, calls, date => isInBounds(date, bounds));
+      if (matched) return false;
       return true;
     });
     const seenApps = new Set(repCalls.map(c => normalizeAppId(c.applicationId)));
@@ -745,7 +814,7 @@ export default function ReportingTab({
           ...c,
           fuStatus: newStatus,
           updatedAt: new Date(),
-          dealDate: isDealStatus(newStatus) ? credit.dealDate : c.dealDate,
+          dealDate: credit.dealDate,
           dealBy: credit.dealBy,
           dealByName: credit.dealByName,
         }
@@ -759,29 +828,84 @@ export default function ReportingTab({
         }),
         updated_at: new Date().toISOString(),
       }).eq('id', row.id);
+
+      setRepDealsRows(prev => {
+        if (repDealsModal?.dealType === 'confirmed' && newStatus !== 'Confirmed Deal') {
+          return prev.filter(r => r.key !== row.key);
+        }
+        // Early undo within 24h clears deal_date → leave sticky Deals list
+        if (repDealsModal?.dealType === 'deal' && !countsAsStickyBookedDeal(newStatus, credit.dealDate)) {
+          return prev.filter(r => r.key !== row.key);
+        }
+        return prev.map(r => r.key === row.key ? { ...r, fuStatus: newStatus } : r);
+      });
     } else {
-      await supabase.from('daily_deals').update({ fu_status: newStatus }).eq('id', row.id);
-      setMonthlyDailyDeals(prev => prev.map(d => d.id === row.id ? { ...d, fuStatus: newStatus } : d));
-      setRangeDailyDeals(prev => prev.map(d => d.id === row.id ? { ...d, fuStatus: newStatus } : d));
+      const existing = [...rangeDailyDeals, ...monthlyDailyDeals].find(d => d.id === row.id);
+      const lockStart = existing?.createdAt || existing?.dealDate || row.date;
+      const earlyUndo = !isDealLikeStatus(newStatus) && !isDealCreditLocked(lockStart);
+      const updatePayload: Record<string, string | null> = { fu_status: newStatus };
+      // Drop mistyped Manual deals from sticky reporting within the grace window
+      if (earlyUndo) updatePayload.deal_date = null;
+
+      await supabase.from('daily_deals').update(updatePayload).eq('id', row.id);
+      const patch = (d: MonthlyDailyDeal) => d.id === row.id
+        ? { ...d, fuStatus: newStatus, ...(earlyUndo ? { dealDate: '' } : {}) }
+        : d;
+      setMonthlyDailyDeals(prev => prev.map(patch));
+      setRangeDailyDeals(prev => prev.map(patch));
       onRefreshDailyDeals?.();
       fetchRangeDailyDeals();
+
+      setRepDealsRows(prev => {
+        if (repDealsModal?.dealType === 'confirmed' && newStatus !== 'Confirmed Deal') {
+          return prev.filter(r => r.key !== row.key);
+        }
+        if (repDealsModal?.dealType === 'deal' && earlyUndo) {
+          return prev.filter(r => r.key !== row.key);
+        }
+        return prev.map(r => r.key === row.key ? { ...r, fuStatus: newStatus } : r);
+      });
     }
-    setRepDealsRows(prev => {
-      const targetStatus = repDealsModal?.dealType === 'deal' ? 'Deal' : 'Confirmed Deal';
-      if (newStatus !== targetStatus) return prev.filter(r => r.key !== row.key);
-      return prev.map(r => r.key === row.key ? { ...r, fuStatus: newStatus } : r);
-    });
   };
 
   const repDealsSearchQuery = repDealsSearch.trim().toLowerCase();
-  const filteredRepDealsRows = repDealsSearchQuery
-    ? repDealsRows.filter(row =>
+  const filteredRepDealsRows = (() => {
+    let rows = repDealsRows;
+    if (repDealsStatusFilter !== 'all') {
+      rows = rows.filter(r => (r.fuStatus || '') === repDealsStatusFilter);
+    }
+    if (repDealsSearchQuery) {
+      rows = rows.filter(row =>
         row.applicationId.toLowerCase().includes(repDealsSearchQuery) ||
         row.customerName.toLowerCase().includes(repDealsSearchQuery) ||
         row.dealerName.toLowerCase().includes(repDealsSearchQuery) ||
         row.repName.toLowerCase().includes(repDealsSearchQuery)
-      )
-    : repDealsRows;
+      );
+    }
+    const dir = repDealsSortDir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const key = repDealsSortKey;
+      if (key === 'date') return (a.date.getTime() - b.date.getTime()) * dir;
+      if (key === 'amount') return (a.amount - b.amount) * dir;
+      if (key === 'source') return a.source.localeCompare(b.source) * dir;
+      const av = String(a[key] ?? '').toLowerCase();
+      const bv = String(b[key] ?? '').toLowerCase();
+      return av.localeCompare(bv) * dir;
+    });
+  })();
+
+  const toggleRepDealsSort = (key: typeof repDealsSortKey) => {
+    if (repDealsSortKey === key) {
+      setRepDealsSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setRepDealsSortKey(key);
+      setRepDealsSortDir(key === 'date' || key === 'amount' ? 'desc' : 'asc');
+    }
+  };
+
+  const repDealsStatusOptions = Array.from(
+    new Set(repDealsRows.map(r => r.fuStatus).filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b));
 
   const exportRepDealsModal = () => {
     if (!repDealsModal || filteredRepDealsRows.length === 0) return;
@@ -1000,13 +1124,23 @@ export default function ReportingTab({
         </div>
 
         <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Deal results</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
           {[
             {
+              label: 'All Deals',
+              value: kpiAllDeals,
+              amount: formatCurrency(allDealsAmount),
+              sub: 'Booked deals · 24h lock for status changes',
+              Icon: Layers,
+              color: 'text-cyan-300',
+              accent: 'border-cyan-500/30 bg-cyan-500/10',
+              card: 'to-cyan-950/25',
+            },
+            {
               label: 'Deals on the Way',
-              value: teamTotals.deals,
+              value: kpiDealsOnWay,
               amount: formatCurrency(dealsOnTheWayAmount),
-              sub: 'Status: Deal',
+              sub: 'Status: Deal only',
               Icon: Handshake,
               color: 'text-green-300',
               accent: 'border-green-500/30 bg-green-500/10',
@@ -1014,7 +1148,7 @@ export default function ReportingTab({
             },
             {
               label: 'Confirmed Deals',
-              value: teamTotals.confirmedDeals,
+              value: kpiConfirmed,
               amount: formatCurrency(confirmedDealAmount),
               sub: 'Status: Confirmed Deal',
               Icon: BadgeCheck,
@@ -1024,9 +1158,9 @@ export default function ReportingTab({
             },
             {
               label: 'Conversion Rate',
-              value: `${teamConvRate}%`,
+              value: `${kpiConvRate}%`,
               amount: null as string | null,
-              sub: `Confirmed ÷ Total · Avg ${formatCurrency(rangeAvgDeal)}`,
+              sub: `Confirmed ÷ All Deals · Avg ${formatCurrency(rangeAvgDeal)}`,
               Icon: BarChart3,
               color: 'text-blue-300',
               accent: 'border-blue-500/30 bg-blue-500/10',
@@ -1336,14 +1470,31 @@ export default function ReportingTab({
               <table className="w-full min-w-[820px]">
                 <thead className="bg-gray-950/70">
                   <tr>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Rep</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Total Calls</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">No Call</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Pending</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">No Answer</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Deals</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Confirmed</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Conv. Rate</th>
+                    {([
+                      { key: 'repName', label: 'Rep' },
+                      { key: 'totalCalls', label: 'Total Calls' },
+                      { key: 'noCall', label: 'No Call' },
+                      { key: 'pending', label: 'Pending' },
+                      { key: 'noAnswer', label: 'No Answer' },
+                      { key: 'deals', label: 'Deals' },
+                      { key: 'confirmedDeals', label: 'Confirmed' },
+                      { key: 'conversionRate', label: 'Conv. Rate' },
+                    ] as { key: keyof RepPerformanceRow; label: string }[]).map(col => {
+                      const active = repSortKey === col.key;
+                      const SortIcon = !active ? ArrowUpDown : repSortDir === 'asc' ? ArrowUp : ArrowDown;
+                      return (
+                        <th key={col.key} className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                          <button
+                            type="button"
+                            onClick={() => toggleRepSort(col.key)}
+                            className={`inline-flex items-center gap-1 hover:text-gray-200 transition ${active ? 'text-blue-300' : ''}`}
+                          >
+                            {col.label}
+                            <SortIcon className="h-3.5 w-3.5" />
+                          </button>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-700/80">
@@ -1443,7 +1594,9 @@ export default function ReportingTab({
                   Showing <span className="text-gray-400 font-medium">{rangeLabel}</span>
                   &nbsp;·&nbsp; Click deal or confirmed count to view &amp; edit
                   &nbsp;·&nbsp; Deals credited to who marked them
-                  &nbsp;·&nbsp; Conv. Rate = Confirmed Deals &divide; Total Deals (Deal + Confirmed)
+                  &nbsp;·&nbsp; Deals lock into All Deals after 24h (earlier status changes drop out)
+                  &nbsp;·&nbsp; Conv. Rate = Confirmed &divide; All Deals
+                  &nbsp;·&nbsp; Click column headers to sort
                 </p>
               </div>
             </div>
@@ -1508,7 +1661,11 @@ export default function ReportingTab({
       {/* Rep deals modal */}
       {repDealsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
-          onClick={() => { setRepDealsModal(null); setRepDealsSearch(''); }}>
+          onClick={() => {
+            setRepDealsModal(null);
+            setRepDealsSearch('');
+            setRepDealsStatusFilter('all');
+          }}>
           <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 shrink-0">
@@ -1518,11 +1675,11 @@ export default function ReportingTab({
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {rangeLabel} ·{' '}
-                  {repDealsSearchQuery
+                  {(repDealsSearchQuery || repDealsStatusFilter !== 'all')
                     ? `${filteredRepDealsRows.length} of ${repDealsRows.length}`
                     : repDealsRows.length}{' '}
                   {repDealsModal.dealType === 'deal' ? 'deal' : 'confirmed deal'}
-                  {(repDealsSearchQuery ? filteredRepDealsRows.length : repDealsRows.length) !== 1 ? 's' : ''}
+                  {((repDealsSearchQuery || repDealsStatusFilter !== 'all') ? filteredRepDealsRows.length : repDealsRows.length) !== 1 ? 's' : ''}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1535,7 +1692,11 @@ export default function ReportingTab({
                   Export
                 </button>
                 <button
-                  onClick={() => { setRepDealsModal(null); setRepDealsSearch(''); }}
+                  onClick={() => {
+                    setRepDealsModal(null);
+                    setRepDealsSearch('');
+                    setRepDealsStatusFilter('all');
+                  }}
                   className="text-gray-400 hover:text-gray-200 text-2xl font-light"
                 >
                   &times;
@@ -1543,7 +1704,7 @@ export default function ReportingTab({
               </div>
             </div>
             {!repDealsLoading && repDealsRows.length > 0 && (
-              <div className="px-6 py-3 border-b border-gray-700 shrink-0">
+              <div className="px-6 py-3 border-b border-gray-700 shrink-0 space-y-2">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                   <input
@@ -1554,6 +1715,21 @@ export default function ReportingTab({
                     className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                {repDealsModal.dealType === 'deal' && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-400 whitespace-nowrap">Filter by status</label>
+                    <select
+                      value={repDealsStatusFilter}
+                      onChange={e => setRepDealsStatusFilter(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="all">All statuses</option>
+                      {repDealsStatusOptions.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
             <div className="overflow-auto flex-1">
@@ -1562,14 +1738,40 @@ export default function ReportingTab({
               ) : repDealsRows.length === 0 ? (
                 <p className="text-center text-gray-500 py-12">No {repDealsModal.dealType === 'deal' ? 'deals' : 'confirmed deals'} found.</p>
               ) : filteredRepDealsRows.length === 0 ? (
-                <p className="text-center text-gray-500 py-12">No deals match your search.</p>
+                <p className="text-center text-gray-500 py-12">No deals match your search{repDealsStatusFilter !== 'all' ? ' / filter' : ''}.</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead className="bg-gray-900 sticky top-0">
                     <tr>
-                      {['Rep', 'App ID', 'Dealer', 'Customer', 'State', 'Amount', 'Date', 'Status Last', 'Activity', 'FU Status', 'Note', 'Source'].map(h => (
-                        <th key={h} className="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                      ))}
+                      {([
+                        { key: 'repName', label: 'Rep' },
+                        { key: 'applicationId', label: 'App ID' },
+                        { key: 'dealerName', label: 'Dealer' },
+                        { key: 'customerName', label: 'Customer' },
+                        { key: 'state', label: 'State' },
+                        { key: 'amount', label: 'Amount' },
+                        { key: 'date', label: 'Date' },
+                        { key: 'statusLast', label: 'Status Last' },
+                        { key: 'activity', label: 'Activity' },
+                        { key: 'fuStatus', label: 'FU Status' },
+                        { key: 'note', label: 'Note' },
+                        { key: 'source', label: 'Source' },
+                      ] as { key: keyof RepDealRow; label: string }[]).map(col => {
+                        const active = repDealsSortKey === col.key;
+                        const SortIcon = !active ? ArrowUpDown : repDealsSortDir === 'asc' ? ArrowUp : ArrowDown;
+                        return (
+                          <th key={col.key} className="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => toggleRepDealsSort(col.key)}
+                              className={`inline-flex items-center gap-1 hover:text-gray-200 transition ${active ? 'text-blue-300' : ''}`}
+                            >
+                              {col.label}
+                              <SortIcon className="h-3 w-3" />
+                            </button>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
