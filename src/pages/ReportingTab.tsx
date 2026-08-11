@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Target, Settings, ChevronLeft, ChevronRight, Calendar, Handshake, DollarSign, Phone, PhoneOff, Hourglass, MapPin, BarChart3, UserRound, BadgeCheck, Download, Edit2, Check, X, Search, ArrowUp, ArrowDown, ArrowUpDown, Layers } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { exportRowsToExcel } from '../lib/exportExcel';
-import { dealCreditDbFields, resolveDealCredit, countsAsStickyBookedDeal, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
+import { dealCreditDbFields, resolveDealCredit, forceDealCreditDbFields, countsAsStickyBookedDeal, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
+import { getDealCreditOptions, resolveCreditName } from '../lib/systemReps';
 import { manualDealMatchedByCall, buildManualCreditByApp, resolveCallDealCredit, normalizeAppId, manualDealMatchedByBookedCall } from '../lib/manualDealMatch';
 
 interface Call {
@@ -86,6 +87,7 @@ interface RepDealRow {
   fuStatus: string;
   note: string;
   repName: string;
+  creditId?: string;
 }
 
 interface ReportingTabProps {
@@ -98,6 +100,7 @@ interface ReportingTabProps {
   fundingData: FundingData;
   todayDailyDeals?: { id: string; addedBy: string; fuStatus: string; dealDate: string; amount: string; state: string }[];
   onRefreshDailyDeals?: () => void;
+  users?: { id: string; name: string; role?: string }[];
 }
 
 type TimePeriod = 'daily' | 'weekly' | 'monthly';
@@ -165,7 +168,7 @@ const formatLastActivity = (call: Call): string => {
 
 export default function ReportingTab({
   currentUserId, currentUserRole, calls, setCalls, goals, setGoals, fundingData,
-  todayDailyDeals, onRefreshDailyDeals,
+  todayDailyDeals, onRefreshDailyDeals, users = [],
 }: ReportingTabProps) {
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
@@ -203,6 +206,13 @@ export default function ReportingTab({
   const [repDealsSortDir, setRepDealsSortDir] = useState<'asc' | 'desc'>('desc');
   const [editingRepDealAmount, setEditingRepDealAmount] = useState<string | null>(null);
   const [tempRepDealAmount, setTempRepDealAmount] = useState('');
+  const [creditModal, setCreditModal] = useState<{
+    row: RepDealRow;
+    newStatus: string;
+    creditId: string;
+  } | null>(null);
+  const canForceCredit = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const creditOptions = getDealCreditOptions(users, currentUserRole);
   const [repSortKey, setRepSortKey] = useState<keyof RepPerformanceRow>('deals');
   const [repSortDir, setRepSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -744,6 +754,7 @@ export default function ReportingTab({
         fuStatus: c.fuStatus || '',
         note: notesMap[`call-${c.id}`] || '—',
         repName: credit?.name || 'Unknown',
+        creditId: credit?.id || c.dealBy,
       };
     });
 
@@ -767,6 +778,7 @@ export default function ReportingTab({
         fuStatus: d.fuStatus,
         note: notesMap[`manual-${d.id}`] || '—',
         repName: d.addedByName || '—',
+        creditId: d.addedBy,
       });
     });
 
@@ -802,6 +814,15 @@ export default function ReportingTab({
   };
 
   const handleRepDealStatusChange = async (row: RepDealRow, newStatus: string) => {
+    if (canForceCredit && isDealLikeStatus(newStatus)) {
+      setCreditModal({
+        row,
+        newStatus,
+        creditId: row.creditId || currentUserId,
+      });
+      return;
+    }
+
     if (row.source === 'call') {
       const existing = calls.find(c => c.id === row.id);
       const credit = resolveDealCredit(newStatus, {
@@ -866,6 +887,62 @@ export default function ReportingTab({
         return prev.map(r => r.key === row.key ? { ...r, fuStatus: newStatus } : r);
       });
     }
+  };
+
+  const applyRepDealCreditModal = async () => {
+    if (!creditModal) return;
+    const { row, newStatus, creditId } = creditModal;
+    const creditName = resolveCreditName(creditId, creditOptions);
+
+    if (row.source === 'call') {
+      const existing = calls.find(c => c.id === row.id);
+      const fields = forceDealCreditDbFields(newStatus, { id: creditId, name: creditName }, existing?.dealDate);
+      const dealDate = fields.deal_date ? new Date(fields.deal_date) : existing?.dealDate;
+      setCalls(prev => prev.map(c => c.id === row.id
+        ? {
+          ...c,
+          fuStatus: newStatus,
+          updatedAt: new Date(),
+          dealDate,
+          dealBy: creditId,
+          dealByName: creditName,
+        }
+        : c
+      ));
+      await supabase.from('calls').update({
+        ...fields,
+        updated_at: new Date().toISOString(),
+      }).eq('id', row.id);
+
+      setRepDealsRows(prev => {
+        if (repDealsModal?.dealType === 'confirmed' && newStatus !== 'Confirmed Deal') {
+          return prev.filter(r => r.key !== row.key);
+        }
+        if (repDealsModal?.dealType === 'deal' && !countsAsStickyBookedDeal(newStatus, dealDate)) {
+          return prev.filter(r => r.key !== row.key);
+        }
+        return prev.map(r => r.key === row.key
+          ? { ...r, fuStatus: newStatus, repName: creditName, creditId }
+          : r);
+      });
+    } else {
+      await supabase.from('daily_deals').update({
+        fu_status: newStatus,
+        added_by: creditId,
+        added_by_name: creditName,
+      }).eq('id', row.id);
+      const patch = (d: MonthlyDailyDeal) => d.id === row.id
+        ? { ...d, fuStatus: newStatus, addedBy: creditId, addedByName: creditName }
+        : d;
+      setMonthlyDailyDeals(prev => prev.map(patch));
+      setRangeDailyDeals(prev => prev.map(patch));
+      onRefreshDailyDeals?.();
+      fetchRangeDailyDeals();
+      setRepDealsRows(prev => prev.map(r => r.key === row.key
+        ? { ...r, fuStatus: newStatus, repName: creditName, creditId }
+        : r));
+    }
+    setCreditModal(null);
   };
 
   const repDealsSearchQuery = repDealsSearch.trim().toLowerCase();
@@ -1852,6 +1929,43 @@ export default function ReportingTab({
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {creditModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4"
+          onClick={() => setCreditModal(null)}>
+          <div className="bg-gray-800 border border-gray-600 rounded-xl w-full max-w-md p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-100 mb-1">Credit this deal</h3>
+            <p className="text-sm text-gray-400 mb-4">
+              Set status to <span className="text-green-300 font-medium">{creditModal.newStatus}</span> and choose who gets credit.
+            </p>
+            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Credit to</label>
+            <select
+              value={creditModal.creditId}
+              onChange={e => setCreditModal({ ...creditModal, creditId: e.target.value })}
+              className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 mb-5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {creditOptions.map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setCreditModal(null)}
+                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyRepDealCreditModal}
+                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-medium"
+              >
+                Confirm
+              </button>
             </div>
           </div>
         </div>

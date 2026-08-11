@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { dealCreditDbFields, resolveDealCredit } from '../lib/dealCredit';
+import { dealCreditDbFields, resolveDealCredit, forceDealCreditDbFields } from '../lib/dealCredit';
+import { getDealCreditOptions, resolveCreditName } from '../lib/systemReps';
 import NoteItem from '../components/NoteItem';
 
 interface Call {
@@ -102,6 +103,13 @@ export default function CallsTab({
   const [sortField, setSortField] = useState<SortField>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [creditModal, setCreditModal] = useState<{
+    callId: string;
+    newStatus: NonNullable<Call['fuStatus']>;
+    creditId: string;
+  } | null>(null);
+  const canForceCredit = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const creditOptions = getDealCreditOptions(users || [], currentUserRole);
   const [currentPage, setCurrentPage] = useState(1);
   const [stateGoals, setStateGoals] = useState<{ [state: string]: number }>({});
   const [editingStatusLast, setEditingStatusLast] = useState<string | null>(null);
@@ -444,6 +452,19 @@ export default function CallsTab({
     const existing = calls.find(c => c.id === callId);
     if (!existing) return;
 
+    // Managers/admins pick who gets credit when marking Deal / Confirmed
+    if (
+      canForceCredit &&
+      (newStatus === 'Deal' || newStatus === 'Confirmed Deal')
+    ) {
+      setCreditModal({
+        callId,
+        newStatus,
+        creditId: existing.dealBy || currentUserId,
+      });
+      return;
+    }
+
     let actor = { id: currentUserId, name: currentUser?.name };
     let existingCredit = {
       dealBy: existing.dealBy,
@@ -486,7 +507,6 @@ export default function CallsTab({
               )
               : existing.dealDate,
           };
-          // Actor ignored for new credit when existingCredit.dealBy is already set
           actor = { id: currentUserId, name: currentUser?.name };
         }
       }
@@ -509,6 +529,35 @@ export default function CallsTab({
       ...dealCreditDbFields(newStatus, existingCredit, actor),
       ...actorDbFields(),
     }).eq('id', callId);
+  };
+
+  const applyCreditModal = async () => {
+    if (!creditModal) return;
+    const { callId, newStatus, creditId } = creditModal;
+    const existing = calls.find(c => c.id === callId);
+    if (!existing) { setCreditModal(null); return; }
+
+    const creditName = resolveCreditName(creditId, creditOptions);
+    const fields = forceDealCreditDbFields(newStatus, { id: creditId, name: creditName }, existing.dealDate);
+    const dealDate = fields.deal_date ? new Date(fields.deal_date) : existing.dealDate;
+
+    setCalls(prev => prev.map(c => c.id === callId
+      ? {
+        ...c,
+        fuStatus: newStatus,
+        updatedAt: new Date(),
+        dealDate,
+        dealBy: creditId,
+        dealByName: creditName,
+        ...actorUpdate(),
+      }
+      : c
+    ));
+    await supabase.from('calls').update({
+      ...fields,
+      ...actorDbFields(),
+    }).eq('id', callId);
+    setCreditModal(null);
   };
 
   const handleSaveStatusLast = async (callId: string) => {
@@ -1413,6 +1462,43 @@ export default function CallsTab({
           </div>
         </div>
       </div>
+
+      {creditModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setCreditModal(null)}>
+          <div className="bg-gray-800 border border-gray-600 rounded-xl w-full max-w-md p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-100 mb-1">Credit this deal</h3>
+            <p className="text-sm text-gray-400 mb-4">
+              Set status to <span className="text-green-300 font-medium">{creditModal.newStatus}</span> and choose who gets credit.
+            </p>
+            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Credit to</label>
+            <select
+              value={creditModal.creditId}
+              onChange={e => setCreditModal({ ...creditModal, creditId: e.target.value })}
+              className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 mb-5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {creditOptions.map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setCreditModal(null)}
+                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyCreditModal}
+                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-medium"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

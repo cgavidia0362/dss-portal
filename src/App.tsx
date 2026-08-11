@@ -564,6 +564,7 @@ function App() {
             fundingData={fundingData}
             todayDailyDeals={todayDailyDeals}
             onRefreshDailyDeals={() => { fetchTodayDailyDeals(); fetchCalls(); }}
+            users={users}
           />
         )}
 

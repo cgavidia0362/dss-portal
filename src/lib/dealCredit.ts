@@ -102,3 +102,40 @@ export function dealCreditDbFields(
     deal_date: dealDate ? new Date(dealDate).toISOString() : null,
   };
 }
+
+/**
+ * Manager/admin force-set deal credit (and status).
+ * Overwrites existing deal_by. Preserves deal_date when already set.
+ */
+export function forceDealCreditDbFields(
+  newStatus: string | undefined | null,
+  credit: { id: string; name: string },
+  existingDealDate?: Date | string | null,
+) {
+  const isDealLike = isDealLikeStatus(newStatus);
+  if (!isDealLike) {
+    return dealCreditDbFields(newStatus, {
+      dealBy: credit.id,
+      dealByName: credit.name,
+      dealDate: existingDealDate
+        ? existingDealDate instanceof Date
+          ? existingDealDate
+          : getDealTimestamp(existingDealDate) || undefined
+        : undefined,
+    });
+  }
+
+  const dealDate =
+    (existingDealDate
+      ? existingDealDate instanceof Date
+        ? existingDealDate
+        : getDealTimestamp(existingDealDate)
+      : null) || new Date();
+
+  return {
+    fu_status: newStatus || null,
+    deal_by: credit.id,
+    deal_by_name: credit.name,
+    deal_date: dealDate.toISOString(),
+  };
+}

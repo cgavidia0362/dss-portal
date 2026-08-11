@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { dealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
+import { dealCreditDbFields, forceDealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
+import { getDealCreditOptions, resolveCreditName, isProntoRep } from '../lib/systemReps';
 import { findCallsByAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
 import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target, Download } from 'lucide-react';
@@ -195,6 +196,12 @@ export default function DailyDealsTab({
   const [checkingAppId, setCheckingAppId] = useState(false);
   const [softMatches, setSoftMatches] = useState<Array<Call | { id: string; applicationId: string; dealerName: string; state: string; customerName?: string; buyerFinal?: string }>>([]);
   const [checkingSoftMatch, setCheckingSoftMatch] = useState(false);
+  const [creditModal, setCreditModal] = useState<{
+    callId: string;
+    newStatus: string;
+    creditId: string;
+  } | null>(null);
+  const canForceCredit = currentUser.role === 'admin' || currentUser.role === 'manager';
 
   // Dealer popup state
   const [dealerPopup, setDealerPopup] = useState<string | null>(null);
@@ -404,6 +411,14 @@ export default function DailyDealsTab({
 
   const handlePopupFuStatus = async (callId: string, newStatus: string) => {
     const existing = calls.find(c => c.id === callId);
+    if (canForceCredit && isDealLikeStatus(newStatus)) {
+      setCreditModal({
+        callId,
+        newStatus,
+        creditId: existing?.dealBy || selectedUser || currentUser.id,
+      });
+      return;
+    }
     const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
     setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
     await supabase.from('calls').update({
@@ -414,6 +429,24 @@ export default function DailyDealsTab({
       }, { id: creditUser.id, name: creditUser.name }),
       updated_at: new Date().toISOString(),
     }).eq('id', callId);
+    onRefresh();
+  };
+
+  const applyPopupCreditModal = async () => {
+    if (!creditModal) return;
+    const { callId, newStatus, creditId } = creditModal;
+    const existing = calls.find(c => c.id === callId);
+    const opts = getDealCreditOptions(
+      [...allUsers, ...users, currentUser].map(u => ({ id: u.id, name: u.name, role: u.role })),
+      currentUser.role,
+    );
+    const creditName = resolveCreditName(creditId, opts);
+    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
+    await supabase.from('calls').update({
+      ...forceDealCreditDbFields(newStatus, { id: creditId, name: creditName }, existing?.dealDate),
+      updated_at: new Date().toISOString(),
+    }).eq('id', callId);
+    setCreditModal(null);
     onRefresh();
   };
 
@@ -440,13 +473,14 @@ export default function DailyDealsTab({
     const text = popupNewNoteText[callId]?.trim();
     if (!text) return;
     const call = calls.find(c => c.id === callId);
-    const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
+    const noteAuthorId = isProntoRep(selectedUser) ? currentUser.id : selectedUser;
+    const creditUser = allUsers.find(u => u.id === noteAuthorId) || users.find(u => u.id === noteAuthorId) || currentUser;
     const { data, error } = await supabase.from('call_notes').insert({
       call_id: callId,
       application_id: call?.applicationId || '',
       dealer_name: call?.dealerName || '',
       note_text: text,
-      created_by: selectedUser,
+      created_by: noteAuthorId,
       created_by_name: creditUser.name,
     }).select().single();
     if (!error && data) {
@@ -647,20 +681,26 @@ export default function DailyDealsTab({
     }
     try {
       setFormError('');
-      const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
+      const creditName = resolveCreditName(
+        selectedUser,
+        getDealCreditOptions(
+          [...allUsers, ...users, currentUser].map(u => ({ id: u.id, name: u.name, role: u.role })),
+          currentUser.role,
+        ),
+      );
       const { error: err } = await supabase.from('daily_deals').insert({
         app_id: form.appId.trim(), dealer_name: form.dealerName.trim(),
         customer_name: form.customerName.trim() || linkedCall?.customerName || '',
         amount: form.amount.trim(),
         state: form.state.trim().toUpperCase(), fu_status: form.fuStatus,
-        added_by: selectedUser, added_by_name: creditUser.name, deal_date: today,
+        added_by: selectedUser, added_by_name: creditName, deal_date: today,
       });
       if (err) throw err;
       if (linkedCall) {
         await supabase.from('calls').update({
           fu_status: form.fuStatus,
           deal_by: selectedUser,
-          deal_by_name: creditUser.name,
+          deal_by_name: creditName,
           deal_date: today,
           updated_at: new Date().toISOString(),
         }).eq('id', linkedCall.id);
@@ -691,7 +731,7 @@ export default function DailyDealsTab({
   const handleUpdateCombined = async (entry: CombinedEntry) => {
     try {
       if (entry.source === 'manual') {
-        const creditUser = allUsers.find(u => u.id === editCreditId);
+        const creditName = resolveCreditName(editCreditId, selectableUsers) || editCreditName;
         const manualRow = todayDeals.find(d => d.id === entry.id);
         const lockStart = manualRow?.createdAt || manualRow?.dealDate;
         const shouldEarlyUnbook = !isDealLikeStatus(editFuStatus) && !isDealCreditLocked(lockStart);
@@ -699,21 +739,26 @@ export default function DailyDealsTab({
           app_id: editAppId.trim(), dealer_name: editDealerName.trim(),
           customer_name: editCustomerName.trim(), amount: editAmount.trim(),
           state: editState.trim().toUpperCase(), fu_status: editFuStatus,
-          added_by: editCreditId || null, added_by_name: creditUser?.name || editCreditName,
+          added_by: editCreditId || null, added_by_name: creditName,
           ...(shouldEarlyUnbook ? { deal_date: null } : {}),
         }).eq('id', entry.id);
         if (err) throw err;
         await fetchTodayDeals();
       } else {
         const existing = calls.find(c => c.id === entry.id);
-        const creditUser = allUsers.find(u => u.id === (editCreditId || selectedUser)) || currentUser;
+        const creditId = editCreditId || selectedUser || currentUser.id;
+        const creditName = resolveCreditName(creditId, selectableUsers);
+        const statusBecameDeal =
+          isDealLikeStatus(editFuStatus) && !isDealLikeStatus(entry.fuStatus);
         const { error: err } = await supabase.from('calls').update({
           buyer_final: editAmount.trim(),
-          ...dealCreditDbFields(editFuStatus, {
-            dealBy: existing?.dealBy,
-            dealByName: existing?.dealByName,
-            dealDate: existing?.dealDate,
-          }, { id: creditUser.id, name: creditUser.name }),
+          ...(canForceCredit && (statusBecameDeal || editCreditId)
+            ? forceDealCreditDbFields(editFuStatus, { id: creditId, name: creditName }, existing?.dealDate)
+            : dealCreditDbFields(editFuStatus, {
+              dealBy: existing?.dealBy,
+              dealByName: existing?.dealByName,
+              dealDate: existing?.dealDate,
+            }, { id: creditId, name: creditName })),
           updated_at: new Date().toISOString(),
         }).eq('id', entry.id);
         if (err) throw err;
@@ -740,10 +785,12 @@ export default function DailyDealsTab({
     if (!selectedUser) { setError('Please select your name to add notes.'); return; }
     const text = newNoteText[dealId]?.trim();
     if (!text) return;
-    const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
+    // Notes are always attributed to a real user (not Pronto)
+    const noteAuthorId = isProntoRep(selectedUser) ? currentUser.id : selectedUser;
+    const creditUser = allUsers.find(u => u.id === noteAuthorId) || users.find(u => u.id === noteAuthorId) || currentUser;
     const { error: err } = await supabase.from('daily_deal_notes').insert({
       deal_id: dealId, note_text: text,
-      created_by: selectedUser, created_by_name: creditUser.name,
+      created_by: noteAuthorId, created_by_name: creditUser.name,
     });
     if (err) return;
     setNewNoteText(prev => ({ ...prev, [dealId]: '' }));
@@ -933,7 +980,10 @@ export default function DailyDealsTab({
   const selectableUsers = useMemo(() => {
     const userMap = new Map<string, User>();
     [...allUsers, ...users, currentUser].forEach(u => userMap.set(u.id, u));
-    return Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return getDealCreditOptions(
+      Array.from(userMap.values()).map(u => ({ id: u.id, name: u.name, role: u.role })),
+      currentUser.role,
+    );
   }, [allUsers, users, currentUser]);
 
   const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
@@ -1133,10 +1183,12 @@ export default function DailyDealsTab({
                 )}
 
                 <div className="mb-4">
-                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Your name *</label>
+                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">
+                    {canForceCredit ? 'Credit to *' : 'Your name *'}
+                  </label>
                   <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)}
                     className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="">Select your name…</option>
+                    <option value="">Select {canForceCredit ? 'who gets credit' : 'your name'}…</option>
                     {selectableUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
@@ -1406,7 +1458,25 @@ export default function DailyDealsTab({
                             {entry.source === 'call' ? 'Calls' : 'Manual'}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-sm text-gray-400">{entry.creditName}</td>
+                        <td className="px-3 py-3 text-sm text-gray-400" onClick={e => e.stopPropagation()}>
+                          {isEditing && canForceCredit ? (
+                            <select
+                              value={editCreditId}
+                              onChange={e => {
+                                const id = e.target.value;
+                                setEditCreditId(id);
+                                setEditCreditName(resolveCreditName(id, selectableUsers));
+                              }}
+                              className={inputCls}
+                            >
+                              {selectableUsers.map(u => (
+                                <option key={u.id} value={u.id}>{u.name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            entry.creditName
+                          )}
+                        </td>
                         <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                           {entry.source === 'manual' && (
                             <button onClick={e => toggleNotes(e, entry.id)} title="Notes"
@@ -1794,6 +1864,43 @@ export default function DailyDealsTab({
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {creditModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setCreditModal(null)}>
+          <div className="bg-gray-800 border border-gray-600 rounded-xl w-full max-w-md p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-100 mb-1">Credit this deal</h3>
+            <p className="text-sm text-gray-400 mb-4">
+              Set status to <span className="text-green-300 font-medium">{creditModal.newStatus}</span> and choose who gets credit.
+            </p>
+            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Credit to</label>
+            <select
+              value={creditModal.creditId}
+              onChange={e => setCreditModal({ ...creditModal, creditId: e.target.value })}
+              className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 mb-5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {selectableUsers.map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setCreditModal(null)}
+                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyPopupCreditModal}
+                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-medium"
+              >
+                Confirm
+              </button>
             </div>
           </div>
         </div>
