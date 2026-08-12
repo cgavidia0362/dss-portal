@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { StickyNote, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X } from 'lucide-react';
 
 interface CombinedNote {
   id: string;
@@ -26,12 +26,39 @@ interface NotesTabProps {
   users: User[];
 }
 
+interface LossInsights {
+  lossSummary: string;
+  whoLosingTo: {
+    competitor: string;
+    mentionCount: number;
+    howTheyBeatUs: string;
+  }[];
+  overallSummary: string;
+  noteCountAnalyzed: number;
+  dateRangeLabel: string;
+}
+
+interface SavedInsight {
+  id: string;
+  name: string;
+  dateFrom: string;
+  dateTo: string;
+  dateRangeLabel: string;
+  selectedRepId: string | null;
+  filterSource: string | null;
+  noteCount: number;
+  insights: LossInsights;
+  createdByName: string;
+  createdAt: string;
+}
+
 const getTodayString = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 
 const NOTES_PER_PAGE = 10;
+const NO_DEAL_STATUS = 'No Deal';
 
 const formatDateLabel = (from: string, to: string) => {
   const todayStr = getTodayString();
@@ -56,18 +83,61 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
   const [dateTo, setDateTo] = useState(today);
   const [selectedRepId, setSelectedRepId] = useState('');
   const [filterSource, setFilterSource] = useState('');
-  const [filterFuStatus, setFilterFuStatus] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [insights, setInsights] = useState<{
-    overallSummary: string;
-    repSummaries: { repName: string; feedback: string }[];
-  } | null>(null);
+  const [insights, setInsights] = useState<LossInsights | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState('');
+  const [savedInsights, setSavedInsights] = useState<SavedInsight[]>([]);
+  const [showSavedPanel, setShowSavedPanel] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [viewingSavedId, setViewingSavedId] = useState<string | null>(null);
+  const skipClearOnFilterRef = useRef(false);
 
   useEffect(() => { fetchNotes(); }, [dateFrom, dateTo, selectedRepId]);
 
-  useEffect(() => { setCurrentPage(1); }, [dateFrom, dateTo, selectedRepId, filterSource, filterFuStatus]);
+  useEffect(() => { setCurrentPage(1); }, [dateFrom, dateTo, selectedRepId, filterSource]);
+
+  useEffect(() => {
+    if (skipClearOnFilterRef.current) {
+      skipClearOnFilterRef.current = false;
+      return;
+    }
+    setInsights(null);
+    setInsightsError('');
+    setViewingSavedId(null);
+    setSaveMessage('');
+  }, [dateFrom, dateTo, selectedRepId, filterSource]);
+
+  useEffect(() => {
+    if (isAdminOrManager) fetchSavedInsights();
+  }, [isAdminOrManager]);
+
+  const fetchSavedInsights = async () => {
+    const { data, error } = await supabase
+      .from('notes_insight_saves')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error fetching saved insights:', error);
+      return;
+    }
+    setSavedInsights((data || []).map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      dateFrom: row.date_from,
+      dateTo: row.date_to,
+      dateRangeLabel: row.date_range_label || '',
+      selectedRepId: row.selected_rep_id,
+      filterSource: row.filter_source,
+      noteCount: row.note_count || 0,
+      insights: row.insights,
+      createdByName: row.created_by_name || '',
+      createdAt: row.created_at,
+    })));
+  };
 
   const fetchNotes = async () => {
     setLoading(true);
@@ -75,7 +145,6 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       const fromTs = `${dateFrom}T00:00:00`;
       const toTs = `${dateTo}T23:59:59.999`;
 
-      // Call notes
       let callQuery = supabase
         .from('call_notes').select('*')
         .gte('created_at', fromTs)
@@ -107,7 +176,6 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
         });
       }
 
-      // Daily deal notes (joined with parent deal)
       let dealQuery = supabase
         .from('daily_deal_notes')
         .select(`id, note_text, created_by, created_by_name, created_at, daily_deals (app_id, dealer_name, customer_name, fu_status)`)
@@ -148,7 +216,9 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
           createdAt: n.created_at,
           fuStatus: n.daily_deals?.fu_status || undefined,
         })),
-      ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      ]
+        .filter(n => n.fuStatus === NO_DEAL_STATUS)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
       setNotes(combined);
     } catch (err) {
@@ -159,98 +229,112 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
   };
 
   const generateInsights = async () => {
+    if (!isAdminOrManager) return;
     setInsightsLoading(true);
     setInsightsError('');
     setInsights(null);
 
     try {
-      // Filter out short/generic notes that don't carry conversation substance
-      const genericPhrases = [
-        'no answer', 'left vm', 'left voicemail', 'voicemail left',
-        'pending', 'no response', 'follow up', 'followup', 'callback',
-        'call back', 'no ans', 'vm left', 'still pending', 'ringing',
-        'busy', 'no pickup', 'didnt answer', "didn't answer", 'try again',
-      ];
-
-      const substantiveNotes = notes.filter(n => {
-        const text = n.noteText.trim().toLowerCase();
-        if (text.length < 20) return false;
-        if (genericPhrases.some(p => text === p || (text.length < 35 && text.includes(p)))) return false;
-        return true;
-      });
-
-      if (substantiveNotes.length === 0) {
-        setInsightsError('No substantive notes found in this date range to analyze.');
-        setInsightsLoading(false);
+      const notesForAi = filteredNotes.filter(n => n.noteText.trim().length > 0);
+      if (notesForAi.length === 0) {
+        setInsightsError('No No Deal notes found in this date range to analyze.');
         return;
       }
 
-      // Group by rep
-      const byRep: { [name: string]: string[] } = {};
-      substantiveNotes.forEach(n => {
-        const name = n.createdByName || 'Unknown';
-        if (!byRep[name]) byRep[name] = [];
-        byRep[name].push(`[${n.dealerName || 'Unknown Dealer'} — App ${n.appId || 'N/A'}] ${n.noteText}`);
+      const { data, error } = await supabase.functions.invoke('notes-insights', {
+        body: {
+          dateRangeLabel: formatDateLabel(dateFrom, dateTo),
+          notes: notesForAi.map(n => ({
+            appId: n.appId,
+            dealerName: n.dealerName,
+            customerName: n.customerName,
+            noteText: n.noteText,
+            createdByName: n.createdByName,
+            createdAt: n.createdAt,
+            source: n.source,
+          })),
+        },
       });
 
-      const repSections = Object.entries(byRep)
-        .map(([name, notesArr]) => `### Rep: ${name}\n${notesArr.map(t => `- ${t}`).join('\n')}`)
-        .join('\n\n');
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (!data?.lossSummary) throw new Error('Unexpected AI response');
 
-      const systemPrompt = `You are analyzing dealer/customer call notes for a subprime auto finance company called Pronto Finance. Reps call dealers to discuss the company's program and try to win deals.
-
-The company's current selling points (the "program") include: lower fees, lower rates, higher balances, easier GPS install process, TurboPass and faster funding, guaranteed backend.
-
-The IDEAL conversation a rep should be having with a dealer covers:
-1. Identifying who they spoke with at the dealership
-2. Gauging the dealer's reaction to the updated program (lower fees/rates, higher balances, easier GPS, TurboPass/faster funding, guaranteed backend)
-3. Asking who we're losing deals to (which bank/finance company) and how they're beating us
-4. Pitching: "click everything under 30k that isn't a BK or repo" to earn more business
-5. Asking if the dealer uses Dealer Center, and if so getting an email address to send approvals to (since approvals go out in 6-7 minutes and Dealer Center can cause delays)
-6. Getting a commitment from the dealer to click all subprime apps under 30k that aren't a BK or repo
-
-Analyze the notes provided and return a JSON object with this EXACT structure (no markdown, no code fences, just raw JSON):
-
-{
-  "overallSummary": "A few paragraphs covering: (1) Who we're losing deals to (which banks/finance companies are mentioned) and how they're beating us, (2) General feedback themes - both positive and negative - about our program from dealers, (3) Any other notable patterns across all conversations.",
-  "repSummaries": [
-    { "repName": "Name", "feedback": "Coaching feedback for this specific rep on how well their conversations covered the 6 points above. Be specific - mention what they did well and what they're missing. Keep it constructive and actionable, 2-4 sentences." }
-  ]
-}
-
-Only include reps who have at least one substantive note. If a competitor bank/finance company is named anywhere, call it out specifically in the overall summary.`;
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system: systemPrompt,
-          messages: [
-            { role: 'user', content: `Here are the call notes grouped by rep for the period ${formatDateLabel(dateFrom, dateTo)}:\n\n${repSections}` }
-          ],
-        })
-      });
-
-      const data = await response.json();
-      const textBlock = data.content?.find((c: any) => c.type === 'text');
-      if (!textBlock?.text) throw new Error('No response from AI');
-
-      const cleaned = textBlock.text.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-      setInsights(parsed);
+      setInsights(data as LossInsights);
+      setViewingSavedId(null);
+      setSaveMessage('');
     } catch (err: any) {
       console.error('Insights error:', err);
-      setInsightsError('Failed to generate insights. Please try again.');
+      setInsightsError(err?.message || 'Failed to generate insights. Please try again.');
     } finally {
       setInsightsLoading(false);
     }
   };
 
+  const openSaveModal = () => {
+    if (!insights) return;
+    const defaultName = `No Deal insights — ${formatDateLabel(dateFrom, dateTo)}`;
+    setSaveName(defaultName);
+    setShowSaveModal(true);
+  };
+
+  const handleSaveInsights = async () => {
+    if (!insights || !saveName.trim()) return;
+    setSaveLoading(true);
+    setSaveMessage('');
+    try {
+      const { error } = await supabase.from('notes_insight_saves').insert({
+        name: saveName.trim(),
+        date_from: dateFrom,
+        date_to: dateTo,
+        date_range_label: insights.dateRangeLabel || formatDateLabel(dateFrom, dateTo),
+        selected_rep_id: selectedRepId || null,
+        filter_source: filterSource || null,
+        note_count: insights.noteCountAnalyzed || filteredNotes.length,
+        insights,
+        created_by: currentUser.id,
+        created_by_name: currentUser.name,
+      });
+      if (error) throw error;
+      setShowSaveModal(false);
+      setSaveMessage('Saved.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      await fetchSavedInsights();
+    } catch (err: any) {
+      console.error('Save insights error:', err);
+      setShowSaveModal(false);
+      setInsightsError(err?.message || 'Failed to save insights.');
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  const loadSavedInsight = (saved: SavedInsight) => {
+    skipClearOnFilterRef.current = true;
+    setDateFrom(saved.dateFrom);
+    setDateTo(saved.dateTo);
+    setSelectedRepId(saved.selectedRepId || '');
+    setFilterSource(saved.filterSource || '');
+    setInsights(saved.insights);
+    setViewingSavedId(saved.id);
+    setInsightsError('');
+    setShowSavedPanel(false);
+    setSaveMessage('');
+  };
+
+  const handleDeleteSaved = async (id: string) => {
+    if (!confirm('Delete this saved insight?')) return;
+    const { error } = await supabase.from('notes_insight_saves').delete().eq('id', id);
+    if (error) {
+      setInsightsError(error.message);
+      return;
+    }
+    if (viewingSavedId === id) setViewingSavedId(null);
+    await fetchSavedInsights();
+  };
+
   const filteredNotes = notes.filter(n => {
     if (filterSource && n.source !== filterSource) return false;
-    if (filterFuStatus && n.fuStatus !== filterFuStatus) return false;
     return true;
   });
 
@@ -264,24 +348,24 @@ Only include reps who have at least one substantive note. If a competitor bank/f
   const rangeEnd = Math.min(safePage * NOTES_PER_PAGE, filteredNotes.length);
 
   const repOptions = users.filter(u => u.role === 'rep' || u.role === 'buying_assistant');
-  const callsCount = notes.filter(n => n.source === 'calls').length;
-  const dealCount = notes.filter(n => n.source === 'daily_deals').length;
-  const activeReps = new Set(notes.map(n => n.createdByName)).size;
+  const callsCount = filteredNotes.filter(n => n.source === 'calls').length;
+  const dealCount = filteredNotes.filter(n => n.source === 'daily_deals').length;
+  const activeReps = new Set(filteredNotes.map(n => n.createdByName)).size;
 
   return (
     <div className="space-y-5">
 
-      {/* HEADER */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-100">Notes</h2>
           <p className="text-sm text-gray-400 mt-0.5">
-            {isAdminOrManager ? 'All rep notes — calls & daily deals' : 'Your notes — calls & daily deals'}
+            {isAdminOrManager
+              ? 'No Deal notes only — calls & daily deals'
+              : 'Your No Deal notes — calls & daily deals'}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Rep filter — admin/manager only */}
           {isAdminOrManager && (
             <select
               value={selectedRepId}
@@ -295,7 +379,6 @@ Only include reps who have at least one substantive note. If a competitor bank/f
             </select>
           )}
 
-          {/* Source filter */}
           <select
             value={filterSource}
             onChange={e => setFilterSource(e.target.value)}
@@ -306,17 +389,6 @@ Only include reps who have at least one substantive note. If a competitor bank/f
             <option value="daily_deals">Daily Deals</option>
           </select>
 
-          {/* FU status filter */}
-          <select
-            value={filterFuStatus}
-            onChange={e => setFilterFuStatus(e.target.value)}
-            className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="">All Statuses</option>
-            <option value="No Deal">No Deal Only</option>
-          </select>
-
-          {/* Date picker — subtle */}
           <div className="flex items-center border border-gray-700 rounded-lg overflow-hidden bg-gray-800">
             <div className="px-2.5 py-2 border-r border-gray-700">
               <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -346,26 +418,83 @@ Only include reps who have at least one substantive note. If a competitor bank/f
             )}
           </div>
 
-          {/* AI Insights */}
           {isAdminOrManager && (
-            <button
-              onClick={generateInsights}
-              disabled={insightsLoading || notes.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-900 bg-opacity-40 hover:bg-opacity-60 border border-purple-700 rounded-lg text-sm text-purple-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Sparkles className="w-4 h-4" />
-              {insightsLoading ? 'Analyzing…' : 'AI Insights'}
-            </button>
+            <>
+              <button
+                onClick={() => setShowSavedPanel(v => !v)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg text-sm text-gray-300 transition"
+              >
+                <Bookmark className="w-4 h-4" />
+                Saved ({savedInsights.length})
+              </button>
+              <button
+                onClick={generateInsights}
+                disabled={insightsLoading || filteredNotes.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-900 bg-opacity-40 hover:bg-opacity-60 border border-purple-700 rounded-lg text-sm text-purple-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Sparkles className="w-4 h-4" />
+                {insightsLoading ? 'Analyzing…' : 'AI Insights'}
+              </button>
+            </>
           )}
         </div>
       </div>
 
-      {/* SUMMARY BAR */}
+      {isAdminOrManager && showSavedPanel && (
+        <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-gray-200">Saved insights</h3>
+            <button onClick={() => setShowSavedPanel(false)} className="text-gray-500 hover:text-gray-300">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {savedInsights.length === 0 ? (
+            <p className="text-sm text-gray-500">No saved insights yet. Run AI Insights, then click Save.</p>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {savedInsights.map(saved => (
+                <div
+                  key={saved.id}
+                  className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5 ${
+                    viewingSavedId === saved.id
+                      ? 'border-purple-700 bg-purple-900/20'
+                      : 'border-gray-700 bg-gray-900/30'
+                  }`}
+                >
+                  <button
+                    onClick={() => loadSavedInsight(saved)}
+                    className="text-left flex-1 min-w-0"
+                  >
+                    <p className="text-sm font-medium text-gray-100 truncate">{saved.name}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {saved.dateRangeLabel || `${saved.dateFrom} — ${saved.dateTo}`}
+                      {' · '}
+                      {saved.insights?.whoLosingTo?.length || 0} lender{(saved.insights?.whoLosingTo?.length || 0) !== 1 ? 's' : ''}
+                      {' · '}
+                      saved by {saved.createdByName || 'Unknown'}
+                      {' · '}
+                      {new Date(saved.createdAt).toLocaleDateString()}
+                    </p>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSaved(saved.id)}
+                    className="text-gray-600 hover:text-red-400 transition flex-shrink-0 mt-0.5"
+                    title="Delete saved insight"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex items-center justify-between px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 flex-wrap gap-2">
         <div className="flex items-center gap-4 flex-wrap">
           <span className="text-sm font-medium text-gray-200">{formatDateLabel(dateFrom, dateTo)}</span>
           <span className="text-sm text-gray-400">
-            {filteredNotes.length} note{filteredNotes.length !== 1 ? 's' : ''}
+            {filteredNotes.length} No Deal note{filteredNotes.length !== 1 ? 's' : ''}
           </span>
           {isAdminOrManager && activeReps > 0 && (
             <span className="text-xs px-2 py-0.5 bg-gray-700 text-gray-400 rounded border border-gray-600">
@@ -387,48 +516,136 @@ Only include reps who have at least one substantive note. If a competitor bank/f
         </div>
       </div>
 
-      {/* AI INSIGHTS PANEL */}
       {insightsError && (
         <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-4 py-3">
           <p className="text-sm text-red-300">{insightsError}</p>
         </div>
       )}
 
+      {saveMessage && (
+        <div className="bg-green-900 bg-opacity-30 border border-green-800 rounded-lg px-4 py-3">
+          <p className="text-sm text-green-300">{saveMessage}</p>
+        </div>
+      )}
+
       {insights && (
         <div className="space-y-3">
           <div className="bg-purple-900 bg-opacity-10 border border-purple-800 rounded-lg p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="w-4 h-4 text-purple-400" />
-              <h3 className="text-sm font-semibold text-purple-300">Overall Summary — {formatDateLabel(dateFrom, dateTo)}</h3>
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <h3 className="text-sm font-semibold text-purple-300">
+                  Loss Analysis — {insights.dateRangeLabel || formatDateLabel(dateFrom, dateTo)}
+                </h3>
+                {viewingSavedId && (
+                  <span className="text-xs px-2 py-0.5 rounded border border-purple-700 text-purple-300 bg-purple-900/40">
+                    Saved view
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-500">
+                  Analyzed {insights.noteCountAnalyzed} note{insights.noteCountAnalyzed !== 1 ? 's' : ''}
+                  {insights.whoLosingTo?.length > 0 && (
+                    <> · {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''}</>
+                  )}
+                </span>
+                {!viewingSavedId && (
+                  <button
+                    onClick={openSaveModal}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-900/50 hover:bg-purple-900/70 border border-purple-700 rounded-lg text-xs text-purple-200 transition"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    Save
+                  </button>
+                )}
+              </div>
             </div>
             <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-line">{insights.overallSummary}</p>
           </div>
 
-          {insights.repSummaries.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-gray-300 px-1">Rep Coaching Feedback</h3>
-              {insights.repSummaries.map((rep, idx) => (
-                <div key={idx} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
-                  <p className="text-sm font-semibold text-blue-400 mb-1.5">{rep.repName}</p>
-                  <p className="text-sm text-gray-300 leading-relaxed">{rep.feedback}</p>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
+            <h3 className="text-sm font-semibold text-red-300 mb-2">Why are we losing — and how are they beating us?</h3>
+            <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-line">{insights.lossSummary}</p>
+          </div>
+
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
+            <h3 className="text-sm font-semibold text-amber-300 mb-3">
+              Who are we losing to?
+              {insights.whoLosingTo.length > 0 && (
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''} named in notes
+                </span>
+              )}
+            </h3>
+            {insights.whoLosingTo.length === 0 ? (
+              <p className="text-sm text-gray-400">No specific banks or finance companies were named in these notes.</p>
+            ) : (
+              <div className="space-y-3">
+                {insights.whoLosingTo.map((row, idx) => (
+                  <div key={`${row.competitor}-${idx}`} className="border border-gray-700 rounded-lg p-4 bg-gray-900/40">
+                    <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                      <p className="text-sm font-semibold text-blue-300">{row.competitor}</p>
+                      <span className="text-xs text-gray-500">
+                        mentioned ~{row.mentionCount}×
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-300 leading-relaxed">{row.howTheyBeatUs}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* NOTES LIST */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowSaveModal(false)}>
+          <div className="bg-gray-800 border border-gray-600 rounded-xl w-full max-w-md p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-100 mb-1">Save insights</h3>
+            <p className="text-sm text-gray-400 mb-4">
+              Name this analysis so you can reopen it later. Visible to managers and admins.
+            </p>
+            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Name</label>
+            <input
+              autoFocus
+              value={saveName}
+              onChange={e => setSaveName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleSaveInsights(); }}
+              className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 mb-5 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="e.g. July No Deal — Midwest"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveInsights}
+                disabled={saveLoading || !saveName.trim()}
+                className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium disabled:opacity-50"
+              >
+                {saveLoading ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="py-10 text-center text-gray-400 text-sm">Loading...</div>
       ) : filteredNotes.length === 0 ? (
         <div className="py-14 text-center">
           <StickyNote className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-          <p className="text-base font-medium text-gray-400">No notes found</p>
+          <p className="text-base font-medium text-gray-400">No No Deal notes found</p>
           <p className="text-sm text-gray-500 mt-1">
             {dateFrom === today
-              ? 'No notes recorded today yet.'
-              : 'No notes for the selected date range.'}
+              ? 'No No Deal notes recorded today yet.'
+              : 'No No Deal notes for the selected date range.'}
           </p>
         </div>
       ) : (
@@ -459,49 +676,43 @@ Only include reps who have at least one substantive note. If a competitor bank/f
           )}
 
           <div className="space-y-2">
-          {paginatedNotes.map(note => (
-            <div
-              key={`${note.source}-${note.id}`}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-5 py-4 hover:border-gray-600 transition"
-            >
-              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <span className="text-sm font-semibold text-blue-400">{note.appId || '—'}</span>
-                  <span className="text-sm text-gray-200">{note.dealerName || '—'}</span>
-                  {note.customerName && (
-                    <span className="text-sm text-gray-400">{note.customerName}</span>
-                  )}
-                  <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                    note.source === 'calls'
-                      ? 'bg-blue-900 bg-opacity-40 text-blue-300 border-blue-800'
-                      : 'bg-green-900 bg-opacity-40 text-green-300 border-green-800'
-                  }`}>
-                    {note.source === 'calls' ? 'Calls' : 'Daily Deals'}
-                  </span>
-                  {note.fuStatus && (
+            {paginatedNotes.map(note => (
+              <div
+                key={`${note.source}-${note.id}`}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-5 py-4 hover:border-gray-600 transition"
+              >
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="text-sm font-semibold text-blue-400">{note.appId || '—'}</span>
+                    <span className="text-sm text-gray-200">{note.dealerName || '—'}</span>
+                    {note.customerName && (
+                      <span className="text-sm text-gray-400">{note.customerName}</span>
+                    )}
                     <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                      note.fuStatus === 'No Deal'
-                        ? 'bg-red-900 bg-opacity-40 text-red-300 border-red-800'
-                        : 'bg-gray-700 text-gray-400 border-gray-600'
+                      note.source === 'calls'
+                        ? 'bg-blue-900 bg-opacity-40 text-blue-300 border-blue-800'
+                        : 'bg-green-900 bg-opacity-40 text-green-300 border-green-800'
                     }`}>
-                      {note.fuStatus}
+                      {note.source === 'calls' ? 'Calls' : 'Daily Deals'}
                     </span>
-                  )}
+                    <span className="text-xs px-2 py-0.5 rounded-full border bg-red-900 bg-opacity-40 text-red-300 border-red-800">
+                      No Deal
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    {isAdminOrManager && (
+                      <span className="text-gray-400 font-medium">{note.createdByName}</span>
+                    )}
+                    <span>
+                      {new Date(note.createdAt).toLocaleTimeString('en-US', {
+                        hour: 'numeric', minute: '2-digit', hour12: true,
+                      })}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  {isAdminOrManager && (
-                    <span className="text-gray-400 font-medium">{note.createdByName}</span>
-                  )}
-                  <span>
-                    {new Date(note.createdAt).toLocaleTimeString('en-US', {
-                      hour: 'numeric', minute: '2-digit', hour12: true,
-                    })}
-                  </span>
-                </div>
+                <p className="text-sm text-gray-200 leading-relaxed">{note.noteText}</p>
               </div>
-              <p className="text-sm text-gray-200 leading-relaxed">{note.noteText}</p>
-            </div>
-          ))}
+            ))}
           </div>
 
           {filteredNotes.length > NOTES_PER_PAGE && (
