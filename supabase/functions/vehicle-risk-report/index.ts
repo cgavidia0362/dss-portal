@@ -6,14 +6,15 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const LENDING_DECISIONS = [
-  "Strong collateral",
-  "Acceptable collateral",
-  "Higher-risk collateral",
-  "Exercise caution",
+const SCORE_LABELS = [
+  "Poor",
+  "Fair",
+  "Acceptable",
+  "Strong",
+  "Excellent",
 ] as const;
 
-type LendingDecision = (typeof LENDING_DECISIONS)[number];
+type ScoreLabel = (typeof SCORE_LABELS)[number];
 
 interface VehicleInfo {
   year: string;
@@ -21,29 +22,15 @@ interface VehicleInfo {
   model: string;
   trim: string;
   engine: string;
-  drivetrain: string;
-  bodyStyle: string;
-  fuelEconomy: string;
-}
-
-interface MechanicalOverview {
-  engine: string;
-  transmission: string;
-  mileageAssessment: string;
-  maintenanceExpense: string;
-  otherMechanical: string;
 }
 
 interface VehicleRiskReport {
   riskScore: number;
-  lendingDecision: LendingDecision;
+  scoreLabel: ScoreLabel;
   vehicleInfo: VehicleInfo;
-  bottomLineVerdict: string;
-  vehicleSummary: string;
-  underwriterOpinion: string;
-  pros: string[];
-  cons: string[];
-  mechanicalOverview: MechanicalOverview;
+  scoreSummary: string;
+  strengths: string[];
+  weaknesses: string[];
 }
 
 interface AnalyzeRequestBody {
@@ -84,50 +71,36 @@ Rules:
 
 CRITICAL: Return ONLY raw JSON with no markdown, no code fences, no backticks, no \`\`\`json wrapper, no explanation text before or after. The response must start with { and end with }. Nothing else.`;
 
-const SYSTEM_PROMPT = `You are an experienced auto lending underwriter and mechanical analyst for a subprime/indirect auto finance portfolio. You assess vehicle collateral quality, reliability risk, and lending suitability.
+const SYSTEM_PROMPT = `You are an experienced auto lending underwriter for a subprime/indirect finance company. You assess vehicles as collateral: how risky they are to finance, and how a finance company should buy them.
 
-You must respond with ONLY valid JSON — no markdown, no code fences, no commentary outside the JSON object.
+Respond with ONLY valid JSON — no markdown, no code fences.
 
-Use this exact schema and field names:
-
+Schema:
 {
-  "riskScore": <integer 1-5, where 5 = excellent collateral, 1 = do not buy>,
-  "lendingDecision": <one of: "Strong collateral" | "Acceptable collateral" | "Higher-risk collateral" | "Exercise caution">,
+  "riskScore": <integer 1-5, where 1 = too risky / do not buy, 5 = best collateral>,
+  "scoreLabel": <one of: "Poor" | "Fair" | "Acceptable" | "Strong" | "Excellent">,
   "vehicleInfo": {
     "year": "<string>",
     "make": "<string>",
     "model": "<string>",
     "trim": "<string>",
-    "engine": "<string>",
-    "drivetrain": "<string>",
-    "bodyStyle": "<string>",
-    "fuelEconomy": "<string, e.g. 28 city / 35 highway mpg or N/A>"
+    "engine": "<string>"
   },
-  "bottomLineVerdict": "<1-2 sentence decisive underwriting verdict>",
-  "vehicleSummary": "<2-3 sentence neutral vehicle overview>",
-  "underwriterOpinion": "<EXACTLY 2 sentences max. Straight to the point: overall verdict on this car as collateral, how it should be bought (any conditions), and the single biggest cost concern if any. No fluff.>",
-  "pros": ["<string>", "<string>", "<string>", "<string>", "<string>"],
-  "cons": ["<string>", "<string>", "<string>", "<string>", "<string>"],
-  "mechanicalOverview": {
-    "engine": "<paragraph on engine reliability and known issues for this exact make/model/year/trim. If elevated risk, include estimated repair costs with dollar amounts.>",
-    "transmission": "<paragraph on transmission reliability and known issues for this exact vehicle. If elevated risk, include estimated replacement/repair cost with dollar amounts.>",
-    "mileageAssessment": "<paragraph stating whether the provided mileage is good or bad for this vehicle year, plus any upcoming maintenance milestones approaching at this mileage with estimated costs (e.g. timing belt at 90k — $800-$1,200).>",
-    "maintenanceExpense": "<paragraph on expected maintenance costs and intervals for this exact vehicle. Include dollar estimates for major services.>",
-    "otherMechanical": "<paragraph on brakes, suspension, electrical, or other mechanical considerations. Include dollar estimates for any elevated-risk items.>"
-  }
+  "scoreSummary": "<3-5 sentences. Explain WHY this score, then how a finance company should approach buying this car (buy as-is, buy with conditions, or avoid). Cover the main drivers: year/model reputation, engine/transmission issues if any, mileage risk, maintenance cost. Be direct.>",
+  "strengths": ["<string>", "<string>", "<string>"],
+  "weaknesses": ["<string>", "<string>", "<string>"]
 }
 
 Rules:
-- Populate vehicleInfo from the NHTSA decode data provided; use "N/A" only when a field is genuinely unavailable.
-- riskScore and lendingDecision must be consistent (score 5-4 → Strong/Acceptable; 3 → Acceptable/Higher-risk; 2-1 → Higher-risk/Exercise caution).
-- underwriterOpinion: EXACTLY 2 sentences. No filler, no hedging language.
-- pros: EXACTLY 5 items. Finance-company-relevant strengths specific to this exact vehicle. Cover where applicable: engine reliability for this year/model, maintenance cost (cheap vs expensive), whether mileage is favorable for the year, historically reliable year/model combo, parts availability, resale value, and anything that reduces lending risk.
-- cons: EXACTLY 5 items. Finance-company-relevant risks with real specifics for this exact year/trim/engine. Each con should include concrete details: known issues, expensive maintenance items with dollar estimates (e.g. "timing belt replacement due at 90k — $800-$1,200"), poor MPG if applicable, upcoming wear items with costs, and anything that increases lending risk.
-- mechanicalOverview: Be specific to this exact vehicle. For any section that would warrant a yellow or red risk badge (known issues, high wear, expensive repairs, mileage concerns), the paragraph MUST include estimated costs with dollar amounts. mileageAssessment MUST explicitly state whether the mileage is good or bad for the vehicle year AND list upcoming maintenance milestones with estimated costs.
-- Be direct and professional. Flag known problem areas for the specific make/model/year/trim when applicable.
-- Do not include portfolio performance — that is handled separately by the application.
+- scoreLabel MUST match riskScore: 1=Poor, 2=Fair, 3=Acceptable, 4=Strong, 5=Excellent.
+- Populate vehicleInfo from the NHTSA decode data; use "N/A" only when genuinely unavailable.
+- strengths: 3 to 5 short bullets. Finance-relevant positives specific to this year/make/model/mileage (e.g. reliable engine for this year, affordable maintenance, favorable mileage, parts availability, good fuel economy).
+- weaknesses: 3 to 5 short bullets. Finance-relevant risk factors with specifics (known year/engine problems, high repair costs with dollar estimates when relevant, mileage concerns, upcoming maintenance).
+- Do NOT repeat the same points from scoreSummary in strengths/weaknesses. Summary = narrative judgment; lists = distinct supporting bullets.
+- Be specific to this exact vehicle. No generic filler.
+- Do not include portfolio performance.
 
-CRITICAL: Return ONLY raw JSON with no markdown, no code fences, no backticks, no \`\`\`json wrapper, no explanation text before or after. The response must start with { and end with }. Nothing else.`;
+CRITICAL: Return ONLY raw JSON starting with { and ending with }.`;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -136,20 +109,19 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function isLendingDecision(value: unknown): value is LendingDecision {
-  return typeof value === "string" &&
-    LENDING_DECISIONS.includes(value as LendingDecision);
-}
-
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function isStringArray(value: unknown, length?: number): value is string[] {
+function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) &&
-    value.length > 0 &&
-    (!length || value.length === length) &&
+    value.length >= 3 &&
+    value.length <= 5 &&
     value.every((item) => typeof item === "string" && item.trim().length > 0);
+}
+
+function expectedLabel(score: number): ScoreLabel {
+  return SCORE_LABELS[score - 1];
 }
 
 function validateReport(data: unknown): data is VehicleRiskReport {
@@ -166,8 +138,6 @@ function validateReport(data: unknown): data is VehicleRiskReport {
     return false;
   }
 
-  if (!isLendingDecision(report.lendingDecision)) return false;
-
   if (!report.vehicleInfo || typeof report.vehicleInfo !== "object") {
     return false;
   }
@@ -178,37 +148,13 @@ function validateReport(data: unknown): data is VehicleRiskReport {
     "model",
     "trim",
     "engine",
-    "drivetrain",
-    "bodyStyle",
-    "fuelEconomy",
   ];
   if (!vehicleFields.every((field) => typeof vi[field] === "string")) {
     return false;
   }
 
-  if (
-    !isNonEmptyString(report.bottomLineVerdict) ||
-    !isNonEmptyString(report.vehicleSummary) ||
-    !isNonEmptyString(report.underwriterOpinion)
-  ) {
-    return false;
-  }
-
-  if (!isStringArray(report.pros, 5) || !isStringArray(report.cons, 5)) return false;
-
-  if (
-    !report.mechanicalOverview ||
-    typeof report.mechanicalOverview !== "object"
-  ) return false;
-  const mo = report.mechanicalOverview as Record<string, unknown>;
-  const mechanicalFields: (keyof MechanicalOverview)[] = [
-    "engine",
-    "transmission",
-    "mileageAssessment",
-    "maintenanceExpense",
-    "otherMechanical",
-  ];
-  if (!mechanicalFields.every((field) => isNonEmptyString(mo[field]))) {
+  if (!isNonEmptyString(report.scoreSummary)) return false;
+  if (!isStringArray(report.strengths) || !isStringArray(report.weaknesses)) {
     return false;
   }
 
@@ -216,14 +162,13 @@ function validateReport(data: unknown): data is VehicleRiskReport {
 }
 
 function extractJson(text: string): unknown {
-  // Strip markdown code fences — handle ```json, ```, and any whitespace
-  const raw = text
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
-
-  return JSON.parse(raw);
+  const cleaned = text.replace(/```json|```/g, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("No JSON object found in AI response");
+  }
+  return JSON.parse(cleaned.slice(start, end + 1));
 }
 
 function buildUserPrompt(vin: string, mileage: number, nhtsaData: Record<string, string>): string {
@@ -232,7 +177,7 @@ function buildUserPrompt(vin: string, mileage: number, nhtsaData: Record<string,
     .map(([key, value]) => `- ${key}: ${value}`)
     .join("\n");
 
-  return `Analyze this vehicle for lending collateral risk and mechanical reliability.
+  return `Analyze this vehicle for lending collateral risk.
 
 VIN: ${vin}
 Mileage: ${mileage.toLocaleString()} miles
@@ -240,9 +185,7 @@ Mileage: ${mileage.toLocaleString()} miles
 NHTSA Decode Data:
 ${nhtsaLines || "(no decode fields provided)"}
 
-Return the JSON report now.
-
-CRITICAL: Return ONLY raw JSON with no markdown, no code fences, no backticks, no \`\`\`json wrapper, no explanation text before or after. The response must start with { and end with }. Nothing else.`;
+Return the simplified JSON report now.`;
 }
 
 async function callOpenAIVision(
@@ -321,7 +264,7 @@ async function callOpenAI(userPrompt: string): Promise<VehicleRiskReport> {
     },
     body: JSON.stringify({
       model: "gpt-4.1-mini",
-      max_tokens: 4096,
+      max_tokens: 2048,
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -351,11 +294,21 @@ async function callOpenAI(userPrompt: string): Promise<VehicleRiskReport> {
     throw new Error("Failed to parse AI response as JSON");
   }
 
-  // GPT occasionally returns riskScore as a float
   if (parsed && typeof parsed === "object") {
     const report = parsed as Record<string, unknown>;
     if (typeof report.riskScore === "number") {
       report.riskScore = Math.round(report.riskScore);
+    }
+    // Normalize label to match score
+    if (typeof report.riskScore === "number" && report.riskScore >= 1 && report.riskScore <= 5) {
+      report.scoreLabel = expectedLabel(report.riskScore);
+    }
+    // Cap list lengths to 5
+    if (Array.isArray(report.strengths)) {
+      report.strengths = report.strengths.slice(0, 5);
+    }
+    if (Array.isArray(report.weaknesses)) {
+      report.weaknesses = report.weaknesses.slice(0, 5);
     }
   }
 

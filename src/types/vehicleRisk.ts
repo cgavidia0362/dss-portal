@@ -1,11 +1,12 @@
-export const LENDING_DECISIONS = [
-  'Strong collateral',
-  'Acceptable collateral',
-  'Higher-risk collateral',
-  'Exercise caution',
+export const SCORE_LABELS = [
+  'Poor',
+  'Fair',
+  'Acceptable',
+  'Strong',
+  'Excellent',
 ] as const;
 
-export type LendingDecision = (typeof LENDING_DECISIONS)[number];
+export type ScoreLabel = (typeof SCORE_LABELS)[number];
 
 export interface VehicleInfo {
   year: string;
@@ -13,29 +14,15 @@ export interface VehicleInfo {
   model: string;
   trim: string;
   engine: string;
-  drivetrain: string;
-  bodyStyle: string;
-  fuelEconomy: string;
-}
-
-export interface MechanicalOverview {
-  engine: string;
-  transmission: string;
-  mileageAssessment: string;
-  maintenanceExpense: string;
-  otherMechanical: string;
 }
 
 export interface VehicleRiskReportData {
   riskScore: number;
-  lendingDecision: LendingDecision;
+  scoreLabel: ScoreLabel | string;
   vehicleInfo: VehicleInfo;
-  bottomLineVerdict: string;
-  vehicleSummary: string;
-  underwriterOpinion: string;
-  pros: string[];
-  cons: string[];
-  mechanicalOverview: MechanicalOverview;
+  scoreSummary: string;
+  strengths: string[];
+  weaknesses: string[];
 }
 
 export const NHTSA_EXTRACT_FIELDS = [
