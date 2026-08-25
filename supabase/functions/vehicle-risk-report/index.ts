@@ -245,55 +245,60 @@ Return the JSON report now.
 CRITICAL: Return ONLY raw JSON with no markdown, no code fences, no backticks, no \`\`\`json wrapper, no explanation text before or after. The response must start with { and end with }. Nothing else.`;
 }
 
-async function callAnthropicVision(
+async function callOpenAIVision(
   imageBase64: string,
   mediaType: ExtractRequestBody["mediaType"],
 ): Promise<ExtractedFields> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY is not configured");
+    throw new Error("OPENAI_API_KEY is not configured");
   }
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
+      model: "gpt-4.1-mini",
       max_tokens: 256,
-      system: EXTRACT_SYSTEM_PROMPT,
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: mediaType, data: imageBase64 },
-          },
-          {
-            type: "text",
-            text: "Extract the VIN and mileage from this vehicle listing screenshot.",
-          },
-        ],
-      }],
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: EXTRACT_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mediaType};base64,${imageBase64}`,
+              },
+            },
+            {
+              type: "text",
+              text: "Extract the VIN and mileage from this vehicle listing screenshot.",
+            },
+          ],
+        },
+      ],
     }),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
-    console.error("Anthropic vision API error:", response.status, errorBody);
-    throw new Error(`Anthropic API request failed (${response.status})`);
+    console.error("OpenAI vision API error:", response.status, errorBody);
+    throw new Error(`OpenAI API request failed (${response.status})`);
   }
 
   const result = await response.json();
-  const textBlock = result.content?.find((block: { type: string }) => block.type === "text");
-  if (!textBlock?.text) {
-    throw new Error("No text content in Anthropic response");
+  const text = result.choices?.[0]?.message?.content;
+  if (!text || typeof text !== "string") {
+    throw new Error("No text content in OpenAI response");
   }
 
-  const parsed = extractJson(textBlock.text) as Record<string, unknown>;
+  const parsed = extractJson(text) as Record<string, unknown>;
   const vin = typeof parsed.vin === "string" ? parsed.vin.trim().toUpperCase() : "";
   const mileage = typeof parsed.mileage === "number"
     ? Math.round(parsed.mileage)
@@ -302,45 +307,56 @@ async function callAnthropicVision(
   return { vin, mileage };
 }
 
-async function callAnthropic(userPrompt: string): Promise<VehicleRiskReport> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+async function callOpenAI(userPrompt: string): Promise<VehicleRiskReport> {
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY is not configured");
+    throw new Error("OPENAI_API_KEY is not configured");
   }
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
+      model: "gpt-4.1-mini",
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt }],
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
     }),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
-    console.error("Anthropic API error:", response.status, errorBody);
-    throw new Error(`Anthropic API request failed (${response.status})`);
+    console.error("OpenAI API error:", response.status, errorBody);
+    throw new Error(`OpenAI API request failed (${response.status})`);
   }
 
   const result = await response.json();
-  const textBlock = result.content?.find((block: { type: string }) => block.type === "text");
-  if (!textBlock?.text) {
-    throw new Error("No text content in Anthropic response");
+  const text = result.choices?.[0]?.message?.content;
+  if (!text || typeof text !== "string") {
+    throw new Error("No text content in OpenAI response");
   }
 
   let parsed: unknown;
   try {
-    parsed = extractJson(textBlock.text);
+    parsed = extractJson(text);
   } catch {
-    console.error("Failed to parse Anthropic JSON:", textBlock.text);
+    console.error("Failed to parse OpenAI JSON:", text);
     throw new Error("Failed to parse AI response as JSON");
+  }
+
+  // GPT occasionally returns riskScore as a float
+  if (parsed && typeof parsed === "object") {
+    const report = parsed as Record<string, unknown>;
+    if (typeof report.riskScore === "number") {
+      report.riskScore = Math.round(report.riskScore);
+    }
   }
 
   if (!validateReport(parsed)) {
@@ -372,7 +388,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "Image must be PNG, JPG, or WEBP" }, 400);
       }
 
-      const extracted = await callAnthropicVision(body.imageBase64, body.mediaType);
+      const extracted = await callOpenAIVision(body.imageBase64, body.mediaType);
       return jsonResponse(extracted);
     }
 
@@ -393,7 +409,7 @@ Deno.serve(async (req) => {
     }
 
     const userPrompt = buildUserPrompt(vin, mileage, nhtsaData);
-    const report = await callAnthropic(userPrompt);
+    const report = await callOpenAI(userPrompt);
 
     return jsonResponse(report);
   } catch (error) {

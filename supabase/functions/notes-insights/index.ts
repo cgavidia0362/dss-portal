@@ -113,44 +113,47 @@ function validateInsights(parsed: unknown): parsed is Omit<InsightsResult, "note
   });
 }
 
-async function callAnthropic(userPrompt: string): Promise<Omit<InsightsResult, "noteCountAnalyzed" | "dateRangeLabel">> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+async function callOpenAI(userPrompt: string): Promise<Omit<InsightsResult, "noteCountAnalyzed" | "dateRangeLabel">> {
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY is not configured");
+    throw new Error("OPENAI_API_KEY is not configured");
   }
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5",
+      model: "gpt-4.1-mini",
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt }],
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
     }),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
-    console.error("Anthropic API error:", response.status, errorBody);
-    throw new Error(`Anthropic API request failed (${response.status})`);
+    console.error("OpenAI API error:", response.status, errorBody);
+    throw new Error(`OpenAI API request failed (${response.status})`);
   }
 
   const result = await response.json();
-  const textBlock = result.content?.find((block: { type: string }) => block.type === "text");
-  if (!textBlock?.text) {
-    throw new Error("No text content in Anthropic response");
+  const text = result.choices?.[0]?.message?.content;
+  if (!text || typeof text !== "string") {
+    throw new Error("No text content in OpenAI response");
   }
 
   let parsed: unknown;
   try {
-    parsed = extractJson(textBlock.text);
+    parsed = extractJson(text);
   } catch {
-    console.error("Failed to parse Anthropic JSON:", textBlock.text);
+    console.error("Failed to parse OpenAI JSON:", text);
     throw new Error("Failed to parse AI response as JSON");
   }
 
@@ -230,7 +233,7 @@ Deno.serve(async (req) => {
     // Cap payload to keep token cost predictable (prefer longer notes first)
     const ranked = [...usable].sort((a, b) => (b.noteText?.length || 0) - (a.noteText?.length || 0));
     const capped = ranked.slice(0, 300);
-    const ai = await callAnthropic(buildUserPrompt(capped, dateRangeLabel));
+    const ai = await callOpenAI(buildUserPrompt(capped, dateRangeLabel));
 
     const result: InsightsResult = {
       ...ai,
