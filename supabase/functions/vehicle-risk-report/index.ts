@@ -86,16 +86,23 @@ Schema:
     "trim": "<string>",
     "engine": "<string>"
   },
-  "scoreSummary": "<3-5 sentences. Explain WHY this score, then how a finance company should approach buying this car (buy as-is, buy with conditions, or avoid). Cover the main drivers: year/model reputation, engine/transmission issues if any, mileage risk, maintenance cost. Be direct.>",
+  "scoreSummary": "<3-5 sentences. Explain WHY this score, then how a finance company should approach buying this car (buy as-is, buy with conditions, or avoid). When available, explicitly mention mileage, the specific engine/powertrain, and trim/resale appeal. Be direct.>",
   "strengths": ["<string>", "<string>", "<string>"],
   "weaknesses": ["<string>", "<string>", "<string>"]
 }
 
+Scoring weight order (apply in this priority when setting riskScore; higher items override lower when they conflict):
+1. Mileage — MAJOR factor. Age-adjust miles vs model year. High miles for the year must pull the score down hard. Low or average miles can support a higher score.
+2. Engine family / displacement — Identify the specific powertrain from NHTSA (DisplacementL, EngineCylinders, year/make/model). Reward well-regarded engines (e.g. Ford F-150 5.0L Coyote). Penalize known problem engines (e.g. certain 5.4L failure patterns). Reflect reliability and repair-cost risk in the score, summary, and lists.
+3. Trim / series — Use trim for resale and retail appeal (e.g. F-150 XL vs XLT/Lariat). Base/work trims that typically resell weaker should reduce the score; desirable trims can support a higher score when mileage and engine allow.
+4. Year/make/model reputation — Still consider, but only after mileage, engine, and trim when factors conflict.
+
 Rules:
 - scoreLabel MUST match riskScore: 1=Poor, 2=Fair, 3=Acceptable, 4=Strong, 5=Excellent.
-- Populate vehicleInfo from the NHTSA decode data; use "N/A" only when genuinely unavailable.
-- strengths: 3 to 5 short bullets. Finance-relevant positives specific to this year/make/model/mileage (e.g. reliable engine for this year, affordable maintenance, favorable mileage, parts availability, good fuel economy).
-- weaknesses: 3 to 5 short bullets. Finance-relevant risk factors with specifics (known year/engine problems, high repair costs with dollar estimates when relevant, mileage concerns, upcoming maintenance).
+- Populate vehicleInfo from the NHTSA decode data; use "N/A" only when genuinely unavailable. Engine should combine displacement/cylinders when present (e.g. "5.0L V8").
+- Treat NHTSA Trim, DisplacementL, and EngineCylinders as ground truth when provided.
+- strengths: 3 to 5 short bullets. Finance-relevant positives for this exact vehicle. When trim/engine data exists, include trim appeal and/or engine reliability bullets — not generic filler like "popular truck".
+- weaknesses: 3 to 5 short bullets. Finance-relevant risks with specifics (mileage concerns, known engine problems with repair-cost estimates when relevant, weak trim/resale, upcoming maintenance).
 - Do NOT repeat the same points from scoreSummary in strengths/weaknesses. Summary = narrative judgment; lists = distinct supporting bullets.
 - Be specific to this exact vehicle. No generic filler.
 - Do not include portfolio performance.
@@ -185,6 +192,8 @@ Mileage: ${mileage.toLocaleString()} miles
 NHTSA Decode Data:
 ${nhtsaLines || "(no decode fields provided)"}
 
+Weight in this order: (1) mileage vs year, (2) engine family reliability from DisplacementL/EngineCylinders, (3) trim/resale appeal, (4) year/make/model reputation. Use NHTSA trim and engine fields as ground truth when present. Score as a finance company buying collateral.
+
 Return the simplified JSON report now.`;
 }
 
@@ -263,7 +272,7 @@ async function callOpenAI(userPrompt: string): Promise<VehicleRiskReport> {
       "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4.1-mini",
+      model: "gpt-4.1",
       max_tokens: 2048,
       temperature: 0.2,
       response_format: { type: "json_object" },
