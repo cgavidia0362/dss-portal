@@ -525,6 +525,7 @@ function App() {
             dailyGoal={goals.daily[currentUser.id] || 0}
             teamGoal={goals.team}
             currentUser={currentUser}
+            onUpdateCurrentUser={(patch) => setCurrentUser(prev => prev ? { ...prev, ...patch } : prev)}
             todayDailyDeals={todayDailyDeals}
             users={users}
           />
@@ -548,6 +549,7 @@ function App() {
             calls={calls}
             setCalls={setCalls}
             users={users}
+            setUsers={setUsers}
             goals={goals}
             setGoals={setGoals}
           />

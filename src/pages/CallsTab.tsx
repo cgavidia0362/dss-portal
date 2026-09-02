@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Search, ChevronDown, ChevronUp, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, resolveDealCredit, forceDealCreditDbFields } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName } from '../lib/systemReps';
+import { statusMatchesFilter } from '../lib/statusLastFilter';
 import NoteItem from '../components/NoteItem';
 
 interface Call {
@@ -69,15 +70,55 @@ interface CallsTabProps {
   dailyGoal: number;
   teamGoal: number;
   currentUser?: User;
+  onUpdateCurrentUser?: (patch: Partial<User>) => void;
   todayDailyDeals?: DailyDealSummary[];
   users?: User[];
 }
 
-type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | 'customerName' | null;
-type SortOrder = 'asc' | 'desc' | null;
+type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | 'customerName';
+type ActiveSortField = SortField;
+type ColumnSort = { field: ActiveSortField; order: 'asc' | 'desc' };
 
 const parseAmount = (str: string) =>
   parseFloat((str || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
+const compareTextSort = (a: string, b: string, order: 'asc' | 'desc'): number => {
+  const aNorm = a.trim();
+  const bNorm = b.trim();
+  if (!aNorm && !bNorm) return 0;
+  if (!aNorm) return 1;
+  if (!bNorm) return -1;
+  const cmp = aNorm.localeCompare(bNorm, undefined, { sensitivity: 'base', numeric: true });
+  return order === 'asc' ? cmp : -cmp;
+};
+
+const compareCalls = (
+  a: Call,
+  b: Call,
+  field: ActiveSortField,
+  order: 'asc' | 'desc',
+): number => {
+  let primary = 0;
+
+  if (field === 'submittedDate') {
+    const aVal = new Date(a.submittedDate).getTime();
+    const bVal = new Date(b.submittedDate).getTime();
+    if (aVal < bVal) primary = -1;
+    else if (aVal > bVal) primary = 1;
+    primary = order === 'asc' ? primary : -primary;
+  } else if (field === 'buyerFinal') {
+    const aVal = parseAmount(a.buyerFinal);
+    const bVal = parseAmount(b.buyerFinal);
+    if (aVal < bVal) primary = -1;
+    else if (aVal > bVal) primary = 1;
+    primary = order === 'asc' ? primary : -primary;
+  } else {
+    primary = compareTextSort(String(a[field] ?? ''), String(b[field] ?? ''), order);
+  }
+
+  if (primary !== 0) return primary;
+  return compareTextSort(a.applicationId, b.applicationId, 'asc');
+};
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -86,7 +127,7 @@ const medal = (i: number) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '�
 
 export default function CallsTab({
   currentUserId, currentUserRole, calls, setCalls, notes, setNotes,
-  dailyGoal, teamGoal, currentUser, todayDailyDeals, users,
+  dailyGoal, teamGoal, currentUser, onUpdateCurrentUser, todayDailyDeals, users,
 }: CallsTabProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,8 +141,7 @@ export default function CallsTab({
   const [dateTo, setDateTo] = useState('');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [newNoteText, setNewNoteText] = useState<{ [callId: string]: string }>({});
-  const [sortField, setSortField] = useState<SortField>(null);
-  const [sortOrder, setSortOrder] = useState<SortOrder>(null);
+  const [columnSort, setColumnSort] = useState<ColumnSort | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [creditModal, setCreditModal] = useState<{
     callId: string;
@@ -146,6 +186,29 @@ export default function CallsTab({
 
   const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
   const isRep = currentUserRole === 'rep' || currentUserRole === 'buying_assistant';
+
+  const effectiveAllowedStatuses = useMemo(() => {
+    if (currentUser?.allowedStatuses?.length) return currentUser.allowedStatuses;
+    return users?.find(u => u.id === currentUserId)?.allowedStatuses || [];
+  }, [currentUser?.allowedStatuses, users, currentUserId]);
+
+  useEffect(() => {
+    if (!isRep || !currentUserId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('allowed_statuses')
+        .eq('id', currentUserId)
+        .single();
+      if (cancelled || error || !data) return;
+      const statuses = data.allowed_statuses || [];
+      if (JSON.stringify(statuses) !== JSON.stringify(currentUser?.allowedStatuses || [])) {
+        onUpdateCurrentUser?.({ allowedStatuses: statuses });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUserId, isRep]);
 
   useEffect(() => {
     if (currentUserRole === 'rep' && currentUser?.state) fetchRepStateGoal(currentUser.state);
@@ -242,11 +305,14 @@ export default function CallsTab({
     return () => clearInterval(interval);
   }, [setCalls]);
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      if (sortOrder === 'asc') setSortOrder('desc');
-      else { setSortField(null); setSortOrder(null); }
-    } else { setSortField(field); setSortOrder('asc'); }
+  const handleSort = (field: ActiveSortField) => {
+    setColumnSort(prev => {
+      if (prev?.field === field) {
+        if (prev.order === 'asc') return { field, order: 'desc' };
+        return null;
+      }
+      return { field, order: 'asc' };
+    });
   };
 
   const getStatusLastStyle = (status: string) => {
@@ -268,7 +334,12 @@ export default function CallsTab({
   const roleFilteredCalls = calls.filter(c =>
     isRep ? c.assignedTo === currentUserId : true
   );
-  const uniqueStatusLast = Array.from(new Set(roleFilteredCalls.map(c => c.statusLast).filter(Boolean))).sort();
+  const queueStatusCalls = isRep && !isGlobalSearch && effectiveAllowedStatuses.length > 0
+    ? roleFilteredCalls.filter(c => statusMatchesFilter(c.statusLast, new Set(effectiveAllowedStatuses)))
+    : roleFilteredCalls;
+  const uniqueStatusLast = isRep && !isGlobalSearch && effectiveAllowedStatuses.length > 0
+    ? [...effectiveAllowedStatuses].sort((a, b) => a.localeCompare(b))
+    : Array.from(new Set(queueStatusCalls.map(c => c.statusLast).filter(Boolean))).sort();
   const uniqueStates = Array.from(new Set(
     (isGlobalSearch ? calls : roleFilteredCalls).map(c => c.state)
   )).sort();
@@ -289,8 +360,18 @@ export default function CallsTab({
     setFilterStatusLast(n);
   };
 
-  const applyCallFilters = (call: Call, options?: { skipAssignment?: boolean; skipFuQueue?: boolean }) => {
-    if (isRep && !options?.skipAssignment && call.assignedTo !== currentUserId) return false;
+  const applyCallFilters = (call: Call, options?: { skipAssignment?: boolean; skipAllowedStatuses?: boolean; skipFuQueue?: boolean }) => {
+    if (isRep && !options?.skipAssignment) {
+      if (!call.assignedTo || call.assignedTo !== currentUserId) return false;
+    }
+    if (
+      isRep &&
+      !options?.skipAllowedStatuses &&
+      effectiveAllowedStatuses.length > 0 &&
+      !statusMatchesFilter(call.statusLast, new Set(effectiveAllowedStatuses))
+    ) {
+      return false;
+    }
     if (searchQuery &&
       !call.applicationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
       !call.dealerName.toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -300,7 +381,12 @@ export default function CallsTab({
     if (filterRep && call.assignedTo !== filterRep) return false;
     if (dealerFilter && call.dealerName !== dealerFilter) return false;
     if (filterNewOnly && !dealerFilter && !isNewUpload(call)) return false;
-    if (filterStatusLast.size > 0 && !filterStatusLast.has(call.statusLast)) return false;
+    if (filterStatusLast.size > 0) {
+      const statusMatches = isRep && effectiveAllowedStatuses.length > 0
+        ? statusMatchesFilter(call.statusLast, filterStatusLast)
+        : filterStatusLast.has(call.statusLast);
+      if (!statusMatches) return false;
+    }
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
     if (dateTo && new Date(call.submittedDate) > new Date(dateTo)) return false;
 
@@ -325,6 +411,7 @@ export default function CallsTab({
   const filteredCalls = calls.filter(call =>
     applyCallFilters(call, {
       skipAssignment: isGlobalSearch,
+      skipAllowedStatuses: isGlobalSearch,
       skipFuQueue: isGlobalSearch,
     })
   );
@@ -337,28 +424,34 @@ export default function CallsTab({
   const unworkedCalls = isRep ? filteredCalls.filter(c => !c.fuStatus) : [];
   const filteredInCalls = isRep ? filteredCalls.filter(c => !!c.fuStatus) : [];
 
-  const sortedCalls = [...filteredCalls].sort((a, b) => {
-    // Reps: unworked calls always sort to top
-    if (isRep) {
-      const aUnworked = !a.fuStatus ? 0 : 1;
-      const bUnworked = !b.fuStatus ? 0 : 1;
-      if (aUnworked !== bUnworked) return aUnworked - bUnworked;
+  const sortedCalls = (() => {
+    const list = [...filteredCalls];
+
+    if (columnSort) {
+      const { field, order } = columnSort;
+      list.sort((a, b) => compareCalls(a, b, field, order));
+      return list;
     }
-    if (!sortField || !sortOrder) return 0;
-    let aVal: any = a[sortField], bVal: any = b[sortField];
-    if (sortField === 'submittedDate') { aVal = new Date(aVal).getTime(); bVal = new Date(bVal).getTime(); }
-    if (sortField === 'buyerFinal') { aVal = parseAmount(aVal); bVal = parseAmount(bVal); }
-    if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-    if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
-    return 0;
-  });
+
+    if (isRep && !isGlobalSearch) {
+      list.sort((a, b) => {
+        const aUnworked = !a.fuStatus ? 0 : 1;
+        const bUnworked = !b.fuStatus ? 0 : 1;
+        return aUnworked - bUnworked;
+      });
+    }
+
+    return list;
+  })();
+
+  const isQueueView = isRep && !columnSort && !isGlobalSearch;
 
   const totalPages = Math.ceil(sortedCalls.length / itemsPerPage);
   const paginatedCalls = sortedCalls.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterFuStatuses, filterState, filterRep, filterNewOnly, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted]);
+  }, [searchQuery, filterFuStatuses, filterState, filterRep, filterNewOnly, filterStatusLast, dealerFilter, dateFrom, dateTo, showCompleted, columnSort]);
 
   const csvDealsToday = roleFilteredCalls.filter(c =>
     (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && c.dealDate && isToday(new Date(c.dealDate))
@@ -711,9 +804,14 @@ export default function CallsTab({
     }
   };
 
-  const SortIcon = ({ field }: { field: SortField }) => (
-    <ArrowUpDown className={`w-3 h-3 inline ml-1 ${sortField === field ? 'text-blue-400' : 'text-gray-600'}`} />
-  );
+  const SortIcon = ({ field }: { field: ActiveSortField }) => {
+    if (columnSort?.field !== field) {
+      return <ArrowUpDown className="w-3 h-3 inline ml-1 text-gray-600" />;
+    }
+    return columnSort.order === 'asc'
+      ? <ChevronUp className="w-3 h-3 inline ml-1 text-blue-400" />
+      : <ChevronDown className="w-3 h-3 inline ml-1 text-blue-400" />;
+  };
 
   return (
     <div className="space-y-4">
@@ -1021,6 +1119,17 @@ export default function CallsTab({
         )}
       </div>
 
+      {isRep && isGlobalSearch && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-indigo-900 bg-opacity-25 border border-indigo-700 rounded-lg">
+          <Search className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+          <span className="text-xs text-indigo-300">Searching all calls — not limited to your queue</span>
+          <button onClick={() => setSearchQuery('')}
+            className="ml-auto flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-200 transition">
+            <X className="w-3.5 h-3.5" /> Clear search
+          </button>
+        </div>
+      )}
+
       {/* ACTIVE REP FILTER BADGE */}
       {filterRep && (
         <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-900 bg-opacity-30 border border-blue-700 rounded-lg">
@@ -1116,17 +1225,26 @@ export default function CallsTab({
       </div>
 
       {/* MY QUEUE INFO BAR — reps only */}
-      {isRep && (
-        <div className="flex items-center gap-3 px-1">
+      {isRep && !isGlobalSearch && (
+        <div className="flex items-center gap-3 px-1 flex-wrap">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900 bg-opacity-20 border border-blue-800 rounded-lg">
             <span className="text-xs text-blue-400 font-medium">My Queue</span>
             <span className="text-xs text-gray-400">{unworkedCalls.length} unworked</span>
             {filteredInCalls.length > 0 && (
               <span className="text-xs text-gray-500">
-                · +{filteredInCalls.length} filtered in ({Array.from(filterFuStatuses).filter(s => s !== 'No Call').join(', ')})
+                · {filteredInCalls.length} worked
               </span>
             )}
           </div>
+          {effectiveAllowedStatuses.length > 0 ? (
+            <span className="text-xs text-gray-500">
+              {effectiveAllowedStatuses.length} allowed status{effectiveAllowedStatuses.length !== 1 ? 'es' : ''}
+            </span>
+          ) : (
+            <span className="text-xs text-amber-400">
+              No status filter saved — re-assign from Assign tab to set allowed statuses
+            </span>
+          )}
         </div>
       )}
 
@@ -1168,78 +1286,63 @@ export default function CallsTab({
               <tr className="bg-gray-750 border-b border-gray-700">
                 <th className="px-2 py-2"></th>
                 <th className="px-2 py-2 text-left">
-                  <button onClick={() => handleSort('applicationId')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('applicationId'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     App ID <SortIcon field="applicationId" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button onClick={() => handleSort('dealerName')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('dealerName'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Dealer <SortIcon field="dealerName" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button onClick={() => handleSort('customerName')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('customerName'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Customer <SortIcon field="customerName" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button onClick={() => handleSort('state')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('state'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     St <SortIcon field="state" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button onClick={() => handleSort('buyerFinal')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('buyerFinal'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Amount <SortIcon field="buyerFinal" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button onClick={() => handleSort('submittedDate')} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('submittedDate'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
                     Date <SortIcon field="submittedDate" />
                   </button>
                 </th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">Status Last</th>
+                <th className="px-2 py-2 text-left">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('statusLast'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200 whitespace-nowrap">
+                    Status Last <SortIcon field="statusLast" />
+                  </button>
+                </th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">Activity</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">FU Status</th>
                 <th className="px-2 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
-              {paginatedCalls.map((call, idx) => {
+              {paginatedCalls.map((call) => {
                 const callNotes = getCallNotes(call.id);
                 const isExpanded = expandedRows.has(call.id);
                 const isNew = isNewUpload(call);
                 const isFilteredDealer = dealerFilter === call.dealerName;
                 const activity = formatLastActivity(call);
                 const isWorked = !!call.fuStatus;
-                const prevCall = paginatedCalls[idx - 1];
-                const showDivider = isRep && isWorked && filteredInCalls.length > 0 &&
-                  (idx === 0 || !prevCall?.fuStatus);
 
                 const rowCls = call.isDuplicate
                   ? 'cursor-pointer transition-colors bg-yellow-900 bg-opacity-10 hover:bg-yellow-900 hover:bg-opacity-20'
                   : isNew
                     ? 'cursor-pointer transition-colors bg-amber-950 border-l-2 border-l-amber-500 hover:bg-amber-900 hover:bg-opacity-20'
-                    : isRep && !isWorked
+                    : isQueueView && !isWorked
                       ? 'cursor-pointer transition-colors hover:bg-gray-750 border-l-2 border-l-blue-700'
                       : 'cursor-pointer transition-colors hover:bg-gray-750';
 
                 const rows = [];
-
-                if (showDivider) {
-                  rows.push(
-                    <tr key={`divider-${call.id}`}>
-                      <td colSpan={11} className="px-0 py-0">
-                        <div className="flex items-center gap-3 px-4 py-1.5 bg-gray-750 border-y border-gray-700">
-                          <div className="flex-1 h-px bg-gray-600" />
-                          <span className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">
-                            Filtered in — {Array.from(filterFuStatuses).filter(s => s !== 'No Call').join(' · ')}
-                          </span>
-                          <div className="flex-1 h-px bg-gray-600" />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
 
                 rows.push(
                   <tr key={call.id} className={rowCls} onClick={() => toggleRow(call.id)}>

@@ -86,22 +86,29 @@ Schema:
     "trim": "<string>",
     "engine": "<string>"
   },
-  "scoreSummary": "<3-5 sentences. Explain WHY this score, then how a finance company should approach buying this car (buy as-is, buy with conditions, or avoid). When available, explicitly mention mileage, the specific engine/powertrain, and trim/resale appeal. Be direct.>",
+  "scoreSummary": "<3-5 sentences. Explain WHY this score by how factors NET together (what offsets what), then how a finance company should buy (buy as-is, buy with conditions, or avoid). When available, mention mileage, engine/powertrain, trim/resale, and make/model reputation. Be direct.>",
   "strengths": ["<string>", "<string>", "<string>"],
   "weaknesses": ["<string>", "<string>", "<string>"]
 }
 
-Scoring weight order (apply in this priority when setting riskScore; higher items override lower when they conflict):
-1. Mileage — MAJOR factor. Age-adjust miles vs model year. High miles for the year must pull the score down hard. Low or average miles can support a higher score.
-2. Engine family / displacement — Identify the specific powertrain from NHTSA (DisplacementL, EngineCylinders, year/make/model). Reward well-regarded engines (e.g. Ford F-150 5.0L Coyote). Penalize known problem engines (e.g. certain 5.4L failure patterns). Reflect reliability and repair-cost risk in the score, summary, and lists.
-3. Trim / series — Use trim for resale and retail appeal (e.g. F-150 XL vs XLT/Lariat). Base/work trims that typically resell weaker should reduce the score; desirable trims can support a higher score when mileage and engine allow.
-4. Year/make/model reputation — Still consider, but only after mileage, engine, and trim when factors conflict.
+Balanced package scoring (do NOT let any single factor override the rest):
+Score the WHOLE package together: mileage, year, engine reliability, make/model reputation, trim/resale appeal.
+- Mileage is important but NOT decisive alone. Do not auto-drop to Poor or Fair solely because miles are high.
+- Strong engine reliability and/or strong brand/model reputation can OFFSET high miles and support a mid-to-better score when the rest of the package is sound.
+- Weak engines or weak reputation can WORSEN even moderate miles.
+- Do NOT inflate scores just because the make is Honda or Toyota. High miles remain a real risk; reliability history mitigates, it does not erase mileage concern.
+- Trim matters for resale/appeal (e.g. XL vs XLT/Lariat) as part of the package, not as a sole driver.
+
+Netting examples (calibrate judgment to these patterns):
+- 2017 F-150 ~150k miles with 5.0L Coyote and a mid trim: miles are a concern, but the Coyote's reliability supports a mid-to-better score — not an automatic avoid.
+- High-mile Honda/Toyota with historically strong reliability: note miles as risk, but reputation mitigates; score the package (often Acceptable/Strong when other factors are sound), not miles in isolation. Do not give Excellent for brand alone.
+- High miles + known problem engine (e.g. certain 5.4L failure patterns) + weak base trim: compounding risk — score stays low.
 
 Rules:
 - scoreLabel MUST match riskScore: 1=Poor, 2=Fair, 3=Acceptable, 4=Strong, 5=Excellent.
 - Populate vehicleInfo from the NHTSA decode data; use "N/A" only when genuinely unavailable. Engine should combine displacement/cylinders when present (e.g. "5.0L V8").
 - Treat NHTSA Trim, DisplacementL, and EngineCylinders as ground truth when provided.
-- strengths: 3 to 5 short bullets. Finance-relevant positives for this exact vehicle. When trim/engine data exists, include trim appeal and/or engine reliability bullets — not generic filler like "popular truck".
+- strengths: 3 to 5 short bullets. Finance-relevant positives for this exact vehicle. When trim/engine/reputation data exists, include those bullets — not generic filler like "popular truck".
 - weaknesses: 3 to 5 short bullets. Finance-relevant risks with specifics (mileage concerns, known engine problems with repair-cost estimates when relevant, weak trim/resale, upcoming maintenance).
 - Do NOT repeat the same points from scoreSummary in strengths/weaknesses. Summary = narrative judgment; lists = distinct supporting bullets.
 - Be specific to this exact vehicle. No generic filler.
@@ -192,7 +199,7 @@ Mileage: ${mileage.toLocaleString()} miles
 NHTSA Decode Data:
 ${nhtsaLines || "(no decode fields provided)"}
 
-Weight in this order: (1) mileage vs year, (2) engine family reliability from DisplacementL/EngineCylinders, (3) trim/resale appeal, (4) year/make/model reputation. Use NHTSA trim and engine fields as ground truth when present. Score as a finance company buying collateral.
+Score the WHOLE package: mileage, year, engine reliability, make/model reputation, and trim/resale. Mileage is important but must not alone decide the score — strong engines and reliable brands can offset high miles; weak engines compound risk. Use NHTSA trim and engine fields as ground truth when present. Score as a finance company buying collateral.
 
 Return the simplified JSON report now.`;
 }

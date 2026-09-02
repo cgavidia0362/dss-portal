@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Search, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon, Check, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { statusMatchesFilter } from '../lib/statusLastFilter';
 
 interface Call {
   id: string;
@@ -45,6 +46,7 @@ interface AssignTabProps {
   calls: Call[];
   setCalls: React.Dispatch<React.SetStateAction<Call[]>>;
   users: User[];
+  setUsers: React.Dispatch<React.SetStateAction<User[]>>;
   goals: Goals;
   setGoals: React.Dispatch<React.SetStateAction<Goals>>;
 }
@@ -82,26 +84,7 @@ const STATUS_FILTER_OPTIONS = [
 
 const DEFAULT_STATUSES = new Set(['Approved', 'Counter', 'New Application', 'Pending Approval', 'Reconsider', 'Follow Up']);
 
-const statusMatchesFilter = (statusLast: string, selected: Set<string>): boolean => {
-  const s = (statusLast || '').toLowerCase();
-  for (const status of Array.from(selected)) {
-    switch (status) {
-      case 'Approved':           if (s.includes('approv')) return true; break;
-      case 'Counter':            if (s.includes('counter')) return true; break;
-      case 'New Application':    if (s.includes('new application') || s.includes('new app')) return true; break;
-      case 'Pending Approval':   if (s.includes('pending approval') || s === 'pending') return true; break;
-      case 'Reconsider':         if (s.includes('reconsider')) return true; break;
-      case 'Accepted':           if (s.includes('accept')) return true; break;
-      case 'Denial':             if (s.includes('denial') || s.includes('declined')) return true; break;
-      case 'Documents Received': if (s.includes('document')) return true; break;
-      case 'Duplicate':          if (s.includes('duplicate')) return true; break;
-      case 'Funding Pending':    if (s.includes('funding') || s.includes('funded')) return true; break;
-    }
-  }
-  return false;
-};
-
-export default function AssignTab({ calls, setCalls, users, goals, setGoals }: AssignTabProps) {
+export default function AssignTab({ calls, setCalls, users, setUsers, goals, setGoals }: AssignTabProps) {
 
   // ── ASSIGN STATE ─────────────────────────────────────────────────
   const [filterState, setFilterState] = useState('');
@@ -249,7 +232,15 @@ const handleConfirmAssign = async () => {
   const callIds = allCallIds.filter(isValidUUID);
   const skippedInvalid = allCallIds.length - callIds.length;
 
-  if (!callIds.length) {
+  const mismatchedIds = calls
+    .filter(c =>
+      c.assignedTo === pendingAssignRepId &&
+      !statusMatchesFilter(c.statusLast, selectedStatuses)
+    )
+    .map(c => c.id)
+    .filter(isValidUUID);
+
+  if (!callIds.length && !mismatchedIds.length) {
     const actualStatuses = Array.from(
       new Set(pendingAssignCalls.map(c => c.statusLast || 'Unknown'))
     ).join(', ');
@@ -263,6 +254,9 @@ const handleConfirmAssign = async () => {
     .map(c => c.id);
 
   setCalls(prev => prev.map(c => {
+    if (mismatchedIds.includes(c.id)) {
+      return { ...c, assignedTo: undefined, assignedToName: undefined };
+    }
     if (!callIds.includes(c.id)) return c;
     const needsDealCredit = needCreditIds.includes(c.id);
     return {
@@ -276,6 +270,7 @@ const handleConfirmAssign = async () => {
   const count = callIds.length;
   const assignRepId = pendingAssignRepId;
   const assignRepName = pendingAssignRepName;
+  const allowedStatusList = Array.from(selectedStatuses);
   setSelectedDealers(new Set());
   setSelectedCalls(new Set());
   setAssignToId('');
@@ -283,7 +278,36 @@ const handleConfirmAssign = async () => {
   setPendingAssignCalls([]);
 
   try {
+    const { error: profileError } = await supabase.from('profiles').update({
+      allowed_statuses: allowedStatusList,
+    }).eq('id', assignRepId);
+
+    if (profileError) {
+      console.error('Supabase allowed_statuses update error:', profileError);
+      setError(`Status filter could not be saved (${profileError.message}). Calls will still be assigned — apply the latest database migration for filters to persist.`);
+      setTimeout(() => setError(''), 8000);
+    } else {
+      setUsers(prev => prev.map(u =>
+        u.id === assignRepId ? { ...u, allowedStatuses: allowedStatusList } : u
+      ));
+    }
+
     const BATCH_SIZE = 200;
+
+    if (mismatchedIds.length > 0) {
+      for (let i = 0; i < mismatchedIds.length; i += BATCH_SIZE) {
+        const batch = mismatchedIds.slice(i, i + BATCH_SIZE);
+        const { error: unassignError } = await supabase.from('calls').update({
+          assigned_to: null,
+          assigned_to_name: null,
+          updated_at: new Date().toISOString(),
+        }).in('id', batch);
+        if (unassignError) {
+          console.error('Supabase unassign mismatch error:', unassignError);
+        }
+      }
+    }
+
     for (let i = 0; i < callIds.length; i += BATCH_SIZE) {
       const batch = callIds.slice(i, i + BATCH_SIZE);
 
@@ -315,10 +339,18 @@ const handleConfirmAssign = async () => {
       }
     }
 
-    const msg = skippedInvalid > 0
-      ? `${count} call${count !== 1 ? 's' : ''} assigned to ${assignRepName}. ${skippedInvalid} call${skippedInvalid !== 1 ? 's' : ''} skipped (temporary IDs — re-upload those calls to fix).`
-      : `${count} call${count !== 1 ? 's' : ''} assigned to ${assignRepName}`;
-    setSuccess(msg);
+    const parts: string[] = [];
+    if (count > 0) {
+      parts.push(`${count} call${count !== 1 ? 's' : ''} assigned to ${assignRepName}`);
+    }
+    if (mismatchedIds.length > 0) {
+      parts.push(`${mismatchedIds.length} existing call${mismatchedIds.length !== 1 ? 's' : ''} returned to unassigned (status not in filter)`);
+    }
+    if (skippedInvalid > 0) {
+      parts.push(`${skippedInvalid} skipped (temporary IDs — re-upload those calls to fix)`);
+    }
+    const msg = parts.join('. ');
+    setSuccess(msg || `Updated status filter for ${assignRepName}`);
     setTimeout(() => setSuccess(''), 6000);
 
   } catch (err: any) {
