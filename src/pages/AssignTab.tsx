@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Search, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon, Check, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { statusMatchesFilter } from '../lib/statusLastFilter';
@@ -88,6 +88,7 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
 
   // ── ASSIGN STATE ─────────────────────────────────────────────────
   const [filterState, setFilterState] = useState('');
+  const [filterStatuses, setFilterStatuses] = useState<Set<string>>(new Set());
   const [step2View, setStep2View] = useState<'dealers' | 'calls'>('dealers');
 
   // Dealer view selection
@@ -139,20 +140,40 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
     [unassignedCalls]
   );
 
-  // Dealers in selected state (or all states)
+  const stateScopedUnassigned = useMemo(() =>
+    filterState ? unassignedCalls.filter(c => c.state === filterState) : unassignedCalls,
+    [unassignedCalls, filterState]
+  );
+
+  const statusFilteredUnassigned = useMemo(() => {
+    if (filterStatuses.size === 0) return stateScopedUnassigned;
+    return stateScopedUnassigned.filter(c => statusMatchesFilter(c.statusLast, filterStatuses));
+  }, [stateScopedUnassigned, filterStatuses]);
+
+  const statusCountsByLabel = useMemo(() => {
+    const counts: Record<string, number> = {};
+    STATUS_FILTER_OPTIONS.forEach(({ label }) => { counts[label] = 0; });
+    stateScopedUnassigned.forEach(call => {
+      STATUS_FILTER_OPTIONS.forEach(({ label }) => {
+        if (statusMatchesFilter(call.statusLast, new Set([label]))) {
+          counts[label]++;
+        }
+      });
+    });
+    return counts;
+  }, [stateScopedUnassigned]);
+
+  // Dealers in selected state (or all states), scoped by status chips
   const dealersInView = useMemo(() => {
-    const base = filterState
-      ? unassignedCalls.filter(c => c.state === filterState)
-      : unassignedCalls;
     const dealerMap: { [name: string]: { callCount: number; cifNumber: string } } = {};
-    base.forEach(c => {
+    statusFilteredUnassigned.forEach(c => {
       if (!dealerMap[c.dealerName]) dealerMap[c.dealerName] = { callCount: 0, cifNumber: c.dealerCifNumber };
       dealerMap[c.dealerName].callCount++;
     });
     return Object.entries(dealerMap)
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [unassignedCalls, filterState]);
+  }, [statusFilteredUnassigned]);
 
   const filteredDealers = useMemo(() => {
     const q = dealerSearch.toLowerCase().trim();
@@ -163,31 +184,24 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
   const totalDealerPages = Math.max(1, Math.ceil(filteredDealers.length / DEALERS_PER_PAGE));
   const paginatedDealers = filteredDealers.slice((dealerPage - 1) * DEALERS_PER_PAGE, dealerPage * DEALERS_PER_PAGE);
 
-  // Calls in selected state (or all states)
   const callsInView = useMemo(() => {
-    const base = filterState
-      ? unassignedCalls.filter(c => c.state === filterState)
-      : unassignedCalls;
     const q = callsSearch.toLowerCase().trim();
-    if (!q) return base;
-    return base.filter(c =>
+    if (!q) return statusFilteredUnassigned;
+    return statusFilteredUnassigned.filter(c =>
       c.applicationId.toLowerCase().includes(q) ||
       c.dealerName.toLowerCase().includes(q) ||
       (c.customerName || '').toLowerCase().includes(q) ||
       c.state.toLowerCase().includes(q)
     );
-  }, [unassignedCalls, filterState, callsSearch]);
+  }, [statusFilteredUnassigned, callsSearch]);
 
   const totalCallsPages = Math.max(1, Math.ceil(callsInView.length / CALLS_PER_PAGE));
   const paginatedCallsView = callsInView.slice((callsPage - 1) * CALLS_PER_PAGE, callsPage * CALLS_PER_PAGE);
 
   const totalCallsInDealerSelection = useMemo(() => {
     if (selectedDealers.size === 0) return 0;
-    return unassignedCalls.filter(c =>
-      selectedDealers.has(c.dealerName) &&
-      (filterState ? c.state === filterState : true)
-    ).length;
-  }, [selectedDealers, unassignedCalls, filterState]);
+    return statusFilteredUnassigned.filter(c => selectedDealers.has(c.dealerName)).length;
+  }, [selectedDealers, statusFilteredUnassigned]);
 
   const getRepCalls = (repId: string) => calls.filter(c => c.assignedTo === repId);
 
@@ -204,17 +218,17 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
 
     if (step2View === 'dealers') {
       if (selectedDealers.size === 0) return;
-      callsToAssign = unassignedCalls.filter(c =>
-        selectedDealers.has(c.dealerName) &&
-        (filterState ? c.state === filterState : true)
-      );
+      callsToAssign = statusFilteredUnassigned.filter(c => selectedDealers.has(c.dealerName));
     } else {
       if (selectedCalls.size === 0) return;
-      callsToAssign = unassignedCalls.filter(c => selectedCalls.has(c.id));
+      callsToAssign = statusFilteredUnassigned.filter(c => selectedCalls.has(c.id));
     }
 
     if (!callsToAssign.length) return;
 
+    setSelectedStatuses(
+      filterStatuses.size > 0 ? new Set(filterStatuses) : new Set(DEFAULT_STATUSES)
+    );
     setPendingAssignCalls(callsToAssign);
     setPendingAssignRepId(rep.id);
     setPendingAssignRepName(rep.name);
@@ -405,8 +419,28 @@ const handleConfirmAssign = async () => {
     }
   };
 
+  const toggleFilterStatus = (label: string) => {
+    setFilterStatuses(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    setDealerPage(1);
+    setCallsPage(1);
+    setSelectedCalls(prev => {
+      const visible = new Set(statusFilteredUnassigned.map(c => c.id));
+      const pruned = new Set([...prev].filter(id => visible.has(id)));
+      return pruned.size === prev.size ? prev : pruned;
+    });
+  }, [filterStatuses, statusFilteredUnassigned]);
+
   const handleStateChange = (state: string) => {
     setFilterState(state);
+    setFilterStatuses(new Set());
     setSelectedDealers(new Set());
     setSelectedCalls(new Set());
     setDealerSearch('');
@@ -662,62 +696,104 @@ const handleConfirmAssign = async () => {
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
 
           {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wider">
-                Step 2 — {filterState ? `${filterState}` : 'All States'}
-              </p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {step2View === 'dealers'
-                  ? `${dealersInView.length} dealer${dealersInView.length !== 1 ? 's' : ''} · ${filterState ? unassignedCalls.filter(c => c.state === filterState).length : unassignedCalls.length} total calls`
-                  : `${callsInView.length} call${callsInView.length !== 1 ? 's' : ''}`
-                }
-                {step2View === 'dealers' && selectedDealers.size > 0 && (
-                  <span className="ml-2 text-blue-400 font-medium">· {selectedDealers.size} dealer{selectedDealers.size !== 1 ? 's' : ''} selected ({totalCallsInDealerSelection} calls)</span>
-                )}
-                {step2View === 'calls' && selectedCalls.size > 0 && (
-                  <span className="ml-2 text-blue-400 font-medium">· {selectedCalls.size} call{selectedCalls.size !== 1 ? 's' : ''} selected</span>
-                )}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Dealers / Calls toggle */}
-              <div className="flex bg-gray-700 rounded-lg p-0.5 border border-gray-600">
-                <button
-                  onClick={() => handleStep2ViewChange('dealers')}
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition ${
-                    step2View === 'dealers'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-400 hover:text-gray-200'
-                  }`}>
-                  Dealers
-                </button>
-                <button
-                  onClick={() => handleStep2ViewChange('calls')}
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition ${
-                    step2View === 'calls'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-400 hover:text-gray-200'
-                  }`}>
-                  Calls
-                </button>
+          <div className="px-4 py-3 border-b border-gray-700">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wider">
+                  Step 2 — {filterState ? `${filterState}` : 'All States'}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {step2View === 'dealers'
+                    ? `${dealersInView.length} dealer${dealersInView.length !== 1 ? 's' : ''} · ${statusFilteredUnassigned.length} call${statusFilteredUnassigned.length !== 1 ? 's' : ''}`
+                    : `${callsInView.length} call${callsInView.length !== 1 ? 's' : ''}`
+                  }
+                  {filterStatuses.size > 0 && (
+                    <span className="ml-2 text-indigo-300">
+                      · Showing {statusFilteredUnassigned.length} of {stateScopedUnassigned.length}
+                    </span>
+                  )}
+                  {step2View === 'dealers' && selectedDealers.size > 0 && (
+                    <span className="ml-2 text-blue-400 font-medium">· {selectedDealers.size} dealer{selectedDealers.size !== 1 ? 's' : ''} selected ({totalCallsInDealerSelection} calls)</span>
+                  )}
+                  {step2View === 'calls' && selectedCalls.size > 0 && (
+                    <span className="ml-2 text-blue-400 font-medium">· {selectedCalls.size} call{selectedCalls.size !== 1 ? 's' : ''} selected</span>
+                  )}
+                </p>
               </div>
 
-              {/* Rep dropdown + Assign button */}
-              <select
-                value={assignToId}
-                onChange={e => setAssignToId(e.target.value)}
-                className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <option value="">Assign to rep…</option>
-                {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Dealers / Calls toggle */}
+                <div className="flex bg-gray-700 rounded-lg p-0.5 border border-gray-600">
+                  <button
+                    onClick={() => handleStep2ViewChange('dealers')}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                      step2View === 'dealers'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-gray-200'
+                    }`}>
+                    Dealers
+                  </button>
+                  <button
+                    onClick={() => handleStep2ViewChange('calls')}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                      step2View === 'calls'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-400 hover:text-gray-200'
+                    }`}>
+                    Calls
+                  </button>
+                </div>
+
+                {/* Rep dropdown + Assign button */}
+                <select
+                  value={assignToId}
+                  onChange={e => setAssignToId(e.target.value)}
+                  className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  <option value="">Assign to rep…</option>
+                  {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+                <button
+                  onClick={handleAssign}
+                  disabled={assignDisabled}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition whitespace-nowrap">
+                  {assignButtonLabel()}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Status Last filter chips */}
+          <div className="px-4 py-2.5 border-b border-gray-700 bg-gray-750">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-500 uppercase tracking-wider whitespace-nowrap w-20 flex-shrink-0">Status Last</span>
+              <div className="w-px h-4 bg-gray-600 flex-shrink-0" />
               <button
-                onClick={handleAssign}
-                disabled={assignDisabled}
-                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition whitespace-nowrap">
-                {assignButtonLabel()}
+                type="button"
+                onClick={() => setFilterStatuses(new Set())}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition ${
+                  filterStatuses.size === 0
+                    ? 'bg-blue-900 text-blue-300 border-blue-700'
+                    : 'bg-gray-800 border-gray-600 text-gray-500 hover:border-gray-500 hover:text-gray-300'
+                }`}>
+                {filterStatuses.size === 0 && <Check className="w-3 h-3 flex-shrink-0" />}
+                All ({stateScopedUnassigned.length})
               </button>
+              {STATUS_FILTER_OPTIONS.map(({ label, onCls, offCls }) => {
+                const isOn = filterStatuses.has(label);
+                const count = statusCountsByLabel[label] ?? 0;
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => toggleFilterStatus(label)}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition ${
+                      isOn ? onCls : offCls
+                    } ${count === 0 && !isOn ? 'opacity-50' : ''}`}>
+                    {isOn && <Check className="w-3 h-3 flex-shrink-0" />}
+                    {label} ({count})
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -860,7 +936,9 @@ const handleConfirmAssign = async () => {
 
               <div className="divide-y divide-gray-700">
                 {paginatedCallsView.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-gray-500">No calls found.</div>
+                  <div className="px-4 py-8 text-center text-sm text-gray-500">
+                    {filterStatuses.size > 0 ? 'No calls match selected statuses.' : 'No calls found.'}
+                  </div>
                 ) : paginatedCallsView.map(call => {
                   const isSelected = selectedCalls.has(call.id);
                   return (
