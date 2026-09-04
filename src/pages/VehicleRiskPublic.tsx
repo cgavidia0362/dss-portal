@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Car, ImageUp, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import VehicleRiskReport from '../components/VehicleRiskReport';
@@ -77,6 +77,10 @@ export default function VehicleRiskPublic() {
 
   const [vin, setVin] = useState('');
   const [mileage, setMileage] = useState('');
+  const [trim, setTrim] = useState('');
+  const [lastAutoTrim, setLastAutoTrim] = useState('');
+  const [vinDecodedNoTrim, setVinDecodedNoTrim] = useState(false);
+  const [decodingTrim, setDecodingTrim] = useState(false);
   const [loading, setLoading] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState('');
@@ -84,6 +88,50 @@ export default function VehicleRiskPublic() {
   const [analyzedVin, setAnalyzedVin] = useState('');
   const [analyzedMileage, setAnalyzedMileage] = useState(0);
   const [screenshotName, setScreenshotName] = useState('');
+
+  const trimRef = useRef(trim);
+  const lastAutoTrimRef = useRef(lastAutoTrim);
+  trimRef.current = trim;
+  lastAutoTrimRef.current = lastAutoTrim;
+
+  useEffect(() => {
+    if (!VIN_PATTERN.test(vin)) {
+      setVinDecodedNoTrim(false);
+      setDecodingTrim(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setDecodingTrim(true);
+      try {
+        const data = await decodeVin(vin);
+        if (cancelled) return;
+        const nhtsaTrim = (data.Trim || '').trim();
+        if (nhtsaTrim) {
+          setVinDecodedNoTrim(false);
+          const current = trimRef.current;
+          const lastAuto = lastAutoTrimRef.current;
+          if (!current || current === lastAuto) {
+            setTrim(nhtsaTrim);
+            setLastAutoTrim(nhtsaTrim);
+          }
+        } else {
+          setVinDecodedNoTrim(true);
+          if (trimRef.current && trimRef.current === lastAutoTrimRef.current) {
+            setTrim('');
+            setLastAutoTrim('');
+          }
+        }
+      } catch {
+        if (!cancelled) setVinDecodedNoTrim(false);
+      } finally {
+        if (!cancelled) setDecodingTrim(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [vin]);
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,10 +151,17 @@ export default function VehicleRiskPublic() {
       return;
     }
 
+    const finalTrim = trim.trim();
+    if (!finalTrim) {
+      setError('Trim is required. Enter the trim if the VIN did not fill it automatically.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const nhtsaData = await decodeVin(normalizedVin);
+      const decoded = await decodeVin(normalizedVin);
+      const nhtsaData = { ...decoded, Trim: finalTrim };
 
       const { data, error: fnError } = await supabase.functions.invoke('vehicle-risk-report', {
         body: { vin: normalizedVin, mileage: mileageValue, nhtsaData },
@@ -186,6 +241,7 @@ export default function VehicleRiskPublic() {
   };
 
   const isBusy = loading || extracting;
+  const canAnalyze = !isBusy && !!trim.trim();
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -204,7 +260,7 @@ export default function VehicleRiskPublic() {
           onSubmit={handleAnalyze}
           className="bg-gray-800 border border-gray-700 rounded-lg p-5 space-y-4"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label htmlFor="public-vin" className="block text-sm font-medium text-gray-300 mb-1.5">
                 VIN
@@ -238,12 +294,34 @@ export default function VehicleRiskPublic() {
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
               />
             </div>
+
+            <div>
+              <label htmlFor="public-trim" className="block text-sm font-medium text-gray-300 mb-1.5">
+                Trim
+              </label>
+              <input
+                id="public-trim"
+                type="text"
+                value={trim}
+                onChange={(e) => setTrim(e.target.value)}
+                placeholder="e.g. XLT, Lariat, Sport"
+                disabled={isBusy}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {decodingTrim
+                  ? 'Looking up trim from VIN…'
+                  : vinDecodedNoTrim && !trim.trim()
+                    ? 'Required — VIN did not return a trim'
+                    : 'Auto-filled from VIN when available; editable'}
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
             <button
               type="submit"
-              disabled={isBusy}
+              disabled={!canAnalyze}
               className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (

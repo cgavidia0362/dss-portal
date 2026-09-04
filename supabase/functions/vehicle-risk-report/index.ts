@@ -377,7 +377,14 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "NHTSA decode data is required" }, 400);
     }
 
-    const userPrompt = buildUserPrompt(vin, mileage, nhtsaData);
+    const trimValue = typeof nhtsaData.Trim === "string" ? nhtsaData.Trim.trim() : "";
+    if (!trimValue) {
+      return jsonResponse({
+        error: "Trim is required. Enter the trim if the VIN did not fill it automatically.",
+      }, 400);
+    }
+
+    const userPrompt = buildUserPrompt(vin, mileage, { ...nhtsaData, Trim: trimValue });
     const report = await callOpenAI(userPrompt);
 
     return jsonResponse(report);
