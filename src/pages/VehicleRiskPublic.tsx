@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Car, ImageUp, Loader2 } from 'lucide-react';
+import { Car, ImageUp, Loader2, RotateCcw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import VehicleRiskReport from '../components/VehicleRiskReport';
 import {
@@ -132,6 +132,23 @@ export default function VehicleRiskPublic() {
 
     return () => { cancelled = true; };
   }, [vin]);
+
+  const handleReset = () => {
+    setVin('');
+    setMileage('');
+    setTrim('');
+    setLastAutoTrim('');
+    setVinDecodedNoTrim(false);
+    setDecodingTrim(false);
+    setLoading(false);
+    setExtracting(false);
+    setError('');
+    setReport(null);
+    setAnalyzedVin('');
+    setAnalyzedMileage(0);
+    setScreenshotName('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -358,6 +375,16 @@ export default function VehicleRiskPublic() {
                   Upload Screenshot
                 </>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={isBusy}
+              className="flex items-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reset
             </button>
 
             {screenshotName && !extracting && (
