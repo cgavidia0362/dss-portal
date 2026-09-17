@@ -7,6 +7,10 @@
     "module": "ESNext",
     "types": ["vite/client"],
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@income-verification/*": ["src/income-verification/*"]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, Upload, Users, FileText, UserCog, LogOut, TrendingUp, StickyNote, Car } from 'lucide-react';
+import { BarChart3, Upload, Users, FileText, UserCog, LogOut, TrendingUp, StickyNote, Car, BadgeDollarSign } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import LoginPage from './pages/LoginPage';
 import CallsTab from './pages/CallsTab';
@@ -14,6 +14,7 @@ import NotesTab from './pages/NotesTab';
 import VehicleRiskAnalyzer from './pages/VehicleRiskAnalyzer';
 import PublicDealsPage from './pages/PublicDealsPage';
 import VehicleRiskPublic from './pages/VehicleRiskPublic';
+import IncomeVerificationTab from './pages/IncomeVerificationTab';
 
 interface Dealer {
   cifNumber: string;
@@ -435,12 +436,15 @@ function App() {
       { id: 'daily-deals', label: 'Daily Deals', icon: TrendingUp },
       { id: 'notes', label: 'Notes', icon: StickyNote },
       { id: 'vehicle-risk', label: 'Vehicle Risk', icon: Car },
+      { id: 'income-verification', label: 'Income Verification', icon: BadgeDollarSign },
       { id: 'reporting', label: 'Reporting', icon: BarChart3 },
     ];
     if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
     if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
-    if (role === 'buying_assistant') return allTabs.filter(t => ['calls', 'daily-deals', 'notes'].includes(t.id));
-    return allTabs.filter(t => ['calls', 'analytics', 'daily-deals', 'notes'].includes(t.id));
+    if (role === 'buying_assistant') {
+      return allTabs.filter(t => ['calls', 'daily-deals', 'notes', 'income-verification'].includes(t.id));
+    }
+    return allTabs.filter(t => ['calls', 'analytics', 'daily-deals', 'notes', 'income-verification'].includes(t.id));
   };
 
   // ── LOADING / AUTH GATES ──────────────────────────────────────────
@@ -512,6 +516,9 @@ function App() {
         </div>
       </nav>
 
+      {activeTab === 'income-verification' ? (
+        <IncomeVerificationTab />
+      ) : (
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         {activeTab === 'calls' && (
@@ -609,6 +616,7 @@ function App() {
         )}
 
       </main>
+      )}
     </div>
   );
 }
