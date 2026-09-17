@@ -12,7 +12,11 @@ import { UploadPanel } from '../income-verification/components/UploadPanel';
 
 type Stage = 'upload' | 'processing' | 'results';
 
-export default function IncomeVerificationTab() {
+export default function IncomeVerificationTab({
+  currentUser,
+}: {
+  currentUser: { role: 'admin' | 'manager' | 'rep' | 'buying_assistant' };
+}) {
   const [stage, setStage] = useState<Stage>('upload');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +28,20 @@ export default function IncomeVerificationTab() {
   const [summary, setSummary] = useState('');
   const [copied, setCopied] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);
+
+  const isAllowed = currentUser.role === 'admin' || currentUser.role === 'manager';
+  if (!isAllowed) {
+    return (
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-6 py-8 text-center">
+          <p className="text-lg font-semibold text-red-300">Access restricted</p>
+          <p className="text-sm text-red-200/80 mt-2">
+            Income Verification is available to admin and manager roles only.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   function handleFiles(list: FileList | null) {
     if (!list?.length) return;

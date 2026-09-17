@@ -10,7 +10,7 @@ import {
   isBlobConfigured,
 } from '../lib/blob/store';
 import { assertPoiPathname } from '../lib/blob/path';
-import { AuthError, json, requireDssUser } from './auth';
+import { AuthError, ForbiddenError, json, requireDssAdminOrManager } from './auth';
 
 function logSafe(details: Record<string, unknown>) {
   console.info('[analyze-income]', details);
@@ -91,7 +91,7 @@ export async function handleAnalyzeIncome(request: Request): Promise<Response> {
   let pathnames: string[] = [];
 
   try {
-    await requireDssUser(request);
+    await requireDssAdminOrManager(request);
 
     const blobEnabled = isBlobConfigured();
     const isJson = (request.headers.get('content-type') || '').includes('application/json');
@@ -135,6 +135,9 @@ export async function handleAnalyzeIncome(request: Request): Promise<Response> {
     }
     if (error instanceof AuthError) {
       return json({ error: error.message }, 401);
+    }
+    if (error instanceof ForbiddenError) {
+      return json({ error: error.message }, 403);
     }
     const message = error instanceof Error ? error.message : 'Failed to analyze documents';
     console.error('[analyze-income] failed', message);

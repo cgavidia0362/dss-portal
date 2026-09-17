@@ -442,9 +442,9 @@ function App() {
     if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
     if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
     if (role === 'buying_assistant') {
-      return allTabs.filter(t => ['calls', 'daily-deals', 'notes', 'income-verification'].includes(t.id));
+      return allTabs.filter(t => ['calls', 'daily-deals', 'notes'].includes(t.id));
     }
-    return allTabs.filter(t => ['calls', 'analytics', 'daily-deals', 'notes', 'income-verification'].includes(t.id));
+    return allTabs.filter(t => ['calls', 'analytics', 'daily-deals', 'notes'].includes(t.id));
   };
 
   // ── LOADING / AUTH GATES ──────────────────────────────────────────
@@ -517,7 +517,7 @@ function App() {
       </nav>
 
       {activeTab === 'income-verification' ? (
-        <IncomeVerificationTab />
+        <IncomeVerificationTab currentUser={currentUser} />
       ) : (
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 

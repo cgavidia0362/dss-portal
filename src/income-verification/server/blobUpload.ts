@@ -2,7 +2,7 @@ import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import { isBlobConfigured, deleteOrphanPoiBlobs } from '../lib/blob/store';
 import { assertPoiPathname } from '../lib/blob/path';
 import { MAX_FILE_BYTES } from '../lib/extract/limits';
-import { AuthError, json, requireDssUser } from './auth';
+import { AuthError, ForbiddenError, json, requireDssAdminOrManager } from './auth';
 
 export async function handleBlobUpload(request: Request): Promise<Response> {
   if (request.method !== 'POST') {
@@ -10,7 +10,7 @@ export async function handleBlobUpload(request: Request): Promise<Response> {
   }
 
   try {
-    await requireDssUser(request);
+    await requireDssAdminOrManager(request);
 
     if (!isBlobConfigured()) {
       return json({ error: 'Blob storage is not configured.' }, 503);
@@ -55,6 +55,9 @@ export async function handleBlobUpload(request: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof AuthError) {
       return json({ error: error.message }, 401);
+    }
+    if (error instanceof ForbiddenError) {
+      return json({ error: error.message }, 403);
     }
     const message = error instanceof Error ? error.message : 'Upload token failed.';
     return json({ error: 'Could not start document upload.', details: message }, 400);

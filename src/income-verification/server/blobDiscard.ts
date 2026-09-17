@@ -1,5 +1,5 @@
 import { deletePoiBlobs, isBlobConfigured } from '../lib/blob/store';
-import { AuthError, json, requireDssUser } from './auth';
+import { AuthError, ForbiddenError, json, requireDssAdminOrManager } from './auth';
 
 export async function handleBlobDiscard(request: Request): Promise<Response> {
   if (request.method !== 'POST') {
@@ -7,7 +7,7 @@ export async function handleBlobDiscard(request: Request): Promise<Response> {
   }
 
   try {
-    await requireDssUser(request);
+    await requireDssAdminOrManager(request);
 
     if (!isBlobConfigured()) {
       return json({ ok: true });
@@ -30,6 +30,9 @@ export async function handleBlobDiscard(request: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof AuthError) {
       return json({ error: error.message }, 401);
+    }
+    if (error instanceof ForbiddenError) {
+      return json({ error: error.message }, 403);
     }
     const message = error instanceof Error ? error.message : 'Discard failed.';
     return json({ error: message }, 500);
