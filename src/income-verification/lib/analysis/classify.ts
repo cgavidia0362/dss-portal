@@ -21,6 +21,7 @@ const PAYROLL_MARKERS = [
 
 const P2P_MARKERS = [
   'ZELLE',
+  'ZEL FROM',
   'CASH APP',
   'CASHAPP',
   'SQ CASH',
@@ -75,7 +76,7 @@ function containsAny(text: string, markers: string[]): boolean {
 }
 
 function p2pSubcategory(text: string): string {
-  if (text.includes('ZELLE')) return 'zelle';
+  if (text.includes('ZELLE') || /\bZEL FROM\b/.test(text)) return 'zelle';
   if (text.includes('CASH APP') || text.includes('CASHAPP') || text.includes('SQ CASH')) {
     return 'cash_app';
   }

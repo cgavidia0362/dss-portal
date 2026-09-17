@@ -63,9 +63,52 @@ function expandYear(year: number): number {
   return year >= 70 ? 1900 + year : 2000 + year;
 }
 
+export type StatementPeriod = { startDate: string; endDate: string };
+
+/** Resolve MM/DD into an ISO date using the statement coverage window when present. */
+export function resolveMonthDayDate(
+  month: number,
+  day: number,
+  period?: StatementPeriod | null,
+  contextYear?: number
+): string | null {
+  const candidates: number[] = [];
+  if (period) {
+    const startYear = parseIsoDate(period.startDate).getUTCFullYear();
+    const endYear = parseIsoDate(period.endDate).getUTCFullYear();
+    candidates.push(startYear);
+    if (endYear !== startYear) candidates.push(endYear);
+  } else if (contextYear != null) {
+    candidates.push(contextYear);
+  } else {
+    candidates.push(new Date().getUTCFullYear());
+  }
+
+  const parsed: string[] = [];
+  for (const year of candidates) {
+    try {
+      parsed.push(toIsoDate(year, month, day));
+    } catch {
+      // invalid calendar date for that year
+    }
+  }
+  if (!parsed.length) return null;
+
+  if (period) {
+    const inRange = parsed.filter(
+      (iso) => iso >= period.startDate && iso <= period.endDate
+    );
+    if (inRange.length === 1) return inRange[0];
+    if (inRange.length > 1) return inRange[0];
+  }
+
+  return parsed[0];
+}
+
 export function parseFlexibleDate(
   raw: string,
-  contextYear?: number
+  contextYear?: number,
+  period?: StatementPeriod | null
 ): string | null {
   const value = raw.trim();
 
@@ -82,14 +125,14 @@ export function parseFlexibleDate(
   if (numeric) {
     const month = Number(numeric[1]);
     const day = Number(numeric[2]);
-    const year = numeric[3]
-      ? expandYear(Number(numeric[3]))
-      : contextYear ?? new Date().getUTCFullYear();
-    try {
-      return toIsoDate(year, month, day);
-    } catch {
-      return null;
+    if (numeric[3]) {
+      try {
+        return toIsoDate(expandYear(Number(numeric[3])), month, day);
+      } catch {
+        return null;
+      }
     }
+    return resolveMonthDayDate(month, day, period, contextYear);
   }
 
   const named =
@@ -108,30 +151,36 @@ export function parseFlexibleDate(
   return null;
 }
 
-export function extractDates(line: string, contextYear?: number): string[] {
+export function extractDates(
+  line: string,
+  contextYear?: number,
+  period?: StatementPeriod | null
+): string[] {
   const dates: string[] = [];
   const patterns = [
     /\b\d{4}-\d{2}-\d{2}\b/g,
     /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/g,
     /\b(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}\b/gi,
+    // MM/DD without year (must not consume the MM/DD prefix of MM/DD/YYYY)
+    /\b\d{1,2}\/\d{1,2}(?!\/\d)/g,
+    /\b\d{1,2}-\d{1,2}(?!-\d)/g,
   ];
 
   for (const pattern of patterns) {
     for (const match of line.match(pattern) ?? []) {
-      const parsed = parseFlexibleDate(match, contextYear);
-      if (parsed) dates.push(parsed);
+      const parsed = parseFlexibleDate(match, contextYear, period);
+      if (parsed && !dates.includes(parsed)) dates.push(parsed);
     }
   }
 
   return dates;
 }
 
-export function parseStatementPeriod(
-  text: string
-): { startDate: string; endDate: string } | null {
+export function parseStatementPeriod(text: string): StatementPeriod | null {
   const normalized = text.replace(/\u2013|\u2014/g, '-');
   const patterns = [
     /statement\s+period[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:-|to|through)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
+    /for\s+the\s+period\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:-|to|through)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
     /period[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:-|to|through)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
     /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:-|to|through)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/,
     /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\s*(?:-|to|through)\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i,
@@ -164,11 +213,24 @@ export function extractAccountLast4(text: string): string | null {
   return match?.[1] ?? null;
 }
 
-export function contextYearFromPeriod(
-  period: { startDate: string; endDate: string } | null
-): number | undefined {
+export function contextYearFromPeriod(period: StatementPeriod | null): number | undefined {
   if (!period) return undefined;
   return parseIsoDate(period.endDate).getUTCFullYear();
+}
+
+export function extractDepositControlTotal(
+  text: string
+): { count: number; total: number } | null {
+  const compact = text.replace(/\s+/g, ' ');
+  const match =
+    /there were\s+(\d+)\s+deposits(?:\s+and\s+other\s+additions)?\s+totaling\s+\$?([\d,]+\.\d{2})/i.exec(
+      compact
+    );
+  if (!match) return null;
+  const count = Number(match[1]);
+  const total = parseAmount(match[2]);
+  if (!Number.isFinite(count) || total == null) return null;
+  return { count, total };
 }
 
 export function isFullCalendarMonth(startDate: string, endDate: string): boolean {

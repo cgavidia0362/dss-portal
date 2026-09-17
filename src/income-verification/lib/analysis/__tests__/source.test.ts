@@ -34,6 +34,30 @@ describe('source parsing', () => {
     expect(third.source).toBe('Lily C');
   });
 
+  it('treats PNC-truncated Zelle ("Zel From") as the same P2P source family', () => {
+    expect(parseIncomeSource('Zel From Blake Sample').source).toBe('Blake Sample');
+    const analysis = analyzeIncome([
+      tx({
+        id: 'zel1',
+        date: '2026-07-22',
+        amount: 50,
+        description: 'Zel From Blake Sample',
+      }),
+      tx({
+        id: 'zelle1',
+        date: '2026-07-21',
+        amount: 75,
+        description: 'Zelle From Avery Example',
+      }),
+    ]);
+    expect(analysis.transactions.every((item) => item.finalClassification.category === 'p2p_transfer')).toBe(
+      true
+    );
+    expect(analysis.transactions.find((item) => item.id === 'zel1')?.normalizedSource).toBe(
+      'Blake Sample'
+    );
+  });
+
   it('extracts a Zelle sender and ignores confirmation numbers', () => {
     expect(
       parseIncomeSource('ZELLE PAYMENT FROM MARILI MATEO CONF XXXXX7FE').source

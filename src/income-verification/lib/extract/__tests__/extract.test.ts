@@ -3,8 +3,83 @@ import { analyzeIncome } from '../../analysis';
 import { parseBankStatementText } from '../bankStatement';
 import { parseCsvText } from '../csv';
 import { detectDocumentType } from '../detect';
-import { parseStatementPeriod } from '../parse';
+import {
+  extractDepositControlTotal,
+  parseFlexibleDate,
+  parseStatementPeriod,
+  resolveMonthDayDate,
+} from '../parse';
 import { parseTurboPassText } from '../turbopass';
+
+/** Fully synthetic PNC-style fixture — no real customer data. */
+const PNC_STYLE_TEXT = `
+PNC Simple Checking Statement
+Primary account number: XX-XXXX-9999
+For the period 07/21/2026 to 08/20/2026
+Activity Detail
+Deposits and Other Additions There were 5 Deposits and Other
+Additions totaling $455.00.
+Date Amount Description
+07/21 75.00 Zelle From Avery Example
+07/22 50.00 Zel From Blake Sample
+07/22 105.00 Zel From Contoso Holdings
+Deposits and Other Additions continued on next page
+Page 2 of 2
+Deposits and Other Additions
+- continued
+Date Amount Description
+08/10 150.00 Instpmntin ExamplePay 08/09 10001
+08/18 75.00 Reverse ACH Debit
+EFFECTIVE 08-17-26
+Banking/Debit Card Withdrawals and Purchases There were 2 Banking Machine
+withdrawals totaling $40.00.
+Date Amount Description
+07/21 13.77 Debit Card Purchase Example Fuel Station
+07/22 26.23 Debit Card Purchase Example Merchant
+`;
+
+const PNC_YEAR_SPAN_TEXT = `
+PNC Simple Checking Statement
+For the period 12/15/2025 to 01/14/2026
+Deposits and Other Additions There were 3 Deposits and Other Additions totaling $300.00.
+Date Amount Description
+12/20 100.00 Zelle From Riley Demo
+12/28 100.00 Zel From Quinn Fixture
+01/05 100.00 Zelle From Morgan Testcase
+Banking/Debit Card Withdrawals and Purchases
+Date Amount Description
+12/21 20.00 Debit Card Purchase Example Cafe
+`;
+
+/** Synthetic multi-row control-total fixture (structure only). */
+const PNC_CONTROL_TOTAL_TEXT = `
+PNC Simple Checking Statement
+Primary account number: XX-XXXX-9999
+For the period 07/21/2026 to 08/20/2026
+Activity Detail
+Deposits and Other Additions There were 8 Deposits and Other
+Additions totaling $640.00.
+Date Amount Description
+07/21 75.00 Zelle From Avery Example
+07/22 50.00 Zel From Blake Sample
+07/22 105.00 Zel From Contoso Holdings
+07/23 40.00 Zel From Dakota Placeholder
+Deposits and Other Additions continued on next page
+Page 2 of 2
+Deposits and Other Additions
+- continued
+Date Amount Description
+08/03 120.00 Zelle From Emery Synthetic
+08/10 150.00 Instpmntin ExamplePay 08/09 10001
+08/17 25.00 Zel From Finley Redacted
+08/18 75.00 Reverse ACH Debit
+EFFECTIVE 08-17-26
+Banking/Debit Card Withdrawals and Purchases There were 2 Banking Machine
+withdrawals totaling $40.00.
+Date Amount Description
+07/21 13.77 Debit Card Purchase Example Fuel Station
+07/22 26.23 Debit Card Purchase Example Merchant
+`;
 
 const BANK_TEXT = `
 Bank of America Checking Account
@@ -225,5 +300,102 @@ describe('statement period parsing', () => {
       startDate: '2026-01-01',
       endDate: '2026-01-31',
     });
+  });
+
+  it('reads PNC "For the period" headers', () => {
+    expect(parseStatementPeriod('For the period 07/21/2026 to 08/20/2026')).toEqual({
+      startDate: '2026-07-21',
+      endDate: '2026-08-20',
+    });
+  });
+});
+
+describe('PNC-style bank statement extraction', () => {
+  it('extracts multi-page MM/DD deposits and stops at withdrawals', () => {
+    const extracted = parseBankStatementText(PNC_STYLE_TEXT, 'pnc-synthetic.pdf');
+    expect(extracted.period.startDate).toBe('2026-07-21');
+    expect(extracted.period.endDate).toBe('2026-08-20');
+    expect(extracted.period.accountLast4).toBe('9999');
+    expect(extracted.transactions).toHaveLength(5);
+    expect(extracted.transactions.every((tx) => tx.direction === 'in')).toBe(true);
+    expect(extracted.transactions.some((tx) => /Debit Card Purchase/i.test(tx.description))).toBe(
+      false
+    );
+    expect(extracted.transactions.map((tx) => tx.date)).toEqual([
+      '2026-07-21',
+      '2026-07-22',
+      '2026-07-22',
+      '2026-08-10',
+      '2026-08-18',
+    ]);
+    expect(extracted.transactions[0]?.description).toBe('Zelle From Avery Example');
+    expect(extracted.transactions[1]?.description).toBe('Zel From Blake Sample');
+    expect(extracted.transactions.reduce((sum, tx) => sum + tx.amount, 0)).toBe(455);
+    expect(extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')).toBe(
+      false
+    );
+  });
+
+  it('infers years across a December→January statement period', () => {
+    const extracted = parseBankStatementText(PNC_YEAR_SPAN_TEXT, 'pnc-year-span.pdf');
+    expect(extracted.period.startDate).toBe('2025-12-15');
+    expect(extracted.period.endDate).toBe('2026-01-14');
+    expect(extracted.transactions.map((tx) => tx.date)).toEqual([
+      '2025-12-20',
+      '2025-12-28',
+      '2026-01-05',
+    ]);
+    expect(resolveMonthDayDate(12, 20, extracted.period as { startDate: string; endDate: string })).toBe(
+      '2025-12-20'
+    );
+    expect(parseFlexibleDate('01/05', undefined, extracted.period as { startDate: string; endDate: string })).toBe(
+      '2026-01-05'
+    );
+  });
+
+  it('warns when deposit control totals do not match extracted rows', () => {
+    const mismatched = PNC_STYLE_TEXT.replace(
+      'There were 5 Deposits and Other\nAdditions totaling $455.00.',
+      'There were 48 Deposits and Other\nAdditions totaling $5,288.99.'
+    );
+    const extracted = parseBankStatementText(mismatched, 'pnc-mismatch.pdf');
+    expect(extractDepositControlTotal(mismatched)).toEqual({ count: 48, total: 5288.99 });
+    expect(extracted.transactions).toHaveLength(5);
+    const warning = extracted.warnings.find((item) => item.code === 'deposit_control_mismatch');
+    expect(warning?.message).toMatch(/48 deposits totaling \$5288\.99/i);
+    expect(warning?.message).toMatch(/extracted 5 deposits totaling \$455\.00/i);
+  });
+
+  it('reconciles synthetic deposit rows to the statement control total', () => {
+    const extracted = parseBankStatementText(PNC_CONTROL_TOTAL_TEXT, 'pnc-control.pdf');
+    const deposits = extracted.transactions.filter((tx) => tx.direction === 'in');
+    const total = Math.round(deposits.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+
+    expect(detectDocumentType('pnc-control.pdf', PNC_CONTROL_TOTAL_TEXT)).toBe('bank_statement');
+    expect(extracted.period).toMatchObject({
+      startDate: '2026-07-21',
+      endDate: '2026-08-20',
+      source: 'statement_header',
+      accountLast4: '9999',
+    });
+    expect(extractDepositControlTotal(PNC_CONTROL_TOTAL_TEXT)).toEqual({ count: 8, total: 640 });
+    expect(deposits).toHaveLength(8);
+    expect(total).toBe(640);
+    expect(
+      extracted.transactions.some((tx) => /Debit Card Purchase|ATM Withdrawal/i.test(tx.description))
+    ).toBe(false);
+    expect(extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')).toBe(
+      false
+    );
+    expect(extracted.warnings.some((warning) => warning.code === 'no_transactions')).toBe(false);
+
+    const analysis = analyzeIncome(extracted.transactions, {
+      documentPeriods: [extracted.period],
+    });
+    expect(analysis.totals.totalDeposits).toBe(640);
+    expect(analysis.categories.length).toBeGreaterThan(0);
+    expect(analysis.sources.length).toBeGreaterThan(0);
+    expect(analysis.transactions.some((tx) => tx.normalizedSource === 'Avery Example')).toBe(true);
+    expect(analysis.transactions.some((tx) => tx.normalizedSource === 'Blake Sample')).toBe(true);
   });
 });

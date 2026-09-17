@@ -119,7 +119,7 @@ function nameFromCapture(raw: string): string | null {
 }
 
 function parseP2P(text: string): ParsedIncomeSource | null {
-  const zelle = /\bzelle(?:\s+payment)?\s+from\s+(.+)/i.exec(text);
+  const zelle = /\bzel(?:le)?(?:\s+payment)?\s+from\s+(.+)/i.exec(text);
   if (zelle) {
     const name = nameFromCapture(zelle[1]);
     if (name) return { source: titleCaseSource(name), confidence: 0.95 };
