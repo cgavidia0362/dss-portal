@@ -14,6 +14,8 @@ export type {
   IncomeSourceBreakdown,
   IncomeTotals,
   InclusionSource,
+  LocationHit,
+  LocationReview,
   MoneyDirection,
   MonthlyIncome,
   NormalizedTransaction,
@@ -40,4 +42,12 @@ export { parseIncomeSource, normalizeIncomeSource, normalizeText, stripSourceNoi
 export { addMoney, amountsEqual, fromCents, roundMoney, toCents } from './money';
 export { formatConfidence, formatFileSize, formatMoney, formatPercent } from './format';
 export { DEPOSIT_CATEGORIES, DEPOSIT_CATEGORY_LABELS } from './labels';
-export { buildSummaryFacts, buildUnderwriterSummary } from './summary';
+export { buildSummaryFacts, buildUnderwriterSummary, buildCopyableSummary, buildReviewAlertText } from './summary';
+export {
+  buildLocationReview,
+  detectPhysicalLocation,
+  extractHomeState,
+  LOCATION_ALERT_MIN_OUT_OF_STATE,
+  LOCATION_ALERT_MIN_PHYSICAL,
+  LOCATION_ALERT_MIN_SHARE,
+} from './location';

@@ -56,9 +56,13 @@ async function runAnalysis(uploaded: UploadedFile[]) {
   });
 
   const extracted = await extractDocuments(uploaded);
+  const homeState =
+    extracted.documentPeriods.map((period) => period.homeState).find(Boolean) ?? null;
   const analysis = await analyzeExtractedTransactions(extracted.transactions, {
     documentPeriods: extracted.documentPeriods,
     warnings: extracted.warnings,
+    documentTexts: extracted.documentTexts.filter(Boolean),
+    homeState,
   });
   const templateSummary = buildUnderwriterSummary(analysis);
   const polished = await polishUnderwriterSummary(analysis, templateSummary);

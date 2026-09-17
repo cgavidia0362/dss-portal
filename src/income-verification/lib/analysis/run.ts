@@ -37,5 +37,9 @@ export async function analyzeExtractedTransactions(
   return calculateIncome(merged, {
     coverage: initial.coverage,
     warnings: mergedWarnings,
+    documentPeriods: options.documentPeriods,
+    documentTexts: options.documentTexts,
+    homeState: options.homeState ?? initial.locationReview.homeState,
+    locationReview: initial.locationReview,
   });
 }

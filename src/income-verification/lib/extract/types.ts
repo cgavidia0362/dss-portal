@@ -13,6 +13,8 @@ export interface ExtractionResult {
   transactions: NormalizedTransaction[];
   documentPeriods: DocumentPeriod[];
   warnings: AnalysisWarning[];
+  /** Raw extracted text per document — used for home-state / location analysis. Not sent to UI. */
+  documentTexts: string[];
   documents: Array<{
     fileName: string;
     documentType: string;

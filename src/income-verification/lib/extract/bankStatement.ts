@@ -16,6 +16,7 @@ import {
   stripAmountTokens,
   type StatementPeriod,
 } from './parse';
+import { extractHomeState } from '../analysis/location';
 import type { ExtractedDocument } from './types';
 
 const SKIP_LINE =
@@ -253,12 +254,14 @@ export function parseBankStatementText(
   }
 
   const txDates = transactions.map((tx) => tx.date).sort();
+  const homeState = extractHomeState(text);
   const period: DocumentPeriod = {
     documentName: fileName,
     startDate: headerPeriod?.startDate ?? txDates[0] ?? null,
     endDate: headerPeriod?.endDate ?? txDates[txDates.length - 1] ?? null,
     source: headerPeriod ? 'statement_header' : txDates.length ? 'transaction_dates' : 'unknown',
     accountLast4,
+    homeState,
   };
 
   if (!headerPeriod) {

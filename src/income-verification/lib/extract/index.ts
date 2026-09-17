@@ -93,6 +93,7 @@ export async function extractDocuments(files: UploadedFile[]): Promise<Extractio
     transactions: documents.flatMap((document) => document.transactions),
     documentPeriods: documents.map((document) => document.period),
     warnings,
+    documentTexts: documents.map((document) => document.text),
     documents: documents.map((document) => ({
       fileName: document.fileName,
       documentType: document.transactions[0]?.sourceDocumentType ?? 'other',

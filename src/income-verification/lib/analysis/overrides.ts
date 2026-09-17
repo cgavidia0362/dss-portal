@@ -17,6 +17,9 @@ function recalculate(
     documentPeriods: options?.documentPeriods,
     periodMonths: options?.periodMonths,
     warnings: options?.warnings ?? analysis.warnings,
+    locationReview: options?.locationReview ?? analysis.locationReview,
+    homeState: options?.homeState ?? analysis.locationReview.homeState,
+    documentTexts: options?.documentTexts,
   });
 }
 

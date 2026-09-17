@@ -1,6 +1,6 @@
 import { formatMoney } from './format';
 import { DEPOSIT_CATEGORY_LABELS } from './labels';
-import type { IncomeAnalysis } from './types';
+import type { IncomeAnalysis, LocationReview } from './types';
 
 export interface SummaryFacts {
   documentCount: number;
@@ -15,10 +15,21 @@ export interface SummaryFacts {
   averageMonthlyIncluded: number;
   excludedDeposits: number;
   excludedCount: number;
+  /** Complete calendar months only — amounts are application-calculated included totals. */
+  fullMonthDeposits: Array<{ month: string; label: string; shortLabel: string; amount: number }>;
+  /** Categories with included activity, largest first (meaningful non-zero only). */
+  meaningfulCategories: Array<{ category: string; included: number }>;
   primarySources: Array<{ source: string; total: number; percent: number }>;
   categoryTotals: Array<{ category: string; total: number; included: number }>;
   monthlyIncluded: Array<{ month: string; label: string; amount: number; completeness: string }>;
   consistent: boolean;
+  homeState: string | null;
+  locationReview: LocationReview;
+  reviewAlert: string | null;
+}
+
+function shortMonthLabel(label: string): string {
+  return label.replace(/\s+\d{4}$/, '').trim();
 }
 
 export function buildSummaryFacts(analysis: IncomeAnalysis): SummaryFacts {
@@ -35,6 +46,26 @@ export function buildSummaryFacts(analysis: IncomeAnalysis): SummaryFacts {
       ? (Math.max(...amounts) - Math.min(...amounts)) / avg
       : 0;
 
+  const fullMonthDeposits = analysis.months
+    .filter((month) => month.completeness === 'complete')
+    .map((month) => ({
+      month: month.month,
+      label: month.label,
+      shortLabel: shortMonthLabel(month.label),
+      amount: month.includedTotal,
+    }));
+
+  const meaningfulCategories = analysis.categories
+    .filter((category) => category.includedTotal > 0)
+    .sort((a, b) => b.includedTotal - a.includedTotal)
+    .slice(0, 3)
+    .map((category) => ({
+      category: DEPOSIT_CATEGORY_LABELS[category.category],
+      included: category.includedTotal,
+    }));
+
+  const locationReview = analysis.locationReview;
+
   return {
     documentCount: documentNames.length,
     documentNames,
@@ -48,6 +79,8 @@ export function buildSummaryFacts(analysis: IncomeAnalysis): SummaryFacts {
     averageMonthlyIncluded: analysis.totals.averageMonthlyIncluded,
     excludedDeposits: analysis.totals.excludedDeposits,
     excludedCount: analysis.totals.excludedCount,
+    fullMonthDeposits,
+    meaningfulCategories,
     primarySources: analysis.sources.slice(0, 3).map((source) => ({
       source: source.source,
       total: source.total,
@@ -65,45 +98,60 @@ export function buildSummaryFacts(analysis: IncomeAnalysis): SummaryFacts {
       completeness: month.completeness,
     })),
     consistent: spread <= 0.25,
+    homeState: locationReview.homeState,
+    locationReview,
+    reviewAlert: locationReview.alert ? locationReview.alertMessage : null,
   };
 }
 
+function joinSeries(parts: string[]): string {
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+}
+
+function fullMonthSentence(facts: SummaryFacts): string {
+  if (!facts.fullMonthDeposits.length) {
+    return 'No complete calendar months were available in the analyzed coverage.';
+  }
+
+  const years = new Set(facts.fullMonthDeposits.map((item) => item.month.slice(0, 4)));
+  const useShort = years.size === 1;
+  const parts = facts.fullMonthDeposits.map((item) => {
+    const label = useShort ? item.shortLabel : item.label;
+    return `${formatMoney(item.amount)} in ${label}`;
+  });
+  return `Full-month deposits were ${joinSeries(parts)}.`;
+}
+
+function averageSentence(facts: SummaryFacts): string {
+  return `Across the full statement period reviewed, including partial months, deposits averaged ${formatMoney(facts.averageMonthlyIncluded)} per month.`;
+}
+
+function categorySentence(facts: SummaryFacts): string | null {
+  if (!facts.meaningfulCategories.length) return null;
+  const parts = facts.meaningfulCategories.map(
+    (category) => `${category.category} (${formatMoney(category.included)})`
+  );
+  return `Deposits consisted primarily of ${joinSeries(parts)}.`;
+}
+
+/** Concise underwriting snapshot (3 sentences typical). Does not include review alerts. */
 export function buildUnderwriterSummary(analysis: IncomeAnalysis): string {
   const facts = buildSummaryFacts(analysis);
-  const documents =
-    facts.documentCount === 1
-      ? 'one document'
-      : `${facts.documentCount} documents`;
-  const period =
-    facts.coverageStart && facts.coverageEnd
-      ? ` covering ${facts.coverageStart} through ${facts.coverageEnd}`
-      : '';
-  const monthNote = [
-    `${facts.monthsAnalyzed} month${facts.monthsAnalyzed === 1 ? '' : 's'}`,
-    facts.completeMonths ? `${facts.completeMonths} complete` : null,
-    facts.partialMonths ? `${facts.partialMonths} partial` : null,
-  ]
+  return [fullMonthSentence(facts), averageSentence(facts), categorySentence(facts)]
     .filter(Boolean)
-    .join(', ');
+    .join(' ');
+}
 
-  const categoryText = facts.categoryTotals
-    .filter((category) => category.total > 0)
-    .map((category) => `${category.category} ${formatMoney(category.total)}`)
-    .join('; ');
+export function buildReviewAlertText(analysis: IncomeAnalysis): string | null {
+  return analysis.locationReview.alert ? analysis.locationReview.alertMessage : null;
+}
 
-  const sourceText = facts.primarySources.length
-    ? facts.primarySources
-        .map((source) => `${source.source} (${formatMoney(source.total)}, ${source.percent}% of included)`)
-        .join('; ')
-    : 'no identified sources';
-
-  const exclusionText = facts.excludedDeposits
-    ? ` The underwriter currently has ${formatMoney(facts.excludedDeposits)} excluded.`
-    : ' No deposits are currently excluded.';
-
-  const consistency = facts.consistent
-    ? ' Included deposits were relatively consistent across the review period.'
-    : ' Included deposits varied across the review period.';
-
-  return `Reviewed ${documents}${period} (${monthNote}). Extracted deposits totaled ${formatMoney(facts.totalDeposits)} and currently included deposits averaged ${formatMoney(facts.averageMonthlyIncluded)} per month across the coverage period. Categories: ${categoryText || 'none'}. Primary included sources: ${sourceText}.${exclusionText}${consistency}`;
+/** Narrative plus review alert when present — used for Copy Summary. */
+export function buildCopyableSummary(analysis: IncomeAnalysis, narrative?: string): string {
+  const body = narrative ?? buildUnderwriterSummary(analysis);
+  const alert = buildReviewAlertText(analysis);
+  return alert ? `${body}\n\n${alert}` : body;
 }

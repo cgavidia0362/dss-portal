@@ -1,5 +1,6 @@
 import { coverageWarnings, buildCoverage } from './coverage';
 import { monthKey, monthLabel } from './dates';
+import { buildLocationReview, emptyLocationReview, normalizeStateCode } from './location';
 import { addMoney, fromCents, toCents } from './money';
 import { parseIncomeSource, primaryCategoryFromTotals } from './source';
 import type {
@@ -258,6 +259,23 @@ export function calculateIncome(
     ),
   ];
 
+  const homeState =
+    normalizeStateCode(options.homeState ?? '') ??
+    (options.documentPeriods ?? [])
+      .map((period) => normalizeStateCode(period.homeState ?? ''))
+      .find((state): state is string => Boolean(state)) ??
+    null;
+
+  const locationReview =
+    options.locationReview ??
+    (options.documentTexts?.length || homeState
+      ? buildLocationReview({
+          homeState,
+          documentTexts: options.documentTexts,
+          transactions: resolved,
+        })
+      : emptyLocationReview(homeState));
+
   return {
     transactions: resolved,
     months,
@@ -278,5 +296,6 @@ export function calculateIncome(
     },
     coverage,
     warnings,
+    locationReview,
   };
 }

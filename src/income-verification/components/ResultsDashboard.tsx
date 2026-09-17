@@ -117,6 +117,13 @@ export function ResultsDashboard({
         </div>
       </section>
 
+      <SummaryCard
+        summary={summary}
+        reviewAlert={analysis.locationReview.alert ? analysis.locationReview.alertMessage : null}
+        onCopy={onCopy}
+        copied={copied}
+      />
+
       <CategoryBreakdown analysis={analysis} onIncludeCategory={onIncludeCategory} />
       <SourceBreakdown
         analysis={analysis}
@@ -133,7 +140,6 @@ export function ResultsDashboard({
         onClearSource={() => onSourceFilter(null)}
       />
       <ExcludedList transactions={analysis.transactions} />
-      <SummaryCard summary={summary} onCopy={onCopy} copied={copied} />
     </div>
   );
 }

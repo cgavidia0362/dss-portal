@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { applyCategoryInclusion, applyCategoryOverride, applyInclusion, applySourceInclusion } from '@income-verification/lib/analysis/overrides';
-import { buildUnderwriterSummary } from '@income-verification/lib/analysis/summary';
+import { buildCopyableSummary, buildUnderwriterSummary } from '@income-verification/lib/analysis/summary';
 import type { DepositCategory, IncomeAnalysis } from '@income-verification/lib/analysis/types';
 import { requestedPoiPathname } from '@income-verification/lib/blob/path';
 import { MAX_FILE_BYTES, MAX_FILES } from '@income-verification/lib/extract/limits';
@@ -163,14 +163,16 @@ export default function IncomeVerificationTab() {
   }
 
   async function copySummary() {
+    if (!analysis) return;
+    const text = buildCopyableSummary(analysis, summary);
     try {
       await Promise.race([
-        navigator.clipboard.writeText(summary),
+        navigator.clipboard.writeText(text),
         new Promise((_, reject) => setTimeout(() => reject(new Error('clipboard timeout')), 400)),
       ]);
     } catch {
       const textarea = document.createElement('textarea');
-      textarea.value = summary;
+      textarea.value = text;
       textarea.setAttribute('readonly', '');
       textarea.style.position = 'fixed';
       textarea.style.left = '-9999px';

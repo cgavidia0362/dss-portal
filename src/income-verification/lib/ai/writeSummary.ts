@@ -25,15 +25,22 @@ export async function polishUnderwriterSummary(
         {
           role: 'system',
           content:
-            'Write a concise 3-5 sentence POI/income-verification narrative for an underwriter. Use ONLY the provided calculated figures. Do not recalculate totals or averages. Do not approve, decline, or judge creditworthiness. Treat included deposits as the current underwriter-selected figure, not an automatic qualifying-income decision.',
+            'Write a concise 3-5 sentence underwriting snapshot for a buyer reviewing bank-statement income. Use ONLY the provided calculated figures. Do not recalculate totals or averages. Do not invent full-month figures when none exist. Do not approve, decline, or judge creditworthiness. Do not mention review alerts or out-of-state activity — those are rendered separately. Prefer short sentences covering: (1) full-month included deposits by complete month only, (2) coverage average including partial months, (3) primary non-zero deposit categories.',
         },
         {
           role: 'user',
           content: JSON.stringify({
-            facts,
+            facts: {
+              fullMonthDeposits: facts.fullMonthDeposits,
+              averageMonthlyIncluded: facts.averageMonthlyIncluded,
+              meaningfulCategories: facts.meaningfulCategories,
+              monthsAnalyzed: facts.monthsAnalyzed,
+              completeMonths: facts.completeMonths,
+              partialMonths: facts.partialMonths,
+            },
             template: fallback,
             instruction:
-              'Rewrite the template in professional underwriting language. Keep every dollar amount exactly as provided.',
+              'Rewrite the template in professional underwriting language. Keep every dollar amount exactly as provided. Do not add facts that are not in the JSON.',
           }),
         },
       ],

@@ -98,6 +98,25 @@ export interface DocumentPeriod {
   endDate: string | null;
   source: PeriodSource;
   accountLast4: string | null;
+  /** ISO US state code from mailing/account-holder address when reliably extracted. */
+  homeState?: string | null;
+}
+
+export interface LocationHit {
+  state: string;
+  description: string;
+  physical: boolean;
+}
+
+export interface LocationReview {
+  homeState: string | null;
+  physicalLocationCount: number;
+  outOfStateCount: number;
+  outOfStatePercent: number;
+  primaryOutOfStateStates: string[];
+  stateCounts: Record<string, number>;
+  alert: boolean;
+  alertMessage: string | null;
 }
 
 export interface CoverageMonth {
@@ -182,6 +201,7 @@ export interface IncomeAnalysis {
   totals: IncomeTotals;
   coverage: AnalysisCoverage;
   warnings: AnalysisWarning[];
+  locationReview: LocationReview;
 }
 
 export interface AnalyzeOptions {
@@ -189,4 +209,7 @@ export interface AnalyzeOptions {
   documentPeriods?: DocumentPeriod[];
   coverage?: AnalysisCoverage;
   warnings?: AnalysisWarning[];
+  documentTexts?: string[];
+  homeState?: string | null;
+  locationReview?: LocationReview;
 }
