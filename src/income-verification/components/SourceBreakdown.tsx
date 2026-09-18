@@ -2,6 +2,30 @@ import { formatMoney, formatPercent } from '@income-verification/lib/analysis/fo
 import type { IncomeAnalysis } from '@income-verification/lib/analysis/types';
 import { CategoryBadge } from './CategoryBadge';
 
+const inactiveActionClass =
+  'rounded border border-slate-400 bg-white px-2 py-1 text-[11px] hover:bg-slate-100';
+const includeActiveClass =
+  'rounded border border-emerald-700 bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-emerald-700';
+const excludeActiveClass =
+  'rounded border border-rose-700 bg-rose-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-rose-700';
+
+function sourceInclusionState(
+  analysis: IncomeAnalysis,
+  sourceName: string,
+): { fullyIncluded: boolean; fullyExcluded: boolean } {
+  const txs = analysis.transactions.filter((tx) => {
+    if (tx.direction !== 'in') return false;
+    if (tx.duplicateOf && tx.inclusionSource === 'duplicate') return false;
+    const name = tx.normalizedSource || tx.detectedIncomeSource || 'Unknown source';
+    return name === sourceName;
+  });
+  if (txs.length === 0) return { fullyIncluded: false, fullyExcluded: false };
+  return {
+    fullyIncluded: txs.every((tx) => tx.included),
+    fullyExcluded: txs.every((tx) => !tx.included),
+  };
+}
+
 export function SourceBreakdown({
   analysis,
   selectedSource,
@@ -46,6 +70,10 @@ export function SourceBreakdown({
           <tbody>
             {analysis.sources.map((source) => {
               const category = source.category;
+              const { fullyIncluded, fullyExcluded } = sourceInclusionState(
+                analysis,
+                source.source,
+              );
               return (
                 <tr
                   key={source.source}
@@ -77,14 +105,14 @@ export function SourceBreakdown({
                     <div className="flex flex-wrap gap-1">
                       <button
                         type="button"
-                        className="rounded border border-slate-400 bg-white px-2 py-1 text-[11px] hover:bg-slate-100"
+                        className={fullyIncluded ? includeActiveClass : inactiveActionClass}
                         onClick={() => onIncludeSource(source.source, true)}
                       >
                         Include
                       </button>
                       <button
                         type="button"
-                        className="rounded border border-slate-400 bg-white px-2 py-1 text-[11px] hover:bg-slate-100"
+                        className={fullyExcluded ? excludeActiveClass : inactiveActionClass}
                         onClick={() => onIncludeSource(source.source, false)}
                       >
                         Exclude
