@@ -325,16 +325,16 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
   };
 
   const getRoleBadge = (role: string) => {
-    if (role === 'admin') return 'bg-purple-900 text-purple-300 border-purple-700';
-    if (role === 'manager') return 'bg-blue-900 text-blue-300 border-blue-700';
-    if (role === 'buying_assistant') return 'bg-teal-900 text-teal-300 border-teal-700';
-    return 'bg-gray-700 text-gray-300 border-gray-600';
+    if (role === 'admin') return 'bg-dss-accent-soft text-dss-accent border-dss-accent/30';
+    if (role === 'manager') return 'bg-dss-accent-soft text-dss-accent border-dss-accent/30';
+    if (role === 'buying_assistant') return 'bg-teal-50 text-teal-800 border-teal-200';
+    return 'bg-dss-canvas text-dss-ink/80 border-dss-border';
   };
 
   if (currentUserRole !== 'admin') {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
-        <p className="text-gray-400">Access restricted to admins only.</p>
+      <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-8 text-center">
+        <p className="text-dss-muted">Access restricted to admins only.</p>
       </div>
     );
   }
@@ -343,57 +343,57 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-100">Users</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Manage team members and permissions</p>
+          <h2 className="text-2xl font-bold text-dss-ink">Users</h2>
+          <p className="text-sm text-dss-muted mt-0.5">Manage team members and permissions</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleExportAll} disabled={exporting}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:bg-dss-canvas text-white rounded-dss-sm text-sm font-medium transition">
             <Download className="w-4 h-4" />
             {exporting ? 'Exporting…' : 'Export All Data'}
           </button>
           <button onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+            className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">
             + Add User
           </button>
         </div>
       </div>
 
-      {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">{error}</div>}
-      {success && <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm">{success}</div>}
+      {error && <div className="bg-rose-50 border border-rose-200 text-dss-danger px-4 py-3 rounded-dss-sm text-sm">{error}</div>}
+      {success && <div className="bg-emerald-50 border border-emerald-200 text-dss-success px-4 py-3 rounded-dss-sm text-sm">{success}</div>}
 
       {loading ? (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-400">Loading...</div>
+        <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-8 text-center text-dss-muted">Loading...</div>
       ) : (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+        <div className="bg-dss-surface rounded-dss-sm border border-dss-border overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-700 bg-gray-750">
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Email</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Role</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">States</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+              <tr className="border-b border-dss-border bg-dss-canvas">
+                <th className="px-5 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Name</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Email</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Role</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">States</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Status</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
               {users.map(user => {
                 const states = getSelectedStates(user.state || '');
                 return (
-                  <tr key={user.id} className="hover:bg-gray-750 transition-colors">
+                  <tr key={user.id} className="hover:bg-dss-canvas transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-300 flex-shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-dss-canvas flex items-center justify-center text-xs font-medium text-dss-ink/80 flex-shrink-0">
                           {user.name.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-sm font-medium text-gray-200">{user.name}</span>
+                        <span className="text-sm font-medium text-dss-ink">{user.name}</span>
                         {user.id === currentUserId && (
-                          <span className="text-xs text-blue-400">(you)</span>
+                          <span className="text-xs text-dss-accent">(you)</span>
                         )}
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-sm text-gray-400">{user.email}</td>
+                    <td className="px-5 py-4 text-sm text-dss-muted">{user.email}</td>
                     <td className="px-5 py-4">
                       <span className={`px-2.5 py-0.5 rounded-full text-xs border ${getRoleBadge(user.role)}`}>
                         {user.role}
@@ -403,37 +403,37 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                       {states.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {states.map(s => (
-                            <span key={s} className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">
+                            <span key={s} className="px-2 py-0.5 bg-dss-canvas text-dss-ink/80 text-xs rounded border border-dss-border">
                               {s}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-600 italic">—</span>
+                        <span className="text-xs text-dss-muted italic">—</span>
                       )}
                     </td>
                     <td className="px-5 py-4">
                       <span className={`px-2.5 py-0.5 rounded-full text-xs border ${user.active
-                        ? 'bg-green-900 text-green-300 border-green-700'
-                        : 'bg-red-900 text-red-300 border-red-700'}`}>
+                        ? 'bg-emerald-50 text-dss-success border-emerald-200'
+                        : 'bg-rose-50 text-dss-danger border-rose-200'}`}>
                         {user.active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <button onClick={() => handleEditUser(user)}
-                          className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded transition"
+                          className="p-1.5 text-dss-muted hover:text-dss-accent hover:bg-dss-canvas rounded transition"
                           title="Edit user">
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button onClick={() => handleGenerateLink(user.id)} disabled={generatingLink}
-                          className="p-1.5 text-gray-400 hover:text-green-400 hover:bg-gray-700 rounded transition"
+                          className="p-1.5 text-dss-muted hover:text-dss-success hover:bg-dss-canvas rounded transition"
                           title="Generate setup link">
                           <Link className="w-4 h-4" />
                         </button>
                         {user.id !== currentUserId && (
                           <button onClick={() => handleDeleteUser(user.id, user.name)}
-                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded transition"
+                            className="p-1.5 text-dss-muted hover:text-dss-danger hover:bg-dss-canvas rounded transition"
                             title="Delete user">
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -450,23 +450,23 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
 
       {/* EDIT MODAL */}
       {editingUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-100">Edit — {editingUser.name}</h3>
-              <button onClick={() => setEditingUser(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-md shadow-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dss-border">
+              <h3 className="text-lg font-semibold text-dss-ink">Edit — {editingUser.name}</h3>
+              <button onClick={() => setEditingUser(null)} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
             </div>
             <div className="p-6 space-y-4">
               {error && (
-                <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded-lg text-sm">
+                <div className="bg-rose-50 border border-rose-200 text-dss-danger px-3 py-2 rounded-dss-sm text-sm">
                   {error}
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Role</label>
+                <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">Role</label>
                 <select value={editForm.role}
                   onChange={e => setEditForm({ ...editForm, role: e.target.value as EditForm['role'] })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
                   <option value="rep">Rep</option>
                   <option value="buying_assistant">Buying Assistant</option>
                   <option value="manager">Manager</option>
@@ -475,10 +475,10 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Status</label>
+                <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">Status</label>
                 <select value={editForm.active ? 'active' : 'inactive'}
                   onChange={e => setEditForm({ ...editForm, active: e.target.value === 'active' })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
@@ -486,9 +486,9 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
 
               {/* Multi-state selector */}
               <div>
-                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">
                   States {getSelectedStates(editForm.state).length > 0 && (
-                    <span className="ml-1 text-blue-400 normal-case">
+                    <span className="ml-1 text-dss-accent normal-case">
                       ({getSelectedStates(editForm.state).length} selected)
                     </span>
                   )}
@@ -499,9 +499,9 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {getSelectedStates(editForm.state).map(s => (
                       <span key={s}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-900 text-blue-300 text-xs rounded border border-blue-700">
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-dss-accent-soft text-dss-accent text-xs rounded border border-dss-accent/30">
                         {s}
-                        <button onClick={() => toggleState(s)} className="text-blue-400 hover:text-white ml-0.5">×</button>
+                        <button onClick={() => toggleState(s)} className="text-dss-accent hover:text-white ml-0.5">×</button>
                       </span>
                     ))}
                   </div>
@@ -511,14 +511,14 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                 <div className="relative" ref={stateDropdownRef}>
                   <button
                     onClick={() => setStateDropdownOpen(!stateDropdownOpen)}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-300 text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-blue-500 hover:bg-gray-650 transition"
+                    className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink/80 text-left flex items-center justify-between focus:outline-none focus:ring-1 focus:ring-dss-accent/30 hover:bg-dss-canvas transition"
                   >
                     <span>{getSelectedStates(editForm.state).length === 0 ? 'Select states…' : 'Add or remove states'}</span>
-                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${stateDropdownOpen ? 'rotate-180' : ''}`} />
+                    <ChevronDown className={`w-4 h-4 text-dss-muted transition-transform ${stateDropdownOpen ? 'rotate-180' : ''}`} />
                   </button>
 
                   {stateDropdownOpen && (
-                    <div className="absolute z-20 mt-1 w-full bg-gray-700 border border-gray-600 rounded-lg shadow-xl overflow-hidden">
+                    <div className="absolute z-20 mt-1 w-full bg-dss-canvas border border-dss-border rounded-dss-sm shadow-sm overflow-hidden">
                       <div className="grid grid-cols-5 gap-0 max-h-52 overflow-y-auto p-2">
                         {US_STATES.map(state => {
                           const isSelected = getSelectedStates(editForm.state).includes(state);
@@ -528,8 +528,8 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                               onClick={() => toggleState(state)}
                               className={`px-2 py-1.5 text-xs rounded transition font-medium ${
                                 isSelected
-                                  ? 'bg-blue-600 text-white'
-                                  : 'text-gray-300 hover:bg-gray-600'
+                                  ? 'bg-dss-navy text-white'
+                                  : 'text-dss-ink/80 hover:bg-dss-accent-soft'
                               }`}
                             >
                               {state}
@@ -537,12 +537,12 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                           );
                         })}
                       </div>
-                      <div className="px-3 py-2 border-t border-gray-600 flex justify-between items-center">
-                        <span className="text-xs text-gray-400">
+                      <div className="px-3 py-2 border-t border-dss-border flex justify-between items-center">
+                        <span className="text-xs text-dss-muted">
                           {getSelectedStates(editForm.state).length} state{getSelectedStates(editForm.state).length !== 1 ? 's' : ''} selected
                         </span>
                         <button onClick={() => setEditForm({ ...editForm, state: '' })}
-                          className="text-xs text-red-400 hover:text-red-300">
+                          className="text-xs text-dss-danger hover:text-dss-danger">
                           Clear all
                         </button>
                       </div>
@@ -552,18 +552,18 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">
                   Extra tab access
                 </label>
-                <div className="space-y-2 rounded-lg border border-gray-600 bg-gray-700/40 px-3 py-3">
+                <div className="space-y-2 rounded-dss-sm border border-dss-border bg-dss-canvas/40 px-3 py-3">
                   {GRANTABLE_TABS.map((tab) => {
                     const included = isTabIncludedWithRole(editForm.role, tab.id);
                     const checked = included || editForm.allowedTabs.includes(tab.id);
                     return (
-                      <label key={tab.id} className="flex items-start gap-2 text-sm text-gray-200">
+                      <label key={tab.id} className="flex items-start gap-2 text-sm text-dss-ink">
                         <input
                           type="checkbox"
-                          className="mt-0.5 rounded border-gray-500 bg-gray-800 text-blue-500 focus:ring-blue-500"
+                          className="mt-0.5 rounded border-dss-border bg-dss-surface text-blue-500 focus:ring-dss-accent/30"
                           checked={checked}
                           disabled={included}
                           onChange={() =>
@@ -578,7 +578,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                         <span>
                           {tab.label}
                           {included && (
-                            <span className="block text-xs text-gray-400 font-normal">
+                            <span className="block text-xs text-dss-muted font-normal">
                               Included with this role
                             </span>
                           )}
@@ -592,11 +592,11 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
 
             <div className="flex gap-3 px-6 pb-6">
               <button onClick={handleSaveEdit}
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                className="flex-1 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">
                 Save Changes
               </button>
               <button onClick={() => setEditingUser(null)}
-                className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">
+                className="flex-1 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">
                 Cancel
               </button>
             </div>
@@ -606,19 +606,19 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
 
       {/* SETUP LINK MODAL */}
       {setupLinkModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-lg shadow-2xl p-6">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-lg shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-100">Setup Link</h3>
-              <button onClick={() => setSetupLinkModal(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              <h3 className="text-lg font-semibold text-dss-ink">Setup Link</h3>
+              <button onClick={() => setSetupLinkModal(null)} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
             </div>
-            <p className="text-sm text-gray-400 mb-4">Share this link with the user so they can set their password.</p>
+            <p className="text-sm text-dss-muted mb-4">Share this link with the user so they can set their password.</p>
             <div className="flex gap-2">
               <input type="text" readOnly value={setupLinkModal.link}
-                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-300 focus:outline-none" />
+                className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-xs text-dss-ink/80 focus:outline-none" />
               <button onClick={() => copyLink(setupLinkModal.link)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
-                  copied ? 'bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                className={`flex items-center gap-2 px-4 py-2 rounded-dss-sm text-sm font-medium transition ${
+                  copied ? 'bg-dss-success text-white' : 'bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80'
                 }`}>
                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 {copied ? 'Copied!' : 'Copy'}
@@ -630,32 +630,32 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
 
       {/* CREATE USER MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-100">Add New User</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-md shadow-sm">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dss-border">
+              <h3 className="text-lg font-semibold text-dss-ink">Add New User</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Full Name</label>
+                <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">Full Name</label>
                 <input type="text" value={createForm.name}
                   onChange={e => setCreateForm({ ...createForm, name: e.target.value })}
                   placeholder="e.g. Jane Smith"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Email</label>
+                <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">Email</label>
                 <input type="email" value={createForm.email}
                   onChange={e => setCreateForm({ ...createForm, email: e.target.value })}
                   placeholder="e.g. jane@pronto.com"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Role</label>
+                <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">Role</label>
                 <select value={createForm.role}
                   onChange={e => setCreateForm({ ...createForm, role: e.target.value as 'admin' | 'manager' | 'rep' | 'buying_assistant' })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
                   <option value="rep">Rep</option>
                   <option value="buying_assistant">Buying Assistant</option>
                   <option value="manager">Manager</option>
@@ -663,18 +663,18 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">
                   Extra tab access
                 </label>
-                <div className="space-y-2 rounded-lg border border-gray-600 bg-gray-700/40 px-3 py-3">
+                <div className="space-y-2 rounded-dss-sm border border-dss-border bg-dss-canvas/40 px-3 py-3">
                   {GRANTABLE_TABS.map((tab) => {
                     const included = isTabIncludedWithRole(createForm.role, tab.id);
                     const checked = included || createForm.allowedTabs.includes(tab.id);
                     return (
-                      <label key={tab.id} className="flex items-start gap-2 text-sm text-gray-200">
+                      <label key={tab.id} className="flex items-start gap-2 text-sm text-dss-ink">
                         <input
                           type="checkbox"
-                          className="mt-0.5 rounded border-gray-500 bg-gray-800 text-blue-500 focus:ring-blue-500"
+                          className="mt-0.5 rounded border-dss-border bg-dss-surface text-blue-500 focus:ring-dss-accent/30"
                           checked={checked}
                           disabled={included}
                           onChange={() =>
@@ -689,7 +689,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                         <span>
                           {tab.label}
                           {included && (
-                            <span className="block text-xs text-gray-400 font-normal">
+                            <span className="block text-xs text-dss-muted font-normal">
                               Included with this role
                             </span>
                           )}
@@ -702,11 +702,11 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
             </div>
             <div className="flex gap-3 px-6 pb-6">
               <button onClick={handleCreateUser} disabled={creating}
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+                className="flex-1 py-2 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas text-white rounded-dss-sm text-sm font-medium transition">
                 {creating ? 'Creating...' : 'Create User'}
               </button>
               <button onClick={() => setShowCreateModal(false)}
-                className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">
+                className="flex-1 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">
                 Cancel
               </button>
             </div>

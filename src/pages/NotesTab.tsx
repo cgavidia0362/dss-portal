@@ -357,8 +357,8 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
 
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-100">Notes</h2>
-          <p className="text-sm text-gray-400 mt-0.5">
+          <h2 className="text-2xl font-bold text-dss-ink">Notes</h2>
+          <p className="text-sm text-dss-muted mt-0.5">
             {isAdminOrManager
               ? 'No Deal notes only — calls & daily deals'
               : 'Your No Deal notes — calls & daily deals'}
@@ -370,7 +370,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             <select
               value={selectedRepId}
               onChange={e => setSelectedRepId(e.target.value)}
-              className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="px-3 py-2 bg-dss-surface border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
             >
               <option value="">All Reps</option>
               {repOptions.map(u => (
@@ -382,16 +382,16 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
           <select
             value={filterSource}
             onChange={e => setFilterSource(e.target.value)}
-            className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="px-3 py-2 bg-dss-surface border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
           >
             <option value="">All Sources</option>
             <option value="calls">Calls</option>
             <option value="daily_deals">Daily Deals</option>
           </select>
 
-          <div className="flex items-center border border-gray-700 rounded-lg overflow-hidden bg-gray-800">
-            <div className="px-2.5 py-2 border-r border-gray-700">
-              <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="flex items-center border border-dss-border rounded-dss-sm overflow-hidden bg-dss-surface">
+            <div className="px-2.5 py-2 border-r border-dss-border">
+              <svg className="w-3.5 h-3.5 text-dss-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
@@ -403,16 +403,16 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                 setDateFrom(e.target.value);
                 if (!isAdminOrManager) setDateTo(e.target.value);
               }}
-              className="px-2 py-2 bg-gray-800 text-xs text-gray-300 focus:outline-none w-[120px]"
+              className="px-2 py-2 bg-dss-surface text-xs text-dss-ink/80 focus:outline-none w-[120px]"
             />
             {isAdminOrManager && (
               <>
-                <span className="px-1 text-xs text-gray-500">—</span>
+                <span className="px-1 text-xs text-dss-muted">—</span>
                 <input
                   type="date"
                   value={dateTo}
                   onChange={e => setDateTo(e.target.value)}
-                  className="px-2 py-2 bg-gray-800 text-xs text-gray-300 focus:outline-none w-[120px]"
+                  className="px-2 py-2 bg-dss-surface text-xs text-dss-ink/80 focus:outline-none w-[120px]"
                 />
               </>
             )}
@@ -422,7 +422,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             <>
               <button
                 onClick={() => setShowSavedPanel(v => !v)}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-750 border border-gray-700 rounded-lg text-sm text-gray-300 transition"
+                className="flex items-center gap-2 px-4 py-2 bg-dss-surface hover:bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink/80 transition"
               >
                 <Bookmark className="w-4 h-4" />
                 Saved ({savedInsights.length})
@@ -430,7 +430,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               <button
                 onClick={generateInsights}
                 disabled={insightsLoading || filteredNotes.length === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-900 bg-opacity-40 hover:bg-opacity-60 border border-purple-700 rounded-lg text-sm text-purple-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 py-2 bg-dss-accent-soft bg-opacity-40 hover:bg-opacity-60 border border-dss-accent/30 rounded-dss-sm text-sm text-dss-accent transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Sparkles className="w-4 h-4" />
                 {insightsLoading ? 'Analyzing…' : 'AI Insights'}
@@ -441,32 +441,32 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       </div>
 
       {isAdminOrManager && showSavedPanel && (
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-3">
+        <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-gray-200">Saved insights</h3>
-            <button onClick={() => setShowSavedPanel(false)} className="text-gray-500 hover:text-gray-300">
+            <h3 className="text-sm font-semibold text-dss-ink">Saved insights</h3>
+            <button onClick={() => setShowSavedPanel(false)} className="text-dss-muted hover:text-dss-ink/80">
               <X className="w-4 h-4" />
             </button>
           </div>
           {savedInsights.length === 0 ? (
-            <p className="text-sm text-gray-500">No saved insights yet. Run AI Insights, then click Save.</p>
+            <p className="text-sm text-dss-muted">No saved insights yet. Run AI Insights, then click Save.</p>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {savedInsights.map(saved => (
                 <div
                   key={saved.id}
-                  className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5 ${
+                  className={`flex items-start justify-between gap-3 rounded-dss-sm border px-3 py-2.5 ${
                     viewingSavedId === saved.id
-                      ? 'border-purple-700 bg-purple-900/20'
-                      : 'border-gray-700 bg-gray-900/30'
+                      ? 'border-dss-accent/30 bg-dss-accent-soft/20'
+                      : 'border-dss-border bg-dss-canvas'
                   }`}
                 >
                   <button
                     onClick={() => loadSavedInsight(saved)}
                     className="text-left flex-1 min-w-0"
                   >
-                    <p className="text-sm font-medium text-gray-100 truncate">{saved.name}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-sm font-medium text-dss-ink truncate">{saved.name}</p>
+                    <p className="text-xs text-dss-muted mt-0.5">
                       {saved.dateRangeLabel || `${saved.dateFrom} — ${saved.dateTo}`}
                       {' · '}
                       {saved.insights?.whoLosingTo?.length || 0} lender{(saved.insights?.whoLosingTo?.length || 0) !== 1 ? 's' : ''}
@@ -478,7 +478,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                   </button>
                   <button
                     onClick={() => handleDeleteSaved(saved.id)}
-                    className="text-gray-600 hover:text-red-400 transition flex-shrink-0 mt-0.5"
+                    className="text-dss-muted hover:text-dss-danger transition flex-shrink-0 mt-0.5"
                     title="Delete saved insight"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -490,26 +490,26 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
         </div>
       )}
 
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 flex-wrap gap-2">
+      <div className="flex items-center justify-between px-4 py-3 bg-dss-surface rounded-dss-sm border border-dss-border flex-wrap gap-2">
         <div className="flex items-center gap-4 flex-wrap">
-          <span className="text-sm font-medium text-gray-200">{formatDateLabel(dateFrom, dateTo)}</span>
-          <span className="text-sm text-gray-400">
+          <span className="text-sm font-medium text-dss-ink">{formatDateLabel(dateFrom, dateTo)}</span>
+          <span className="text-sm text-dss-muted">
             {filteredNotes.length} No Deal note{filteredNotes.length !== 1 ? 's' : ''}
           </span>
           {isAdminOrManager && activeReps > 0 && (
-            <span className="text-xs px-2 py-0.5 bg-gray-700 text-gray-400 rounded border border-gray-600">
+            <span className="text-xs px-2 py-0.5 bg-dss-canvas text-dss-muted rounded border border-dss-border">
               {activeReps} rep{activeReps !== 1 ? 's' : ''} active
             </span>
           )}
         </div>
         <div className="flex gap-2">
           {callsCount > 0 && (
-            <span className="text-xs px-2.5 py-1 bg-blue-900 bg-opacity-40 text-blue-300 rounded-full border border-blue-800">
+            <span className="text-xs px-2.5 py-1 bg-dss-accent-soft bg-opacity-40 text-dss-accent rounded-full border border-blue-800">
               {callsCount} from Calls
             </span>
           )}
           {dealCount > 0 && (
-            <span className="text-xs px-2.5 py-1 bg-green-900 bg-opacity-40 text-green-300 rounded-full border border-green-800">
+            <span className="text-xs px-2.5 py-1 bg-emerald-50 bg-opacity-40 text-dss-success rounded-full border border-emerald-200">
               {dealCount} from Daily Deals
             </span>
           )}
@@ -517,34 +517,34 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       </div>
 
       {insightsError && (
-        <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-4 py-3">
-          <p className="text-sm text-red-300">{insightsError}</p>
+        <div className="bg-rose-50 bg-opacity-30 border border-rose-200 rounded-dss-sm px-4 py-3">
+          <p className="text-sm text-dss-danger">{insightsError}</p>
         </div>
       )}
 
       {saveMessage && (
-        <div className="bg-green-900 bg-opacity-30 border border-green-800 rounded-lg px-4 py-3">
-          <p className="text-sm text-green-300">{saveMessage}</p>
+        <div className="bg-emerald-50 bg-opacity-30 border border-emerald-200 rounded-dss-sm px-4 py-3">
+          <p className="text-sm text-dss-success">{saveMessage}</p>
         </div>
       )}
 
       {insights && (
         <div className="space-y-3">
-          <div className="bg-purple-900 bg-opacity-10 border border-purple-800 rounded-lg p-5">
+          <div className="bg-dss-accent-soft bg-opacity-10 border border-purple-800 rounded-dss-sm p-5">
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-purple-400" />
-                <h3 className="text-sm font-semibold text-purple-300">
+                <h3 className="text-sm font-semibold text-dss-accent">
                   Loss Analysis — {insights.dateRangeLabel || formatDateLabel(dateFrom, dateTo)}
                 </h3>
                 {viewingSavedId && (
-                  <span className="text-xs px-2 py-0.5 rounded border border-purple-700 text-purple-300 bg-purple-900/40">
+                  <span className="text-xs px-2 py-0.5 rounded border border-dss-accent/30 text-dss-accent bg-dss-accent-soft/40">
                     Saved view
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-dss-muted">
                   Analyzed {insights.noteCountAnalyzed} note{insights.noteCountAnalyzed !== 1 ? 's' : ''}
                   {insights.whoLosingTo?.length > 0 && (
                     <> · {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''}</>
@@ -553,7 +553,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                 {!viewingSavedId && (
                   <button
                     onClick={openSaveModal}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-900/50 hover:bg-purple-900/70 border border-purple-700 rounded-lg text-xs text-purple-200 transition"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-dss-accent-soft/50 hover:bg-dss-accent-soft/70 border border-dss-accent/30 rounded-dss-sm text-xs text-violet-800 transition"
                   >
                     <Save className="w-3.5 h-3.5" />
                     Save
@@ -561,36 +561,36 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                 )}
               </div>
             </div>
-            <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-line">{insights.overallSummary}</p>
+            <p className="text-sm text-dss-ink leading-relaxed whitespace-pre-line">{insights.overallSummary}</p>
           </div>
 
-          <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
-            <h3 className="text-sm font-semibold text-red-300 mb-2">Why are we losing — and how are they beating us?</h3>
-            <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-line">{insights.lossSummary}</p>
+          <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
+            <h3 className="text-sm font-semibold text-dss-danger mb-2">Why are we losing — and how are they beating us?</h3>
+            <p className="text-sm text-dss-ink leading-relaxed whitespace-pre-line">{insights.lossSummary}</p>
           </div>
 
-          <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
-            <h3 className="text-sm font-semibold text-amber-300 mb-3">
+          <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
+            <h3 className="text-sm font-semibold text-amber-800 mb-3">
               Who are we losing to?
               {insights.whoLosingTo.length > 0 && (
-                <span className="ml-2 text-xs font-normal text-gray-500">
+                <span className="ml-2 text-xs font-normal text-dss-muted">
                   {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''} named in notes
                 </span>
               )}
             </h3>
             {insights.whoLosingTo.length === 0 ? (
-              <p className="text-sm text-gray-400">No specific banks or finance companies were named in these notes.</p>
+              <p className="text-sm text-dss-muted">No specific banks or finance companies were named in these notes.</p>
             ) : (
               <div className="space-y-3">
                 {insights.whoLosingTo.map((row, idx) => (
-                  <div key={`${row.competitor}-${idx}`} className="border border-gray-700 rounded-lg p-4 bg-gray-900/40">
+                  <div key={`${row.competitor}-${idx}`} className="border border-dss-border rounded-dss-sm p-4 bg-dss-canvas">
                     <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                      <p className="text-sm font-semibold text-blue-300">{row.competitor}</p>
-                      <span className="text-xs text-gray-500">
+                      <p className="text-sm font-semibold text-dss-accent">{row.competitor}</p>
+                      <span className="text-xs text-dss-muted">
                         mentioned ~{row.mentionCount}×
                       </span>
                     </div>
-                    <p className="text-sm text-gray-300 leading-relaxed">{row.howTheyBeatUs}</p>
+                    <p className="text-sm text-dss-ink/80 leading-relaxed">{row.howTheyBeatUs}</p>
                   </div>
                 ))}
               </div>
@@ -602,32 +602,32 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       {showSaveModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
           onClick={() => setShowSaveModal(false)}>
-          <div className="bg-gray-800 border border-gray-600 rounded-xl w-full max-w-md p-5 shadow-xl"
+          <div className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-md p-5 shadow-sm"
             onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-100 mb-1">Save insights</h3>
-            <p className="text-sm text-gray-400 mb-4">
+            <h3 className="text-lg font-semibold text-dss-ink mb-1">Save insights</h3>
+            <p className="text-sm text-dss-muted mb-4">
               Name this analysis so you can reopen it later. Visible to managers and admins.
             </p>
-            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Name</label>
+            <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Name</label>
             <input
               autoFocus
               value={saveName}
               onChange={e => setSaveName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleSaveInsights(); }}
-              className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 mb-5 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full px-3 py-2.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink mb-5 focus:outline-none focus:ring-2 focus:ring-dss-accent/30"
               placeholder="e.g. July No Deal — Midwest"
             />
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowSaveModal(false)}
-                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700"
+                className="px-4 py-2 rounded-dss-sm border border-dss-border text-dss-ink/80 text-sm hover:bg-dss-canvas"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveInsights}
                 disabled={saveLoading || !saveName.trim()}
-                className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium disabled:opacity-50"
+                className="px-4 py-2 rounded-dss-sm bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium disabled:opacity-50"
               >
                 {saveLoading ? 'Saving…' : 'Save'}
               </button>
@@ -637,12 +637,12 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       )}
 
       {loading ? (
-        <div className="py-10 text-center text-gray-400 text-sm">Loading...</div>
+        <div className="py-10 text-center text-dss-muted text-sm">Loading...</div>
       ) : filteredNotes.length === 0 ? (
         <div className="py-14 text-center">
-          <StickyNote className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-          <p className="text-base font-medium text-gray-400">No No Deal notes found</p>
-          <p className="text-sm text-gray-500 mt-1">
+          <StickyNote className="w-10 h-10 text-dss-muted mx-auto mb-3" />
+          <p className="text-base font-medium text-dss-muted">No No Deal notes found</p>
+          <p className="text-sm text-dss-muted mt-1">
             {dateFrom === today
               ? 'No No Deal notes recorded today yet.'
               : 'No No Deal notes for the selected date range.'}
@@ -652,24 +652,24 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
         <div className="space-y-3">
           {filteredNotes.length > NOTES_PER_PAGE && (
             <div className="flex items-center justify-between px-1 flex-wrap gap-2">
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-dss-muted">
                 Showing {rangeStart}–{rangeEnd} of {filteredNotes.length} notes
               </span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={safePage === 1}
-                  className="p-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  className="p-1.5 rounded-dss-sm hover:bg-dss-surface disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
-                  <ChevronLeft className="w-4 h-4 text-gray-400" />
+                  <ChevronLeft className="w-4 h-4 text-dss-muted" />
                 </button>
-                <span className="text-xs text-gray-400 px-2">Page {safePage} of {totalPages}</span>
+                <span className="text-xs text-dss-muted px-2">Page {safePage} of {totalPages}</span>
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={safePage >= totalPages}
-                  className="p-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  className="p-1.5 rounded-dss-sm hover:bg-dss-surface disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                  <ChevronRight className="w-4 h-4 text-dss-muted" />
                 </button>
               </div>
             </div>
@@ -679,29 +679,29 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             {paginatedNotes.map(note => (
               <div
                 key={`${note.source}-${note.id}`}
-                className="bg-gray-800 border border-gray-700 rounded-lg px-5 py-4 hover:border-gray-600 transition"
+                className="bg-dss-surface border border-dss-border rounded-dss-sm px-5 py-4 hover:border-dss-border transition"
               >
                 <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                   <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="text-sm font-semibold text-blue-400">{note.appId || '—'}</span>
-                    <span className="text-sm text-gray-200">{note.dealerName || '—'}</span>
+                    <span className="text-sm font-semibold text-dss-accent">{note.appId || '—'}</span>
+                    <span className="text-sm text-dss-ink">{note.dealerName || '—'}</span>
                     {note.customerName && (
-                      <span className="text-sm text-gray-400">{note.customerName}</span>
+                      <span className="text-sm text-dss-muted">{note.customerName}</span>
                     )}
                     <span className={`text-xs px-2 py-0.5 rounded-full border ${
                       note.source === 'calls'
-                        ? 'bg-blue-900 bg-opacity-40 text-blue-300 border-blue-800'
-                        : 'bg-green-900 bg-opacity-40 text-green-300 border-green-800'
+                        ? 'bg-dss-accent-soft bg-opacity-40 text-dss-accent border-blue-800'
+                        : 'bg-emerald-50 bg-opacity-40 text-dss-success border-emerald-200'
                     }`}>
                       {note.source === 'calls' ? 'Calls' : 'Daily Deals'}
                     </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full border bg-red-900 bg-opacity-40 text-red-300 border-red-800">
+                    <span className="text-xs px-2 py-0.5 rounded-full border bg-rose-50 bg-opacity-40 text-dss-danger border-rose-200">
                       No Deal
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-2 text-xs text-dss-muted">
                     {isAdminOrManager && (
-                      <span className="text-gray-400 font-medium">{note.createdByName}</span>
+                      <span className="text-dss-muted font-medium">{note.createdByName}</span>
                     )}
                     <span>
                       {new Date(note.createdAt).toLocaleTimeString('en-US', {
@@ -710,7 +710,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                     </span>
                   </div>
                 </div>
-                <p className="text-sm text-gray-200 leading-relaxed">{note.noteText}</p>
+                <p className="text-sm text-dss-ink leading-relaxed">{note.noteText}</p>
               </div>
             ))}
           </div>
@@ -720,17 +720,17 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={safePage === 1}
-                className="p-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="p-1.5 rounded-dss-sm hover:bg-dss-surface disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
-                <ChevronLeft className="w-4 h-4 text-gray-400" />
+                <ChevronLeft className="w-4 h-4 text-dss-muted" />
               </button>
-              <span className="text-xs text-gray-400 px-2">Page {safePage} of {totalPages}</span>
+              <span className="text-xs text-dss-muted px-2">Page {safePage} of {totalPages}</span>
               <button
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={safePage >= totalPages}
-                className="p-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="p-1.5 rounded-dss-sm hover:bg-dss-surface disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
-                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <ChevronRight className="w-4 h-4 text-dss-muted" />
               </button>
             </div>
           )}

@@ -531,22 +531,22 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold text-gray-100">Upload</h2>
-        <p className="text-gray-400 mt-1">Upload call data and funding reports</p>
+        <h2 className="text-2xl font-bold text-dss-ink">Upload</h2>
+        <p className="text-dss-muted mt-1">Upload call data and funding reports</p>
       </div>
 
       {/* ── CALLS UPLOAD ── */}
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <FileSpreadsheet className="w-6 h-6 text-blue-400" />
-          <h3 className="text-xl font-semibold text-gray-100">Upload Calls</h3>
+          <FileSpreadsheet className="w-6 h-6 text-dss-accent" />
+          <h3 className="text-xl font-semibold text-dss-ink">Upload Calls</h3>
         </div>
 
-        <div className="bg-gray-800 p-8 rounded-lg border border-gray-700">
+        <div className="bg-dss-surface p-8 rounded-dss-sm border border-dss-border">
           <div className="flex flex-col items-center justify-center">
-            <Upload className="w-14 h-14 text-gray-400 mb-4" />
-            <h4 className="text-lg font-semibold text-gray-100 mb-2">Upload Calls CSV</h4>
-            <p className="text-sm text-gray-400 mb-6 text-center max-w-md">
+            <Upload className="w-14 h-14 text-dss-muted mb-4" />
+            <h4 className="text-lg font-semibold text-dss-ink mb-2">Upload Calls CSV</h4>
+            <p className="text-sm text-dss-muted mb-6 text-center max-w-md">
               Upload your call data. Calls save to Supabase and auto-delete after 30 days.
               If rows match Daily Deals, you&apos;ll review links before import. Accepted is not auto-marked as Deal.
             </p>
@@ -558,42 +558,42 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
                 disabled={uploading || !xlsxLoaded}
                 className="hidden"
               />
-              <div className={`px-6 py-3 rounded-lg font-medium transition ${
+              <div className={`px-6 py-3 rounded-dss-sm font-medium transition ${
                 uploading || !xlsxLoaded
-                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                  ? 'bg-dss-canvas text-dss-muted cursor-not-allowed'
+                  : 'bg-dss-navy text-white hover:bg-dss-navy-soft'
               }`}>
                 {uploading ? 'Processing...' : !xlsxLoaded ? 'Loading...' : 'Select Calls CSV'}
               </div>
             </label>
-            <p className="text-xs text-gray-500 mt-4">Supported: CSV, XLSX, XLS</p>
+            <p className="text-xs text-dss-muted mt-4">Supported: CSV, XLSX, XLS</p>
           </div>
         </div>
 
         {/* Upload result */}
         {uploadResult && (
-          <div className={`p-5 rounded-lg border ${
-            uploadResult.success ? 'bg-green-900 border-green-700' : 'bg-red-900 border-red-700'
+          <div className={`p-5 rounded-dss-sm border ${
+            uploadResult.success ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'
           }`}>
             <div className="flex items-start gap-3">
               {uploadResult.success
-                ? <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
-                : <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />}
+                ? <CheckCircle className="w-5 h-5 text-dss-success flex-shrink-0 mt-0.5" />
+                : <AlertCircle className="w-5 h-5 text-dss-danger flex-shrink-0 mt-0.5" />}
               <div className="flex-1">
                 <p className={`font-semibold mb-1 ${uploadResult.success ? 'text-green-100' : 'text-red-100'}`}>
                   {uploadResult.success ? 'Upload Successful!' : 'Upload Failed'}
                 </p>
-                <p className={`text-sm ${uploadResult.success ? 'text-green-200' : 'text-red-200'}`}>
+                <p className={`text-sm ${uploadResult.success ? 'text-dss-success' : 'text-dss-danger'}`}>
                   {uploadResult.message}
                 </p>
                 {uploadResult.success && (
                   <div className="mt-2 space-y-0.5">
-                    <p className="text-sm text-green-200 flex items-center gap-2">
+                    <p className="text-sm text-dss-success flex items-center gap-2">
                       <FileSpreadsheet className="w-3.5 h-3.5" />
                       {uploadResult.callsCount} calls imported &amp; saved to Supabase
                     </p>
                     {(uploadResult.newDealersCount ?? 0) > 0 && (
-                      <p className="text-sm text-green-200 flex items-center gap-2">
+                      <p className="text-sm text-dss-success flex items-center gap-2">
                         <CheckCircle className="w-3.5 h-3.5" />
                         {uploadResult.newDealersCount} new dealers added
                       </p>
@@ -607,23 +607,23 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
 
         {/* Daily Deals match results (after confirmed review) */}
         {matchedDeals.length > 0 && (
-          <div className="bg-green-900 border border-green-700 rounded-lg p-4">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-dss-sm p-4">
             <div className="flex items-center gap-2 mb-3">
-              <CheckCircle className="w-4 h-4 text-green-300" />
-              <p className="text-sm font-semibold text-green-300">
+              <CheckCircle className="w-4 h-4 text-dss-success" />
+              <p className="text-sm font-semibold text-dss-success">
                 {matchedDeals.length} Daily Deals match{matchedDeals.length !== 1 ? 'es' : ''} applied
               </p>
             </div>
-            <p className="text-xs text-green-400 mb-3">
+            <p className="text-xs text-dss-success mb-3">
               Linked deals keep credit with the Daily Deals / Public Deals rep.
             </p>
             <div className="space-y-1.5">
               {matchedDeals.map((m, i) => (
                 <div key={i} className="flex items-center gap-3 text-xs flex-wrap">
-                  <span className="font-semibold text-green-300">{m.appId}</span>
+                  <span className="font-semibold text-dss-success">{m.appId}</span>
                   <span className="text-green-500">→</span>
-                  <span className="text-green-200">{m.repName}</span>
-                  <span className="px-1.5 py-0.5 rounded border border-green-700 text-green-300">
+                  <span className="text-dss-success">{m.repName}</span>
+                  <span className="px-1.5 py-0.5 rounded border border-emerald-200 text-dss-success">
                     {m.action === 'link' ? 'Linked' : m.action === 'duplicate' ? 'Duplicate' : 'Left as-is'}
                   </span>
                   <span className="text-green-600">{m.matchType === 'exact' ? 'App ID' : 'Dealer+Customer'}</span>
@@ -636,11 +636,11 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
         {/* Match review modal */}
         {pendingUpload && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-            <div className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-2xl flex flex-col">
-              <div className="flex items-start justify-between gap-4 border-b border-gray-700 px-5 py-4">
+            <div className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-dss border border-dss-border bg-dss-canvas shadow-sm flex flex-col">
+              <div className="flex items-start justify-between gap-4 border-b border-dss-border px-5 py-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-100">Review Daily Deals matches</h3>
-                  <p className="mt-1 text-sm text-gray-400">
+                  <h3 className="text-lg font-semibold text-dss-ink">Review Daily Deals matches</h3>
+                  <p className="mt-1 text-sm text-dss-muted">
                     {pendingUpload.matches.length} spreadsheet row{pendingUpload.matches.length !== 1 ? 's' : ''} match
                     existing Deal / Confirmed entries. Credit always stays with the Daily Deals / Public Deals rep.
                   </p>
@@ -648,7 +648,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
                 <button
                   type="button"
                   onClick={cancelPendingUpload}
-                  className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+                  className="rounded-dss-sm p-1.5 text-dss-muted hover:bg-dss-surface hover:text-dss-ink"
                   aria-label="Cancel upload"
                 >
                   <X className="h-5 w-5" />
@@ -657,37 +657,37 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
 
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
                 {pendingUpload.matches.map((m, idx) => (
-                  <div key={m.id} className="rounded-lg border border-gray-700 bg-gray-800/80 p-4">
+                  <div key={m.id} className="rounded-dss-sm border border-dss-border bg-dss-surface/80 p-4">
                     <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-dss-muted">
                         Match {idx + 1} of {pendingUpload.matches.length}
                       </span>
                       <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                         m.matchType === 'exact'
-                          ? 'border-emerald-700 bg-emerald-900/40 text-emerald-300'
-                          : 'border-amber-700 bg-amber-900/40 text-amber-300'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : 'border-amber-200 bg-amber-50 text-amber-800'
                       }`}>
                         {m.matchType === 'exact' ? 'Exact (App ID)' : 'Possible (Dealer + Customer)'}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mb-4">
-                      <div className="rounded-lg border border-gray-700 bg-gray-900/50 p-3 space-y-1">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-400 mb-2">From spreadsheet</p>
-                        <p className="text-gray-200"><span className="text-gray-500">App ID</span> {m.applicationId}</p>
-                        <p className="text-gray-200"><span className="text-gray-500">Dealer</span> {m.callDealerName || '—'}</p>
-                        <p className="text-gray-200"><span className="text-gray-500">Customer</span> {m.callCustomerName || '—'}</p>
-                        <p className="text-gray-200"><span className="text-gray-500">Amount</span> {m.callAmount || '—'}</p>
-                        <p className="text-gray-200"><span className="text-gray-500">Status Last</span> {m.callStatusLast || '—'}</p>
+                      <div className="rounded-dss-sm border border-dss-border bg-dss-canvas/50 p-3 space-y-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-dss-accent mb-2">From spreadsheet</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">App ID</span> {m.applicationId}</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">Dealer</span> {m.callDealerName || '—'}</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">Customer</span> {m.callCustomerName || '—'}</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">Amount</span> {m.callAmount || '—'}</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">Status Last</span> {m.callStatusLast || '—'}</p>
                       </div>
-                      <div className="rounded-lg border border-gray-700 bg-gray-900/50 p-3 space-y-1">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-green-400 mb-2">Existing manual deal</p>
-                        <p className="text-gray-200"><span className="text-gray-500">App ID</span> {m.manual.appId || '—'}</p>
-                        <p className="text-gray-200"><span className="text-gray-500">Dealer</span> {m.manual.dealerName || '—'}</p>
-                        <p className="text-gray-200"><span className="text-gray-500">Customer</span> {m.manual.customerName || '—'}</p>
-                        <p className="text-gray-200"><span className="text-gray-500">Amount</span> {m.manual.amount || '—'}</p>
-                        <p className="text-gray-200"><span className="text-gray-500">FU Status</span> {m.manual.fuStatus}</p>
-                        <p className="text-emerald-300 font-medium">
+                      <div className="rounded-dss-sm border border-dss-border bg-dss-canvas/50 p-3 space-y-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-dss-success mb-2">Existing manual deal</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">App ID</span> {m.manual.appId || '—'}</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">Dealer</span> {m.manual.dealerName || '—'}</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">Customer</span> {m.manual.customerName || '—'}</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">Amount</span> {m.manual.amount || '—'}</p>
+                        <p className="text-dss-ink"><span className="text-dss-muted">FU Status</span> {m.manual.fuStatus}</p>
+                        <p className="text-emerald-800 font-medium">
                           Credited to {m.manual.addedByName}
                           {m.manual.dealDate ? ` · ${m.manual.dealDate}` : ''}
                         </p>
@@ -704,30 +704,30 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
                           key={opt.key}
                           type="button"
                           onClick={() => setMatchAction(m.id, opt.key)}
-                          className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
+                          className={`rounded-dss-sm border px-3 py-2 text-left text-xs transition ${
                             m.action === opt.key
-                              ? 'border-blue-500 bg-blue-900/40 text-blue-100'
-                              : 'border-gray-600 bg-gray-900/40 text-gray-300 hover:border-gray-500'
+                              ? 'border-dss-accent bg-dss-accent-soft/40 text-blue-100'
+                              : 'border-dss-border bg-dss-canvas text-dss-ink/80 hover:border-dss-border'
                           }`}
                         >
                           <span className="font-semibold block">{opt.label}</span>
-                          <span className="text-gray-500">{opt.hint}</span>
+                          <span className="text-dss-muted">{opt.hint}</span>
                         </button>
                       ))}
                     </div>
                   </div>
                 ))}
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-dss-muted">
                   Non-matched rows ({pendingUpload.calls.length - pendingUpload.matches.length}) will import as usual — no review needed.
                 </p>
               </div>
 
-              <div className="flex items-center justify-end gap-3 border-t border-gray-700 px-5 py-4">
+              <div className="flex items-center justify-end gap-3 border-t border-dss-border px-5 py-4">
                 <button
                   type="button"
                   onClick={cancelPendingUpload}
                   disabled={uploading}
-                  className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800"
+                  className="rounded-dss-sm border border-dss-border px-4 py-2 text-sm text-dss-ink/80 hover:bg-dss-surface"
                 >
                   Cancel upload
                 </button>
@@ -735,7 +735,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
                   type="button"
                   onClick={confirmPendingUpload}
                   disabled={uploading}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                  className="rounded-dss-sm bg-dss-navy px-4 py-2 text-sm font-medium text-white hover:bg-dss-navy-soft disabled:opacity-60"
                 >
                   {uploading ? 'Importing...' : `Confirm import (${pendingUpload.matches.length} reviewed)`}
                 </button>
@@ -746,14 +746,14 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
 
         {/* Duplicate notification */}
         {duplicateApps.length > 0 && (
-          <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-4">
+          <div className="bg-yellow-900 border border-yellow-700 rounded-dss-sm p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-lg">🔁</span>
-              <p className="text-sm font-semibold text-yellow-300">
+              <p className="text-sm font-semibold text-amber-800">
                 {duplicateApps.length} duplicate app{duplicateApps.length !== 1 ? 's' : ''} detected
               </p>
             </div>
-            <p className="text-xs text-yellow-400 mb-2">
+            <p className="text-xs text-amber-700 mb-2">
               These apps already exist in the system. They've been flagged but their existing status was not changed.
             </p>
             <div className="flex flex-wrap gap-2">
@@ -766,35 +766,35 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
           </div>
         )}
 
-        <div className="bg-blue-900 bg-opacity-20 border border-blue-700 p-4 rounded-lg">
-          <h4 className="text-blue-300 font-semibold mb-1 flex items-center gap-2">
+        <div className="bg-dss-accent-soft bg-opacity-20 border border-dss-accent/30 p-4 rounded-dss-sm">
+          <h4 className="text-dss-accent font-semibold mb-1 flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4" /> Expected Columns
           </h4>
-          <p className="text-sm text-blue-200">
+          <p className="text-sm text-dss-accent">
           Application Id, Dealer Name, Dealer State, Dealer Cifnumber, customerFullName, Status Last, Timestamp Submit, App Last AF
           </p>
         </div>
       </div>
 
       {/* Divider */}
-      <div className="border-t border-gray-700" />
+      <div className="border-t border-dss-border" />
 
       {/* ── FUNDING UPLOAD ── */}
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <DollarSign className="w-6 h-6 text-green-400" />
-          <h3 className="text-xl font-semibold text-gray-100">Upload Funding Report</h3>
+          <DollarSign className="w-6 h-6 text-dss-success" />
+          <h3 className="text-xl font-semibold text-dss-ink">Upload Funding Report</h3>
         </div>
-        <p className="text-gray-400 text-sm">
+        <p className="text-dss-muted text-sm">
           Upload your monthly funding CSV. Saves to Supabase and persists across sessions.
           Each new upload replaces the previous funding data.
         </p>
 
-        <div className="bg-gray-800 p-8 rounded-lg border border-gray-700">
+        <div className="bg-dss-surface p-8 rounded-dss-sm border border-dss-border">
           <div className="flex flex-col items-center justify-center">
-            <DollarSign className="w-14 h-14 text-green-400 mb-4" />
-            <h4 className="text-lg font-semibold text-gray-100 mb-2">Upload Funding CSV</h4>
-            <p className="text-sm text-gray-400 mb-6 text-center max-w-md">
+            <DollarSign className="w-14 h-14 text-dss-success mb-4" />
+            <h4 className="text-lg font-semibold text-dss-ink mb-2">Upload Funding CSV</h4>
+            <p className="text-sm text-dss-muted mb-6 text-center max-w-md">
               Upload your funding report to update State Performance in the Reporting tab.
             </p>
             <label className="cursor-pointer">
@@ -805,40 +805,40 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
                 disabled={uploadingFunding || !xlsxLoaded}
                 className="hidden"
               />
-              <div className={`px-6 py-3 rounded-lg font-medium transition ${
+              <div className={`px-6 py-3 rounded-dss-sm font-medium transition ${
                 uploadingFunding || !xlsxLoaded
-                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  : 'bg-green-600 text-white hover:bg-green-700'
+                  ? 'bg-dss-canvas text-dss-muted cursor-not-allowed'
+                  : 'bg-dss-success text-white hover:bg-green-700'
               }`}>
                 {uploadingFunding ? 'Processing...' : !xlsxLoaded ? 'Loading...' : 'Select Funding CSV'}
               </div>
             </label>
-            <p className="text-xs text-gray-500 mt-4">Supported: CSV, XLSX, XLS</p>
+            <p className="text-xs text-dss-muted mt-4">Supported: CSV, XLSX, XLS</p>
           </div>
         </div>
 
         {fundingUploadResult && (
-          <div className={`p-5 rounded-lg border ${
-            fundingUploadResult.success ? 'bg-green-900 border-green-700' : 'bg-red-900 border-red-700'
+          <div className={`p-5 rounded-dss-sm border ${
+            fundingUploadResult.success ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'
           }`}>
             <div className="flex items-start gap-3">
               {fundingUploadResult.success
-                ? <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
-                : <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />}
+                ? <CheckCircle className="w-5 h-5 text-dss-success flex-shrink-0 mt-0.5" />
+                : <AlertCircle className="w-5 h-5 text-dss-danger flex-shrink-0 mt-0.5" />}
               <div className="flex-1">
                 <p className={`font-semibold mb-1 ${fundingUploadResult.success ? 'text-green-100' : 'text-red-100'}`}>
                   {fundingUploadResult.success ? 'Funding Upload Successful!' : 'Upload Failed'}
                 </p>
-                <p className={`text-sm ${fundingUploadResult.success ? 'text-green-200' : 'text-red-200'}`}>
+                <p className={`text-sm ${fundingUploadResult.success ? 'text-dss-success' : 'text-dss-danger'}`}>
                   {fundingUploadResult.message}
                 </p>
                 {fundingUploadResult.success && fundingUploadResult.byState && (
                   <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
                     {fundingUploadResult.byState.map(item => (
-                      <div key={item.state} className="bg-green-950 rounded-lg p-3 border border-green-800">
-                        <p className="text-green-300 font-bold text-lg">{item.state}</p>
+                      <div key={item.state} className="bg-green-950 rounded-dss-sm p-3 border border-emerald-200">
+                        <p className="text-dss-success font-bold text-lg">{item.state}</p>
                         <p className="text-green-100 font-semibold">{item.count} funded</p>
-                        <p className="text-green-400 text-sm">{formatCurrency(item.totalAmount)}</p>
+                        <p className="text-dss-success text-sm">{formatCurrency(item.totalAmount)}</p>
                       </div>
                     ))}
                   </div>
@@ -849,25 +849,25 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
         )}
 
         {Object.keys(fundingData).length > 0 && !fundingUploadResult && (
-          <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
-            <p className="text-sm font-semibold text-gray-300 mb-3">Currently Loaded Funding Data:</p>
+          <div className="bg-dss-surface p-4 rounded-dss-sm border border-dss-border">
+            <p className="text-sm font-semibold text-dss-ink/80 mb-3">Currently Loaded Funding Data:</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {Object.entries(fundingData).map(([state, data]) => (
-                <div key={state} className="bg-gray-700 rounded-lg p-3">
-                  <p className="text-gray-200 font-bold">{state}</p>
-                  <p className="text-green-400 font-semibold">{data.count} funded</p>
-                  <p className="text-gray-400 text-xs">{formatCurrency(data.totalAmount)}</p>
+                <div key={state} className="bg-dss-canvas rounded-dss-sm p-3">
+                  <p className="text-dss-ink font-bold">{state}</p>
+                  <p className="text-dss-success font-semibold">{data.count} funded</p>
+                  <p className="text-dss-muted text-xs">{formatCurrency(data.totalAmount)}</p>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        <div className="bg-green-900 bg-opacity-20 border border-green-700 p-4 rounded-lg">
-          <h4 className="text-green-300 font-semibold mb-1 flex items-center gap-2">
+        <div className="bg-emerald-50 bg-opacity-20 border border-emerald-200 p-4 rounded-dss-sm">
+          <h4 className="text-dss-success font-semibold mb-1 flex items-center gap-2">
             <DollarSign className="w-4 h-4" /> Expected Columns
           </h4>
-          <p className="text-sm text-green-200">
+          <p className="text-sm text-dss-success">
             Input Date, Account, Dealer, Deal Type, Fund Type,{' '}
             <strong>Dealer State</strong>, APR, Discount Percent, <strong>Loan Amount</strong>
           </p>
@@ -876,20 +876,20 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
 
       {/* Dealer list */}
       {dealers.length > 0 && (
-        <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-100 mb-4">
+        <div className="bg-dss-surface p-6 rounded-dss-sm border border-dss-border">
+          <h3 className="text-lg font-semibold text-dss-ink mb-4">
             Master Dealer List ({dealers.length} dealers)
           </h3>
-          <div className="bg-gray-750 p-4 rounded border border-gray-600 max-h-60 overflow-y-auto">
+          <div className="bg-dss-canvas p-4 rounded border border-dss-border max-h-60 overflow-y-auto">
             <div className="space-y-2">
               {dealers.map(dealer => (
                 <div key={dealer.cifNumber}
-                  className="flex items-center justify-between text-sm py-2 border-b border-gray-700 last:border-0">
+                  className="flex items-center justify-between text-sm py-2 border-b border-dss-border last:border-0">
                   <div>
-                    <span className="font-mono text-blue-400 font-medium">{dealer.cifNumber}</span>
-                    <span className="text-gray-300 ml-3">{dealer.name}</span>
+                    <span className="font-mono text-dss-accent font-medium">{dealer.cifNumber}</span>
+                    <span className="text-dss-ink/80 ml-3">{dealer.name}</span>
                   </div>
-                  <span className="text-gray-400">{dealer.state}</span>
+                  <span className="text-dss-muted">{dealer.state}</span>
                 </div>
               ))}
             </div>

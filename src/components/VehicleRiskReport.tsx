@@ -16,9 +16,9 @@ function getRiskTier(score: number): RiskTier {
 }
 
 function tierTextClass(tier: RiskTier): string {
-  if (tier === 'green') return 'text-green-400';
+  if (tier === 'green') return 'text-dss-success';
   if (tier === 'yellow') return 'text-amber-400';
-  return 'text-red-400';
+  return 'text-dss-danger';
 }
 
 function tierBgClass(tier: RiskTier): string {
@@ -28,15 +28,15 @@ function tierBgClass(tier: RiskTier): string {
 }
 
 function tierRingClass(tier: RiskTier): string {
-  if (tier === 'green') return 'border-green-500 bg-green-900/25';
+  if (tier === 'green') return 'border-green-500 bg-emerald-50/25';
   if (tier === 'yellow') return 'border-amber-500 bg-amber-900/25';
-  return 'border-red-500 bg-red-900/25';
+  return 'border-red-500 bg-rose-50/25';
 }
 
 function tierBadgeClass(tier: RiskTier): string {
-  if (tier === 'green') return 'bg-green-900/50 text-green-300 border-green-700';
-  if (tier === 'yellow') return 'bg-amber-900/50 text-amber-300 border-amber-700';
-  return 'bg-red-900/50 text-red-300 border-red-700';
+  if (tier === 'green') return 'bg-emerald-50/50 text-dss-success border-emerald-200';
+  if (tier === 'yellow') return 'bg-amber-900/50 text-amber-800 border-amber-700';
+  return 'bg-rose-50/50 text-dss-danger border-rose-200';
 }
 
 function formatMiles(value: number): string {
@@ -48,7 +48,7 @@ function ScoreMeter({ score }: { score: number }) {
 
   return (
     <div className="w-full">
-      <div className="flex justify-between text-xs text-gray-500 mb-2">
+      <div className="flex justify-between text-xs text-dss-muted mb-2">
         <span>1 — Too risky</span>
         <span>5 — Best</span>
       </div>
@@ -57,7 +57,7 @@ function ScoreMeter({ score }: { score: number }) {
           <div
             key={segment}
             className={`h-2.5 flex-1 rounded-sm transition-colors ${
-              segment <= score ? tierBgClass(tier) : 'bg-gray-700'
+              segment <= score ? tierBgClass(tier) : 'bg-dss-canvas'
             }`}
           />
         ))}
@@ -81,7 +81,7 @@ export default function VehicleRiskReport({ report, vin, mileage }: VehicleRiskR
   return (
     <div className="space-y-5">
       {/* 1. SCORE */}
-      <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+      <div className="bg-dss-surface border border-dss-border rounded-dss p-6">
         <div className="flex flex-col sm:flex-row items-center gap-6">
           <div
             className={`w-28 h-28 shrink-0 rounded-full border-4 flex flex-col items-center justify-center ${tierRingClass(tier)}`}
@@ -89,7 +89,7 @@ export default function VehicleRiskReport({ report, vin, mileage }: VehicleRiskR
             <span className={`text-4xl font-bold leading-none ${tierTextClass(tier)}`}>
               {riskScore}
             </span>
-            <span className="text-xs text-gray-400 mt-1">out of 5</span>
+            <span className="text-xs text-dss-muted mt-1">out of 5</span>
           </div>
 
           <div className="flex-1 w-full min-w-0 space-y-3 text-center sm:text-left">
@@ -99,13 +99,13 @@ export default function VehicleRiskReport({ report, vin, mileage }: VehicleRiskR
               </span>
             </div>
             <ScoreMeter score={riskScore} />
-            <p className="text-sm text-gray-300">
-              <span className="font-medium text-gray-100">{identity}</span>
+            <p className="text-sm text-dss-ink/80">
+              <span className="font-medium text-dss-ink">{identity}</span>
               {vehicleInfo.engine && vehicleInfo.engine !== 'N/A' && (
-                <span className="text-gray-500"> · {vehicleInfo.engine}</span>
+                <span className="text-dss-muted"> · {vehicleInfo.engine}</span>
               )}
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-dss-muted">
               {formatMiles(mileage)} miles
               {vin ? ` · VIN ${vin}` : ''}
             </p>
@@ -114,45 +114,45 @@ export default function VehicleRiskReport({ report, vin, mileage }: VehicleRiskR
       </div>
 
       {/* 2. WHY / HOW TO BUY */}
-      <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+      <div className="bg-dss-surface border border-dss-border rounded-dss p-6">
         <div className="flex items-start gap-3 mb-3">
           <SummaryIcon className={`w-5 h-5 mt-0.5 shrink-0 ${tierTextClass(tier)}`} />
-          <h3 className="text-sm font-semibold text-gray-100">
+          <h3 className="text-sm font-semibold text-dss-ink">
             Why this score — and how to buy
           </h3>
         </div>
-        <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
+        <p className="text-sm text-dss-ink/80 leading-relaxed whitespace-pre-line">
           {scoreSummary}
         </p>
       </div>
 
       {/* 3. STRENGTHS VS RISK FACTORS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-          <h3 className="text-sm font-semibold text-gray-100 mb-4 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-green-400" />
+        <div className="bg-dss-surface border border-dss-border rounded-dss p-6">
+          <h3 className="text-sm font-semibold text-dss-ink mb-4 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-dss-success" />
             Strengths
           </h3>
           <ul className="space-y-3">
             {strengths.map((item, idx) => (
               <li key={idx} className="flex items-start gap-2.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 mt-2 shrink-0" />
-                <span className="text-sm text-gray-300 leading-relaxed">{item}</span>
+                <span className="text-sm text-dss-ink/80 leading-relaxed">{item}</span>
               </li>
             ))}
           </ul>
         </div>
 
-        <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-          <h3 className="text-sm font-semibold text-gray-100 mb-4 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-400" />
+        <div className="bg-dss-surface border border-dss-border rounded-dss p-6">
+          <h3 className="text-sm font-semibold text-dss-ink mb-4 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-dss-danger" />
             Risk factors
           </h3>
           <ul className="space-y-3">
             {weaknesses.map((item, idx) => (
               <li key={idx} className="flex items-start gap-2.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-2 shrink-0" />
-                <span className="text-sm text-gray-300 leading-relaxed">{item}</span>
+                <span className="text-sm text-dss-ink/80 leading-relaxed">{item}</span>
               </li>
             ))}
           </ul>

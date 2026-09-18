@@ -453,10 +453,10 @@ function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-dss-canvas">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="text-gray-400 mt-4">Loading...</p>
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-dss-border border-t-dss-navy" />
+          <p className="mt-4 text-sm text-dss-muted">Loading…</p>
         </div>
       </div>
     );
@@ -471,152 +471,181 @@ function App() {
   }
 
   const tabs = getVisibleTabs(currentUser.role, currentUser.allowedTabs);
+  const activeTabMeta = tabs.find((t) => t.id === activeTab);
+  const navGroups: Array<{ label: string; ids: string[] }> = [
+    { label: 'Operations', ids: ['calls', 'upload', 'assign'] },
+    { label: 'Analysis', ids: ['analytics', 'daily-deals', 'notes', 'reporting'] },
+    { label: 'Tools', ids: ['vehicle-risk', 'income-verification'] },
+    { label: 'Admin', ids: ['users'] },
+  ];
 
   // ── RENDER ────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-900">
-      <header className="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <h1 className="text-2xl font-bold text-blue-400">DSS Portal</h1>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-400">{currentUser.name} ({currentUser.role})</span>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition"
-              >
-                <LogOut className="w-4 h-4" /> Logout
-              </button>
-            </div>
+    <div className="flex min-h-screen bg-dss-canvas">
+      <aside className="iv-no-print flex w-56 shrink-0 flex-col border-r border-white/10 bg-dss-navy text-white">
+        <div className="flex h-14 items-center gap-2.5 px-4">
+          <div className="flex h-7 w-7 items-center justify-center rounded bg-white/10 text-[11px] font-bold tracking-wide">
+            DSS
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold tracking-tight">DSS Portal</p>
+            <p className="truncate text-[10px] uppercase tracking-[0.14em] text-white/45">
+              Operations
+            </p>
           </div>
         </div>
-      </header>
+        <nav className="flex-1 overflow-y-auto px-2 py-3">
+          {navGroups.map((group) => {
+            const items = tabs.filter((t) => group.ids.includes(t.id));
+            if (!items.length) return null;
+            return (
+              <div key={group.label} className="mb-4">
+                <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">
+                  {group.label}
+                </p>
+                <div className="space-y-0.5">
+                  {items.map((tab) => {
+                    const Icon = tab.icon;
+                    const active = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`flex w-full items-center gap-2.5 rounded-dss-sm px-2.5 py-2 text-left text-[13px] font-medium transition ${
+                          active
+                            ? 'bg-white/12 text-white'
+                            : 'text-white/65 hover:bg-white/[0.06] hover:text-white'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4 shrink-0 opacity-80" />
+                        <span className="truncate">{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+      </aside>
 
-      <nav className="bg-gray-800 border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-1 overflow-x-auto">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap ${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-400'
-                      : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-600'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {tab.label}
-                </button>
-              );
-            })}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="iv-no-print sticky top-0 z-40 flex h-14 items-center justify-between border-b border-dss-border bg-dss-surface px-5">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-dss-ink">
+              {activeTabMeta?.label || 'DSS Portal'}
+            </p>
+            <p className="truncate text-xs text-dss-muted">
+              {currentUser.name} · {currentUser.role.replace('_', ' ')}
+            </p>
           </div>
-        </div>
-      </nav>
+          <button type="button" onClick={handleLogout} className="dss-btn-secondary">
+            <LogOut className="h-4 w-4" />
+            Logout
+          </button>
+        </header>
 
-      {activeTab === 'income-verification' ? (
-        <IncomeVerificationTab currentUser={currentUser} />
-      ) : (
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === 'income-verification' ? (
+          <IncomeVerificationTab currentUser={currentUser} />
+        ) : (
+          <main className="mx-auto w-full max-w-[1600px] flex-1 px-5 py-5">
+            {activeTab === 'calls' && (
+              <CallsTab
+                currentUserId={currentUser.id}
+                currentUserRole={currentUser.role}
+                calls={calls}
+                setCalls={setCalls}
+                notes={notes}
+                setNotes={setNotes}
+                dailyGoal={goals.daily[currentUser.id] || 0}
+                teamGoal={goals.team}
+                currentUser={currentUser}
+                onUpdateCurrentUser={(patch) => setCurrentUser(prev => prev ? { ...prev, ...patch } : prev)}
+                todayDailyDeals={todayDailyDeals}
+                users={users}
+              />
+            )}
 
-        {activeTab === 'calls' && (
-          <CallsTab
-            currentUserId={currentUser.id}
-            currentUserRole={currentUser.role}
-            calls={calls}
-            setCalls={setCalls}
-            notes={notes}
-            setNotes={setNotes}
-            dailyGoal={goals.daily[currentUser.id] || 0}
-            teamGoal={goals.team}
-            currentUser={currentUser}
-            onUpdateCurrentUser={(patch) => setCurrentUser(prev => prev ? { ...prev, ...patch } : prev)}
-            todayDailyDeals={todayDailyDeals}
-            users={users}
-          />
+            {activeTab === 'upload' && (
+              <UploadTab
+                calls={calls}
+                setCalls={setCalls}
+                dealers={dealers}
+                setDealers={setDealers}
+                fundingData={fundingData}
+                setFundingData={setFundingData}
+                onUploadSuccess={fetchCalls}
+              />
+            )}
+
+            {activeTab === 'assign' && (
+              <AssignTab
+                currentUserRole={currentUser.role}
+                calls={calls}
+                setCalls={setCalls}
+                users={users}
+                setUsers={setUsers}
+                goals={goals}
+                setGoals={setGoals}
+              />
+            )}
+
+            {activeTab === 'reporting' && (
+              <ReportingTab
+                currentUserId={currentUser.id}
+                currentUserRole={currentUser.role}
+                calls={calls}
+                setCalls={setCalls}
+                goals={goals}
+                setGoals={setGoals}
+                fundingData={fundingData}
+                todayDailyDeals={todayDailyDeals}
+                onRefreshDailyDeals={() => { fetchTodayDailyDeals(); fetchCalls(); }}
+                users={users}
+              />
+            )}
+
+            {activeTab === 'users' && (
+              <UserManagementTab
+                currentUserId={currentUser.id}
+                currentUserRole={currentUser.role}
+              />
+            )}
+
+            {activeTab === 'analytics' && (
+              <AnalyticsTab
+                currentUser={currentUser}
+                calls={calls}
+                fundingData={fundingData}
+                todayDailyDeals={todayDailyDeals}
+              />
+            )}
+
+            {activeTab === 'daily-deals' && (
+              <DailyDealsTab
+                currentUser={currentUser}
+                goals={goals}
+                onRefresh={() => { fetchTodayDailyDeals(); fetchCalls(); }}
+                calls={calls}
+                todayDailyDeals={todayDailyDeals}
+                users={users}
+              />
+            )}
+
+            {activeTab === 'notes' && (
+              <NotesTab
+                currentUser={currentUser}
+                users={users}
+              />
+            )}
+
+            {activeTab === 'vehicle-risk' && (
+              <VehicleRiskAnalyzer currentUser={currentUser} />
+            )}
+          </main>
         )}
-
-{activeTab === 'upload' && (
-          <UploadTab
-            calls={calls}
-            setCalls={setCalls}
-            dealers={dealers}
-            setDealers={setDealers}
-            fundingData={fundingData}
-            setFundingData={setFundingData}
-            onUploadSuccess={fetchCalls}
-          />
-        )}
-
-        {activeTab === 'assign' && (
-          <AssignTab
-            currentUserRole={currentUser.role}
-            calls={calls}
-            setCalls={setCalls}
-            users={users}
-            setUsers={setUsers}
-            goals={goals}
-            setGoals={setGoals}
-          />
-        )}
-
-        {activeTab === 'reporting' && (
-          <ReportingTab
-            currentUserId={currentUser.id}
-            currentUserRole={currentUser.role}
-            calls={calls}
-            setCalls={setCalls}
-            goals={goals}
-            setGoals={setGoals}
-            fundingData={fundingData}
-            todayDailyDeals={todayDailyDeals}
-            onRefreshDailyDeals={() => { fetchTodayDailyDeals(); fetchCalls(); }}
-            users={users}
-          />
-        )}
-
-        {activeTab === 'users' && (
-          <UserManagementTab
-            currentUserId={currentUser.id}
-            currentUserRole={currentUser.role}
-          />
-        )}
-
-        {activeTab === 'analytics' && (
-          <AnalyticsTab
-            currentUser={currentUser}
-            calls={calls}
-            fundingData={fundingData}
-            todayDailyDeals={todayDailyDeals}
-          />
-        )}
-
-{activeTab === 'daily-deals' && (
-          <DailyDealsTab
-            currentUser={currentUser}
-            goals={goals}
-            onRefresh={() => { fetchTodayDailyDeals(); fetchCalls(); }}
-            calls={calls}
-            todayDailyDeals={todayDailyDeals}
-            users={users}
-          />
-        )}
-
-        {activeTab === 'notes' && (
-          <NotesTab
-            currentUser={currentUser}
-            users={users}
-          />
-        )}
-
-        {activeTab === 'vehicle-risk' && (
-          <VehicleRiskAnalyzer currentUser={currentUser} />
-        )}
-
-      </main>
-      )}
+      </div>
     </div>
   );
 }

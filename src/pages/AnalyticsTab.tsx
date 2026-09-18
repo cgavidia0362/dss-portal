@@ -177,7 +177,7 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
   const getProgressColor = (p: number) =>
     p >= 90 ? 'bg-green-500' : p >= 70 ? 'bg-blue-500' : p >= 50 ? 'bg-yellow-500' : 'bg-red-500';
   const getProgressTextColor = (p: number) =>
-    p >= 90 ? 'text-green-400' : p >= 70 ? 'text-blue-400' : p >= 50 ? 'text-yellow-400' : 'text-red-400';
+    p >= 90 ? 'text-dss-success' : p >= 70 ? 'text-dss-accent' : p >= 50 ? 'text-amber-700' : 'text-dss-danger';
 
   const periodLabel = dealPeriod.charAt(0).toUpperCase() + dealPeriod.slice(1);
 
@@ -187,18 +187,18 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
       {/* HEADER + TOGGLE */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-100">My Analytics</h2>
-          <p className="text-sm text-gray-400 mt-0.5">Your personal performance — {currentUser.name}</p>
+          <h2 className="text-2xl font-bold text-dss-ink">My Analytics</h2>
+          <p className="text-sm text-dss-muted mt-0.5">Your personal performance — {currentUser.name}</p>
         </div>
-        <div className="flex overflow-hidden rounded-lg border border-gray-700">
+        <div className="flex overflow-hidden rounded-dss-sm border border-dss-border">
           {(['daily', 'weekly', 'monthly'] as TimePeriod[]).map(p => (
             <button
               key={p}
               onClick={() => setDealPeriod(p)}
               className={`px-5 py-2 text-sm font-medium transition ${
                 dealPeriod === p
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                  ? 'bg-dss-navy text-white'
+                  : 'bg-dss-surface text-dss-muted hover:text-dss-ink hover:bg-dss-canvas'
               }`}
             >
               {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -211,41 +211,41 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
       <div className="grid grid-cols-5 gap-3">
 
         {/* My Deals */}
-        <div className="bg-gray-800 rounded-lg border border-green-800 p-4 flex flex-col gap-1.5">
-          <p className="text-xs text-green-400 uppercase tracking-wider">My Deals</p>
-          <p className="text-4xl font-bold text-green-400 leading-none">{myDeals}</p>
-          <p className="text-xs text-gray-500">
+        <div className="bg-dss-surface rounded-dss-sm border border-emerald-200 p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-dss-success uppercase tracking-wider">My Deals</p>
+          <p className="text-4xl font-bold text-dss-success leading-none">{myDeals}</p>
+          <p className="text-xs text-dss-muted">
             {periodLabel.toLowerCase()}
             {hasDailyDealsBonus && <span className="ml-1.5 text-green-500">+daily entries</span>}
           </p>
         </div>
 
         {/* Confirmed */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
-          <p className="text-xs text-gray-400 uppercase tracking-wider">Confirmed</p>
-          <p className="text-4xl font-bold text-emerald-400 leading-none">{myConfirmedDeals}</p>
-          <p className="text-xs text-gray-500">confirmed deals</p>
+        <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-dss-muted uppercase tracking-wider">Confirmed</p>
+          <p className="text-4xl font-bold text-emerald-700 leading-none">{myConfirmedDeals}</p>
+          <p className="text-xs text-dss-muted">confirmed deals</p>
         </div>
 
         {/* Closing Rate */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
-          <p className="text-xs text-gray-400 uppercase tracking-wider">Closing Rate</p>
-          <p className="text-4xl font-bold text-blue-400 leading-none">{closingRate}%</p>
-          <p className="text-xs text-gray-500">{myTotalDeals} of {myCalls.length} calls</p>
+        <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-dss-muted uppercase tracking-wider">Closing Rate</p>
+          <p className="text-4xl font-bold text-dss-accent leading-none">{closingRate}%</p>
+          <p className="text-xs text-dss-muted">{myTotalDeals} of {myCalls.length} calls</p>
         </div>
 
         {/* Pending */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
-          <p className="text-xs text-gray-400 uppercase tracking-wider">Pending</p>
-          <p className="text-4xl font-bold text-yellow-400 leading-none">{myPending}</p>
-          <p className="text-xs text-gray-500">awaiting response</p>
+        <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-dss-muted uppercase tracking-wider">Pending</p>
+          <p className="text-4xl font-bold text-amber-700 leading-none">{myPending}</p>
+          <p className="text-xs text-dss-muted">awaiting response</p>
         </div>
 
         {/* No Answer */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-col gap-1.5">
-          <p className="text-xs text-gray-400 uppercase tracking-wider">No Answer</p>
+        <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-4 flex flex-col gap-1.5">
+          <p className="text-xs text-dss-muted uppercase tracking-wider">No Answer</p>
           <p className="text-4xl font-bold text-orange-400 leading-none">{myNoAnswer}</p>
-          <p className="text-xs text-gray-500">unanswered</p>
+          <p className="text-xs text-dss-muted">unanswered</p>
         </div>
 
       </div>
@@ -254,12 +254,12 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
       {repStates.length > 0 ? (
         <div className="space-y-4">
           {statePerformanceData.map(sd => (
-            <div key={sd.state} className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <div key={sd.state} className="bg-dss-surface rounded-dss-sm border border-dss-border overflow-hidden">
 
               {/* Card header */}
-              <div className="px-5 py-3 border-b border-gray-700 flex items-center gap-2.5">
+              <div className="px-5 py-3 border-b border-dss-border flex items-center gap-2.5">
                 <div className="w-2 h-2 rounded-full bg-purple-400" />
-                <p className="text-sm font-semibold text-gray-200">
+                <p className="text-sm font-semibold text-dss-ink">
                   State Performance — {sd.state}
                 </p>
               </div>
@@ -269,12 +269,12 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
                   <>
                     {/* Top: 4 metric boxes */}
                     <div className="grid grid-cols-4 gap-3 mb-5">
-                      <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
-                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Monthly Goal</p>
-                        <p className="text-xl font-bold text-gray-100 leading-none">{sd.monthlyGoal}</p>
+                      <div className="bg-dss-canvas rounded-dss-sm p-3 border border-dss-border">
+                        <p className="text-xs text-dss-muted uppercase tracking-wider mb-2">Monthly Goal</p>
+                        <p className="text-xl font-bold text-dss-ink leading-none">{sd.monthlyGoal}</p>
                       </div>
-                      <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
-                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">
+                      <div className="bg-dss-canvas rounded-dss-sm p-3 border border-dss-border">
+                        <p className="text-xs text-dss-muted uppercase tracking-wider mb-2">
                           {sd.state} Total Funded
                         </p>
                         <p className={`text-xl font-bold leading-none ${getProgressTextColor(sd.progress)}`}>
@@ -284,15 +284,15 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
                           <p className="text-xs text-green-500 mt-1">from funding report</p>
                         )}
                       </div>
-                      <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
-                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">
+                      <div className="bg-dss-canvas rounded-dss-sm p-3 border border-dss-border">
+                        <p className="text-xs text-dss-muted uppercase tracking-wider mb-2">
                           My Deals ({sd.state})
                         </p>
-                        <p className="text-xl font-bold text-blue-400 leading-none">{sd.myDealsForState}</p>
-                        <p className="text-xs text-gray-500 mt-1">this month</p>
+                        <p className="text-xl font-bold text-dss-accent leading-none">{sd.myDealsForState}</p>
+                        <p className="text-xs text-dss-muted mt-1">this month</p>
                       </div>
-                      <div className="bg-gray-750 rounded-lg p-3 border border-gray-700">
-                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Daily Goal</p>
+                      <div className="bg-dss-canvas rounded-dss-sm p-3 border border-dss-border">
+                        <p className="text-xs text-dss-muted uppercase tracking-wider mb-2">Daily Goal</p>
                         <p className="text-xl font-bold text-purple-400 leading-none">{sd.dailyGoal}</p>
                       </div>
                     </div>
@@ -300,12 +300,12 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
                     {/* Progress bar */}
                     <div className="mb-5">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-gray-400 uppercase tracking-wider">Monthly Progress</p>
+                        <p className="text-xs text-dss-muted uppercase tracking-wider">Monthly Progress</p>
                         <p className={`text-sm font-bold ${getProgressTextColor(sd.progress)}`}>
                           {sd.progress.toFixed(0)}%
                         </p>
                       </div>
-                      <div className="h-2.5 bg-gray-700 rounded-full overflow-hidden">
+                      <div className="h-2.5 bg-dss-canvas rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all ${getProgressColor(sd.progress)}`}
                           style={{ width: `${Math.min(sd.progress, 100)}%` }}
@@ -316,14 +316,14 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
                     {/* Bottom: 4 stat pills */}
                     <div className="grid grid-cols-4 gap-3">
                       {[
-                        { label: 'Days Elapsed', value: sd.daysElapsed, color: 'text-gray-200' },
-                        { label: 'Days Left', value: sd.daysRemaining, color: 'text-gray-200' },
-                        { label: 'Need / Day', value: sd.neededPerDay, color: 'text-yellow-400' },
-                        { label: 'To Goal', value: sd.remainingToGoal, color: 'text-red-400' },
+                        { label: 'Days Elapsed', value: sd.daysElapsed, color: 'text-dss-ink' },
+                        { label: 'Days Left', value: sd.daysRemaining, color: 'text-dss-ink' },
+                        { label: 'Need / Day', value: sd.neededPerDay, color: 'text-amber-700' },
+                        { label: 'To Goal', value: sd.remainingToGoal, color: 'text-dss-danger' },
                       ].map(stat => (
                         <div key={stat.label}
-                          className="flex items-center justify-between border border-gray-700 rounded-lg px-3 py-2.5">
-                          <p className="text-xs text-gray-400">{stat.label}</p>
+                          className="flex items-center justify-between border border-dss-border rounded-dss-sm px-3 py-2.5">
+                          <p className="text-xs text-dss-muted">{stat.label}</p>
                           <p className={`text-base font-bold ${stat.color}`}>{stat.value}</p>
                         </div>
                       ))}
@@ -331,10 +331,10 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
                   </>
                 ) : (
                   <div className="py-6 text-center">
-                    <p className="text-base font-medium text-gray-400">
+                    <p className="text-base font-medium text-dss-muted">
                       No goal set for {sd.state} this month.
                     </p>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-dss-muted mt-1">
                       Ask your admin to set a state goal in the Reporting tab.
                     </p>
                   </div>
@@ -344,9 +344,9 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
           ))}
         </div>
       ) : (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
-          <p className="text-base font-medium text-gray-400">No state assigned to your account.</p>
-          <p className="text-sm text-gray-500 mt-1">
+        <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-8 text-center">
+          <p className="text-base font-medium text-dss-muted">No state assigned to your account.</p>
+          <p className="text-sm text-dss-muted mt-1">
             Ask your admin to assign your state in the Users tab.
           </p>
         </div>

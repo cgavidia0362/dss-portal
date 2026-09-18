@@ -261,25 +261,25 @@ export default function VehicleRiskPublic() {
   const canAnalyze = !isBusy && !!trim.trim();
 
   return (
-    <div className="min-h-screen bg-gray-900">
-      <header className="bg-gray-800 border-b border-gray-700">
+    <div className="min-h-screen bg-dss-canvas">
+      <header className="bg-dss-surface border-b border-dss-border">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
-          <h1 className="text-2xl font-bold text-gray-100 flex items-center gap-2">
-            <Car className="w-6 h-6 text-blue-400" />
+          <h1 className="text-2xl font-bold text-dss-ink flex items-center gap-2">
+            <Car className="w-6 h-6 text-dss-accent" />
             Vehicle Risk Analyzer
           </h1>
-          <p className="text-sm text-gray-400 mt-1">Powered by Pronto Finance</p>
+          <p className="text-sm text-dss-muted mt-1">Powered by Pronto Finance</p>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-5">
         <form
           onSubmit={handleAnalyze}
-          className="bg-gray-800 border border-gray-700 rounded-lg p-5 space-y-4"
+          className="bg-dss-surface border border-dss-border rounded-dss-sm p-5 space-y-4"
         >
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="public-vin" className="block text-sm font-medium text-gray-300 mb-1.5">
+              <label htmlFor="public-vin" className="block text-sm font-medium text-dss-ink/80 mb-1.5">
                 VIN
               </label>
               <input
@@ -290,13 +290,13 @@ export default function VehicleRiskPublic() {
                 placeholder="17-character VIN"
                 maxLength={17}
                 disabled={isBusy}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30 disabled:opacity-50"
               />
-              <p className="text-xs text-gray-500 mt-1">{vin.length}/17 characters</p>
+              <p className="text-xs text-dss-muted mt-1">{vin.length}/17 characters</p>
             </div>
 
             <div>
-              <label htmlFor="public-mileage" className="block text-sm font-medium text-gray-300 mb-1.5">
+              <label htmlFor="public-mileage" className="block text-sm font-medium text-dss-ink/80 mb-1.5">
                 Mileage
               </label>
               <input
@@ -308,12 +308,12 @@ export default function VehicleRiskPublic() {
                 onChange={(e) => setMileage(e.target.value)}
                 placeholder="e.g. 85432"
                 disabled={isBusy}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30 disabled:opacity-50"
               />
             </div>
 
             <div>
-              <label htmlFor="public-trim" className="block text-sm font-medium text-gray-300 mb-1.5">
+              <label htmlFor="public-trim" className="block text-sm font-medium text-dss-ink/80 mb-1.5">
                 Trim
               </label>
               <input
@@ -323,9 +323,9 @@ export default function VehicleRiskPublic() {
                 onChange={(e) => setTrim(e.target.value)}
                 placeholder="e.g. XLT, Lariat, Sport"
                 disabled={isBusy}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30 disabled:opacity-50"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-dss-muted mt-1">
                 {decodingTrim
                   ? 'Looking up trim from VIN…'
                   : vinDecodedNoTrim && !trim.trim()
@@ -339,7 +339,7 @@ export default function VehicleRiskPublic() {
             <button
               type="submit"
               disabled={!canAnalyze}
-              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-5 py-2.5 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
@@ -362,7 +362,7 @@ export default function VehicleRiskPublic() {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isBusy}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-gray-200 rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-2.5 bg-dss-canvas hover:bg-dss-accent-soft border border-dss-border text-dss-ink rounded-dss-sm text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {extracting ? (
                 <>
@@ -381,35 +381,35 @@ export default function VehicleRiskPublic() {
               type="button"
               onClick={handleReset}
               disabled={isBusy}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-2.5 bg-dss-surface hover:bg-dss-canvas border border-dss-border text-dss-ink/80 rounded-dss-sm text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RotateCcw className="w-4 h-4" />
               Reset
             </button>
 
             {screenshotName && !extracting && (
-              <span className="text-xs text-gray-500 truncate max-w-[200px]">
+              <span className="text-xs text-dss-muted truncate max-w-[200px]">
                 {screenshotName}
               </span>
             )}
           </div>
 
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-dss-muted">
             Optional: upload a listing screenshot (PNG, JPG, or WEBP) to auto-fill VIN and mileage.
           </p>
         </form>
 
         {loading && (
-          <div className="bg-gray-800 border border-gray-700 rounded-lg px-6 py-10 flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
-            <p className="text-sm text-gray-300">Decoding VIN and generating underwriting report…</p>
-            <p className="text-xs text-gray-500">This may take 15–30 seconds</p>
+          <div className="bg-dss-surface border border-dss-border rounded-dss-sm px-6 py-10 flex flex-col items-center justify-center gap-3">
+            <Loader2 className="w-8 h-8 text-dss-accent animate-spin" />
+            <p className="text-sm text-dss-ink/80">Decoding VIN and generating underwriting report…</p>
+            <p className="text-xs text-dss-muted">This may take 15–30 seconds</p>
           </div>
         )}
 
         {error && (
-          <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-4 py-3">
-            <p className="text-sm text-red-300">{error}</p>
+          <div className="bg-rose-50 bg-opacity-30 border border-rose-200 rounded-dss-sm px-4 py-3">
+            <p className="text-sm text-dss-danger">{error}</p>
           </div>
         )}
 

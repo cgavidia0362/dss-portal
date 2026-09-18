@@ -109,7 +109,7 @@ export default function IncomeVerificationTab({
     return (
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-6 py-8 text-center">
-          <p className="text-lg font-semibold text-red-300">Access restricted</p>
+          <p className="text-lg font-semibold text-red-700">Access restricted</p>
           <p className="text-sm text-red-200/80 mt-2">
             Income Verification is available to admin, manager, or users granted access.
           </p>

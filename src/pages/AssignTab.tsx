@@ -57,30 +57,33 @@ const parseAmount = (str: string) =>
 
 const getStatusLastStyle = (status: string) => {
   const s = (status || '').toLowerCase();
-  if (s.includes('approved') || s === 'approval') return 'bg-green-900 text-green-300 border-green-700';
-  if (s === 'pending approval' || s.includes('pending approval')) return 'bg-purple-900 text-purple-300 border-purple-700';
-  if (s.includes('counter')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
-  if (s.includes('denial') || s.includes('declined')) return 'bg-red-900 text-red-300 border-red-700';
-  if (s.includes('accepted')) return 'bg-blue-900 text-blue-300 border-blue-700';
-  if (s.includes('funded') || s.includes('funding')) return 'bg-emerald-900 text-emerald-300 border-emerald-700';
-  if (s.includes('duplicate')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
-  return 'bg-gray-700 text-gray-300 border-gray-600';
+  if (s.includes('approved') || s === 'approval') return 'bg-emerald-50 text-emerald-900 border-emerald-300';
+  if (s === 'pending approval' || s.includes('pending approval')) return 'bg-violet-50 text-violet-900 border-violet-300';
+  if (s.includes('counter')) return 'bg-amber-50 text-amber-900 border-amber-300';
+  if (s.includes('denial') || s.includes('declined')) return 'bg-rose-50 text-rose-900 border-rose-300';
+  if (s.includes('accepted')) return 'bg-sky-50 text-sky-900 border-sky-300';
+  if (s.includes('funded') || s.includes('funding')) return 'bg-emerald-50 text-emerald-900 border-emerald-300';
+  if (s.includes('duplicate')) return 'bg-orange-50 text-orange-900 border-orange-300';
+  if (s.includes('new application')) return 'bg-cyan-50 text-cyan-900 border-cyan-300';
+  if (s.includes('reconsider')) return 'bg-slate-100 text-slate-800 border-slate-300';
+  if (s.includes('follow up')) return 'bg-amber-50 text-amber-900 border-amber-300';
+  return 'bg-dss-canvas text-dss-ink border-dss-border';
 };
 
 const DEALERS_PER_PAGE = 25;
 const CALLS_PER_PAGE = 25;
 const STATUS_FILTER_OPTIONS = [
-  { label: 'Approved',           onCls: 'bg-green-900 bg-opacity-40 border-green-600 text-green-300',    offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'Counter',            onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300',    offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'New Application',    onCls: 'bg-cyan-900 bg-opacity-40 border-cyan-500 text-cyan-300',       offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'Pending Approval',   onCls: 'bg-purple-900 bg-opacity-40 border-purple-600 text-purple-300', offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'Reconsider',         onCls: 'bg-gray-700 border-gray-500 text-gray-300',                     offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'Accepted',           onCls: 'bg-blue-900 bg-opacity-40 border-blue-600 text-blue-300',       offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'Denial',             onCls: 'bg-red-900 bg-opacity-40 border-red-700 text-red-300',          offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'Documents Received', onCls: 'bg-indigo-900 bg-opacity-40 border-indigo-600 text-indigo-300', offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'Duplicate',          onCls: 'bg-orange-900 bg-opacity-40 border-orange-600 text-orange-300', offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'Funding Pending',    onCls: 'bg-emerald-900 bg-opacity-40 border-emerald-600 text-emerald-300', offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
-  { label: 'Follow Up',          onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300',    offCls: 'bg-gray-800 border-gray-600 text-gray-500' },
+  { label: 'Approved',           onCls: 'bg-emerald-50 bg-opacity-40 border-green-600 text-dss-success',    offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Counter',            onCls: 'bg-amber-50 border-amber-200 text-amber-800',    offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'New Application',    onCls: 'bg-cyan-50 border-cyan-200 text-cyan-800',       offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Pending Approval',   onCls: 'bg-dss-accent-soft bg-opacity-40 border-purple-600 text-dss-accent', offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Reconsider',         onCls: 'bg-dss-canvas border-dss-border text-dss-ink/80',                     offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Accepted',           onCls: 'bg-dss-accent-soft bg-opacity-40 border-blue-600 text-dss-accent',       offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Denial',             onCls: 'bg-rose-50 bg-opacity-40 border-rose-200 text-dss-danger',          offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Documents Received', onCls: 'bg-indigo-50 border-indigo-200 text-indigo-800', offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Duplicate',          onCls: 'bg-orange-50 border-orange-200 text-orange-800', offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Funding Pending',    onCls: 'bg-emerald-50 border-emerald-200 text-emerald-800', offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Follow Up',          onCls: 'bg-amber-50 border-amber-200 text-amber-800',    offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
 ];
 
 const DEFAULT_STATUSES = new Set(['Approved', 'Counter', 'New Application', 'Pending Approval', 'Reconsider', 'Follow Up']);
@@ -577,7 +580,7 @@ const handleConfirmAssign = async () => {
   });
 
   const initials = (name: string) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-  const avatarColors = ['bg-blue-900 text-blue-300', 'bg-green-900 text-green-300', 'bg-purple-900 text-purple-300', 'bg-amber-900 text-amber-300', 'bg-cyan-900 text-cyan-300', 'bg-pink-900 text-pink-300'];
+  const avatarColors = ['bg-dss-accent-soft text-dss-accent', 'bg-emerald-50 text-dss-success', 'bg-dss-accent-soft text-dss-accent', 'bg-amber-50 text-amber-800', 'bg-cyan-50 text-cyan-800', 'bg-pink-50 text-pink-700'];
   const getAvatarColor = (idx: number) => avatarColors[idx % avatarColors.length];
 
   const maxDealerCount = Math.max(...dealersInView.map(d => d.callCount), 1);
@@ -587,53 +590,53 @@ const handleConfirmAssign = async () => {
 
       {/* HEADER */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-100">Assign</h2>
-        <p className="text-sm text-gray-400 mt-0.5">Manage call assignments and rep workloads</p>
+        <h2 className="text-2xl font-bold text-dss-ink">Assign</h2>
+        <p className="text-sm text-dss-muted mt-0.5">Manage call assignments and rep workloads</p>
       </div>
 
-      {success && <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm">{success}</div>}
-      {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">{error}</div>}
+      {success && <div className="bg-emerald-50 border border-emerald-200 text-dss-success px-4 py-3 rounded-dss-sm text-sm">{success}</div>}
+      {error && <div className="bg-rose-50 border border-rose-200 text-dss-danger px-4 py-3 rounded-dss-sm text-sm">{error}</div>}
 
       {/* ── ASSIGNMENT SUMMARY ──────────────────────────────────── */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-200 mb-3">Assignment summary</h3>
+        <h3 className="text-sm font-semibold text-dss-ink mb-3">Assignment summary</h3>
         {reps.length === 0 ? (
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 text-center text-sm text-gray-500">No reps found.</div>
+          <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-6 text-center text-sm text-dss-muted">No reps found.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {reps.map((rep, idx) => {
               const repCalls = getRepCalls(rep.id);
               const dailyGoal = goals.daily[rep.id] || 0;
               return (
-                <div key={rep.id} className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+                <div key={rep.id} className="bg-dss-surface rounded-dss-sm border border-dss-border p-4">
                   <div className="flex items-center gap-3 mb-3">
                     <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 ${getAvatarColor(idx)}`}>
                       {initials(rep.name)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-100 truncate">{rep.name}</p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-sm font-medium text-dss-ink truncate">{rep.name}</p>
+                      <p className="text-xs text-dss-muted">
                         {repCalls.length} call{repCalls.length !== 1 ? 's' : ''} assigned
-                        {dailyGoal > 0 && <span className="ml-2 text-gray-500">· Goal: {dailyGoal}/day</span>}
+                        {dailyGoal > 0 && <span className="ml-2 text-dss-muted">· Goal: {dailyGoal}/day</span>}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => { setViewCallsRep(rep); setViewSearchQuery(''); setViewTab('calls'); }}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-900 bg-opacity-40 hover:bg-opacity-60 border border-blue-700 text-blue-300 rounded-lg text-xs transition">
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-dss-accent-soft bg-opacity-40 hover:bg-opacity-60 border border-dss-accent/30 text-dss-accent rounded-dss-sm text-xs transition">
                       <List className="w-3 h-3 flex-shrink-0" />
                       <span>View calls</span>
                     </button>
                     <button
                       onClick={() => openUnassign(rep)}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-red-900 bg-opacity-30 hover:bg-opacity-50 border border-red-800 text-red-300 rounded-lg text-xs transition">
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-rose-50 bg-opacity-30 hover:bg-opacity-50 border border-rose-200 text-dss-danger rounded-dss-sm text-xs transition">
                       <UserMinus className="w-3 h-3 flex-shrink-0" />
                       <span>Unassign</span>
                     </button>
                     <button
                       onClick={() => openGoal(rep)}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-900 bg-opacity-30 hover:bg-opacity-50 border border-amber-800 text-amber-300 rounded-lg text-xs transition">
+                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 rounded-dss-sm text-xs transition">
                       <Target className="w-3 h-3 flex-shrink-0" />
                       <span>Set goal</span>
                     </button>
@@ -647,26 +650,26 @@ const handleConfirmAssign = async () => {
 
       {/* ── ASSIGN CALLS ────────────────────────────────────────── */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-200 mb-3">
+        <h3 className="text-sm font-semibold text-dss-ink mb-3">
           Assign calls
-          <span className="ml-2 text-gray-400 font-normal">({unassignedCalls.length} unassigned)</span>
+          <span className="ml-2 text-dss-muted font-normal">({unassignedCalls.length} unassigned)</span>
         </h3>
 
         {/* Step 1: State selector */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-3">
-          <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Step 1 — Select a state</p>
+        <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-4 mb-3">
+          <p className="text-xs text-dss-muted uppercase tracking-wider mb-3">Step 1 — Select a state</p>
           <div className="flex items-center gap-2 flex-wrap">
 
             {/* All States button */}
             <button
               onClick={() => handleStateChange('')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-dss-sm border text-sm font-medium transition ${
                 filterState === ''
-                  ? 'bg-blue-600 border-blue-500 text-white'
-                  : 'bg-gray-700 border-gray-600 text-gray-300 hover:border-blue-600 hover:text-blue-300'
+                  ? 'bg-dss-navy border-dss-accent text-white'
+                  : 'bg-dss-canvas border-dss-border text-dss-ink/80 hover:border-blue-600 hover:text-dss-accent'
               }`}>
               <span>All States</span>
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterState === '' ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-400'}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterState === '' ? 'bg-blue-500 text-white' : 'bg-dss-canvas text-dss-muted'}`}>
                 {unassignedCalls.length}
               </span>
             </button>
@@ -678,13 +681,13 @@ const handleConfirmAssign = async () => {
                 <button
                   key={state}
                   onClick={() => handleStateChange(filterState === state ? '' : state)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-dss-sm border text-sm font-medium transition ${
                     filterState === state
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-gray-700 border-gray-600 text-gray-300 hover:border-blue-600 hover:text-blue-300'
+                      ? 'bg-dss-navy border-dss-accent text-white'
+                      : 'bg-dss-canvas border-dss-border text-dss-ink/80 hover:border-blue-600 hover:text-dss-accent'
                   }`}>
                   <span>{state}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterState === state ? 'bg-blue-500 text-white' : 'bg-gray-600 text-gray-400'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterState === state ? 'bg-blue-500 text-white' : 'bg-dss-canvas text-dss-muted'}`}>
                     {count}
                   </span>
                 </button>
@@ -694,43 +697,43 @@ const handleConfirmAssign = async () => {
         </div>
 
         {/* Step 2: Dealers or Calls */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+        <div className="bg-dss-surface rounded-dss-sm border border-dss-border overflow-hidden">
 
           {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-700">
+          <div className="px-4 py-3 border-b border-dss-border">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wider">
+                <p className="text-xs text-dss-muted uppercase tracking-wider">
                   Step 2 — {filterState ? `${filterState}` : 'All States'}
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-dss-muted mt-0.5">
                   {step2View === 'dealers'
                     ? `${dealersInView.length} dealer${dealersInView.length !== 1 ? 's' : ''} · ${statusFilteredUnassigned.length} call${statusFilteredUnassigned.length !== 1 ? 's' : ''}`
                     : `${callsInView.length} call${callsInView.length !== 1 ? 's' : ''}`
                   }
                   {filterStatuses.size > 0 && (
-                    <span className="ml-2 text-indigo-300">
+                    <span className="ml-2 text-indigo-700">
                       · Showing {statusFilteredUnassigned.length} of {stateScopedUnassigned.length}
                     </span>
                   )}
                   {step2View === 'dealers' && selectedDealers.size > 0 && (
-                    <span className="ml-2 text-blue-400 font-medium">· {selectedDealers.size} dealer{selectedDealers.size !== 1 ? 's' : ''} selected ({totalCallsInDealerSelection} calls)</span>
+                    <span className="ml-2 text-dss-accent font-medium">· {selectedDealers.size} dealer{selectedDealers.size !== 1 ? 's' : ''} selected ({totalCallsInDealerSelection} calls)</span>
                   )}
                   {step2View === 'calls' && selectedCalls.size > 0 && (
-                    <span className="ml-2 text-blue-400 font-medium">· {selectedCalls.size} call{selectedCalls.size !== 1 ? 's' : ''} selected</span>
+                    <span className="ml-2 text-dss-accent font-medium">· {selectedCalls.size} call{selectedCalls.size !== 1 ? 's' : ''} selected</span>
                   )}
                 </p>
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Dealers / Calls toggle */}
-                <div className="flex bg-gray-700 rounded-lg p-0.5 border border-gray-600">
+                <div className="flex bg-dss-canvas rounded-dss-sm p-0.5 border border-dss-border">
                   <button
                     onClick={() => handleStep2ViewChange('dealers')}
                     className={`px-3 py-1 rounded-md text-xs font-medium transition ${
                       step2View === 'dealers'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-400 hover:text-gray-200'
+                        ? 'bg-dss-navy text-white'
+                        : 'text-dss-muted hover:text-dss-ink'
                     }`}>
                     Dealers
                   </button>
@@ -738,8 +741,8 @@ const handleConfirmAssign = async () => {
                     onClick={() => handleStep2ViewChange('calls')}
                     className={`px-3 py-1 rounded-md text-xs font-medium transition ${
                       step2View === 'calls'
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-400 hover:text-gray-200'
+                        ? 'bg-dss-navy text-white'
+                        : 'text-dss-muted hover:text-dss-ink'
                     }`}>
                     Calls
                   </button>
@@ -749,14 +752,14 @@ const handleConfirmAssign = async () => {
                 <select
                   value={assignToId}
                   onChange={e => setAssignToId(e.target.value)}
-                  className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  className="px-3 py-1.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
                   <option value="">Assign to rep…</option>
                   {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
                 <button
                   onClick={handleAssign}
                   disabled={assignDisabled}
-                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition whitespace-nowrap">
+                  className="px-4 py-1.5 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition whitespace-nowrap">
                   {assignButtonLabel()}
                 </button>
               </div>
@@ -764,17 +767,17 @@ const handleConfirmAssign = async () => {
           </div>
 
           {/* Status Last filter chips */}
-          <div className="px-4 py-2.5 border-b border-gray-700 bg-gray-750">
+          <div className="px-4 py-2.5 border-b border-dss-border bg-dss-canvas">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-gray-500 uppercase tracking-wider whitespace-nowrap w-20 flex-shrink-0">Status Last</span>
-              <div className="w-px h-4 bg-gray-600 flex-shrink-0" />
+              <span className="text-xs text-dss-muted uppercase tracking-wider whitespace-nowrap w-20 flex-shrink-0">Status Last</span>
+              <div className="w-px h-4 bg-dss-canvas flex-shrink-0" />
               <button
                 type="button"
                 onClick={() => setFilterStatuses(new Set())}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition ${
                   filterStatuses.size === 0
-                    ? 'bg-blue-900 text-blue-300 border-blue-700'
-                    : 'bg-gray-800 border-gray-600 text-gray-500 hover:border-gray-500 hover:text-gray-300'
+                    ? 'bg-dss-accent-soft text-dss-accent border-dss-accent/30'
+                    : 'bg-dss-surface border-dss-border text-dss-muted hover:border-dss-border hover:text-dss-ink/80'
                 }`}>
                 {filterStatuses.size === 0 && <Check className="w-3 h-3 flex-shrink-0" />}
                 All ({stateScopedUnassigned.length})
@@ -799,9 +802,9 @@ const handleConfirmAssign = async () => {
           </div>
 
           {/* Search bar */}
-          <div className="px-4 py-2.5 border-b border-gray-700">
+          <div className="px-4 py-2.5 border-b border-dss-border">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dss-muted" />
               <input
                 type="text"
                 placeholder={step2View === 'dealers' ? 'Search dealers…' : 'Search App ID, dealer, customer…'}
@@ -810,7 +813,7 @@ const handleConfirmAssign = async () => {
                   if (step2View === 'dealers') { setDealerSearch(e.target.value); setDealerPage(1); }
                   else { setCallsSearch(e.target.value); setCallsPage(1); }
                 }}
-                className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full pl-8 pr-3 py-1.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
               />
             </div>
           </div>
@@ -818,7 +821,7 @@ const handleConfirmAssign = async () => {
           {/* ── DEALERS VIEW ── */}
           {step2View === 'dealers' && (
             <>
-              <div className="grid grid-cols-[28px_1fr_60px_80px] gap-0 px-4 py-2 bg-gray-750 border-b border-gray-700 items-center">
+              <div className="grid grid-cols-[28px_1fr_60px_80px] gap-0 px-4 py-2 bg-dss-canvas border-b border-dss-border items-center">
                 <div className="flex items-center justify-center">
                   <input
                     type="checkbox"
@@ -828,25 +831,25 @@ const handleConfirmAssign = async () => {
                     className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
                   />
                 </div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Dealer</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2 text-center">Calls</div>
+                <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2">Dealer</div>
+                <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2 text-center">Calls</div>
                 <div className="px-2 text-right">
                   {selectedDealers.size > 0 && (
                     <button onClick={() => setSelectedDealers(new Set())}
-                      className="text-blue-400 hover:text-blue-300 text-xs transition">Clear all</button>
+                      className="text-dss-accent hover:text-dss-accent text-xs transition">Clear all</button>
                   )}
                 </div>
               </div>
 
               <div className="divide-y divide-gray-700">
                 {paginatedDealers.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-gray-500">No dealers match your search.</div>
+                  <div className="px-4 py-8 text-center text-sm text-dss-muted">No dealers match your search.</div>
                 ) : paginatedDealers.map(dealer => {
                   const isSelected = selectedDealers.has(dealer.name);
                   return (
                     <div
                       key={dealer.name}
-                      className={`grid grid-cols-[28px_1fr_60px_80px] gap-0 px-4 py-3 cursor-pointer transition-colors items-center ${isSelected ? 'bg-blue-900 bg-opacity-15' : 'hover:bg-gray-750'}`}
+                      className={`grid grid-cols-[28px_1fr_60px_80px] gap-0 px-4 py-3 cursor-pointer transition-colors items-center ${isSelected ? 'bg-dss-accent-soft bg-opacity-15' : 'hover:bg-dss-canvas'}`}
                       onClick={() => toggleDealer(dealer.name)}>
                       <div className="flex items-center justify-center">
                         <input
@@ -858,20 +861,20 @@ const handleConfirmAssign = async () => {
                         />
                       </div>
                       <div className="px-2">
-                        <p className={`text-sm font-medium truncate ${isSelected ? 'text-blue-300' : 'text-gray-100'}`}>
+                        <p className={`text-sm font-medium truncate ${isSelected ? 'text-dss-accent' : 'text-dss-ink'}`}>
                           {dealer.name}
                         </p>
-                        {!filterState && <p className="text-xs text-gray-500">All States</p>}
-                        {filterState && <p className="text-xs text-gray-500">{filterState}</p>}
+                        {!filterState && <p className="text-xs text-dss-muted">All States</p>}
+                        {filterState && <p className="text-xs text-dss-muted">{filterState}</p>}
                       </div>
                       <div className="px-2 text-center">
-                        <span className={`text-sm font-bold ${isSelected ? 'text-blue-300' : 'text-gray-300'}`}>{dealer.callCount}</span>
-                        <p className="text-[10px] text-gray-600">call{dealer.callCount !== 1 ? 's' : ''}</p>
+                        <span className={`text-sm font-bold ${isSelected ? 'text-dss-accent' : 'text-dss-ink/80'}`}>{dealer.callCount}</span>
+                        <p className="text-[10px] text-dss-muted">call{dealer.callCount !== 1 ? 's' : ''}</p>
                       </div>
                       <div className="px-2">
-                        <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                        <div className="h-1.5 bg-dss-canvas rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all ${isSelected ? 'bg-blue-500' : 'bg-gray-500'}`}
+                            className={`h-full rounded-full transition-all ${isSelected ? 'bg-blue-500' : 'bg-dss-muted'}`}
                             style={{ width: `${Math.round((dealer.callCount / maxDealerCount) * 100)}%` }}
                           />
                         </div>
@@ -882,14 +885,14 @@ const handleConfirmAssign = async () => {
               </div>
 
               {totalDealerPages > 1 && (
-                <div className="px-4 py-2.5 border-t border-gray-700 flex items-center justify-between bg-gray-750">
-                  <p className="text-xs text-gray-500">
+                <div className="px-4 py-2.5 border-t border-dss-border flex items-center justify-between bg-dss-canvas">
+                  <p className="text-xs text-dss-muted">
                     Showing {Math.min((dealerPage - 1) * DEALERS_PER_PAGE + 1, filteredDealers.length)}–{Math.min(dealerPage * DEALERS_PER_PAGE, filteredDealers.length)} of {filteredDealers.length} dealers
                   </p>
                   <div className="flex items-center gap-1">
                     <button onClick={() => setDealerPage(p => Math.max(1, p - 1))} disabled={dealerPage === 1}
-                      className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
-                      <ChevronLeft className="w-4 h-4 text-gray-400" />
+                      className="p-1.5 rounded hover:bg-dss-canvas disabled:opacity-30 transition">
+                      <ChevronLeft className="w-4 h-4 text-dss-muted" />
                     </button>
                     {Array.from({ length: Math.min(5, totalDealerPages) }, (_, i) => {
                       let page: number;
@@ -899,14 +902,14 @@ const handleConfirmAssign = async () => {
                       else page = dealerPage - 2 + i;
                       return (
                         <button key={page} onClick={() => setDealerPage(page)}
-                          className={`w-7 h-7 rounded text-xs transition ${dealerPage === page ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}>
+                          className={`w-7 h-7 rounded text-xs transition ${dealerPage === page ? 'bg-dss-navy text-white' : 'hover:bg-dss-canvas text-dss-muted'}`}>
                           {page}
                         </button>
                       );
                     })}
                     <button onClick={() => setDealerPage(p => Math.min(totalDealerPages, p + 1))} disabled={dealerPage >= totalDealerPages}
-                      className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
-                      <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+                      className="p-1.5 rounded hover:bg-dss-canvas disabled:opacity-30 transition">
+                      <ChevronRightIcon className="w-4 h-4 text-dss-muted" />
                     </button>
                   </div>
                 </div>
@@ -918,7 +921,7 @@ const handleConfirmAssign = async () => {
           {step2View === 'calls' && (
             <>
               {/* Table header */}
-              <div className="grid grid-cols-[28px_110px_1fr_110px_38px_75px_105px] gap-0 px-3 py-2 bg-gray-750 border-b border-gray-700 items-center">
+              <div className="grid grid-cols-[28px_110px_1fr_110px_38px_75px_105px] gap-0 px-3 py-2 bg-dss-canvas border-b border-dss-border items-center">
                 <div className="flex items-center justify-center">
                   <input
                     type="checkbox"
@@ -927,17 +930,17 @@ const handleConfirmAssign = async () => {
                     className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
                   />
                 </div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">App ID</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Dealer</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Customer</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">St</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Amount</div>
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wider px-2">Status Last</div>
+                <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2">App ID</div>
+                <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2">Dealer</div>
+                <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2">Customer</div>
+                <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2">St</div>
+                <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2">Amount</div>
+                <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2">Status Last</div>
               </div>
 
               <div className="divide-y divide-gray-700">
                 {paginatedCallsView.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-gray-500">
+                  <div className="px-4 py-8 text-center text-sm text-dss-muted">
                     {filterStatuses.size > 0 ? 'No calls match selected statuses.' : 'No calls found.'}
                   </div>
                 ) : paginatedCallsView.map(call => {
@@ -945,7 +948,7 @@ const handleConfirmAssign = async () => {
                   return (
                     <div
                       key={call.id}
-                      className={`grid grid-cols-[28px_110px_1fr_110px_38px_75px_105px] gap-0 px-3 py-2 cursor-pointer transition-colors items-center ${isSelected ? 'bg-blue-900 bg-opacity-10' : 'hover:bg-gray-750'}`}
+                      className={`grid grid-cols-[28px_110px_1fr_110px_38px_75px_105px] gap-0 px-3 py-2 cursor-pointer transition-colors items-center ${isSelected ? 'bg-dss-accent-soft bg-opacity-10' : 'hover:bg-dss-canvas'}`}
                       onClick={() => toggleCall(call.id)}>
                       <div className="flex items-center justify-center">
                         <input
@@ -956,13 +959,13 @@ const handleConfirmAssign = async () => {
                           className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
                         />
                       </div>
-                      <div className="px-2 text-xs text-blue-400 font-medium truncate">{call.applicationId}</div>
-                      <div className="px-2 text-xs text-gray-200 truncate">{call.dealerName}</div>
-                      <div className="px-2 text-xs text-gray-400 truncate">{call.customerName || '—'}</div>
+                      <div className="px-2 text-xs text-dss-accent font-medium truncate">{call.applicationId}</div>
+                      <div className="px-2 text-xs text-dss-ink truncate">{call.dealerName}</div>
+                      <div className="px-2 text-xs text-dss-muted truncate">{call.customerName || '—'}</div>
                       <div className="px-2">
-                        <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
+                        <span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border">{call.state}</span>
                       </div>
-                      <div className="px-2 text-xs font-medium text-gray-100">
+                      <div className="px-2 text-xs font-medium text-dss-ink">
                         ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                       </div>
                       <div className="px-2">
@@ -976,15 +979,15 @@ const handleConfirmAssign = async () => {
               </div>
 
               {/* Calls pagination */}
-              <div className="px-4 py-2.5 border-t border-gray-700 flex items-center justify-between bg-gray-750">
-                <p className="text-xs text-gray-500">
+              <div className="px-4 py-2.5 border-t border-dss-border flex items-center justify-between bg-dss-canvas">
+                <p className="text-xs text-dss-muted">
                   Showing {callsInView.length === 0 ? 0 : Math.min((callsPage - 1) * CALLS_PER_PAGE + 1, callsInView.length)}–{Math.min(callsPage * CALLS_PER_PAGE, callsInView.length)} of {callsInView.length} calls
-                  {selectedCalls.size > 0 && <span className="ml-2 text-blue-400">{selectedCalls.size} selected</span>}
+                  {selectedCalls.size > 0 && <span className="ml-2 text-dss-accent">{selectedCalls.size} selected</span>}
                 </p>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setCallsPage(p => Math.max(1, p - 1))} disabled={callsPage === 1}
-                    className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
-                    <ChevronLeft className="w-4 h-4 text-gray-400" />
+                    className="p-1.5 rounded hover:bg-dss-canvas disabled:opacity-30 transition">
+                    <ChevronLeft className="w-4 h-4 text-dss-muted" />
                   </button>
                   {Array.from({ length: Math.min(5, totalCallsPages) }, (_, i) => {
                     let page: number;
@@ -994,23 +997,23 @@ const handleConfirmAssign = async () => {
                     else page = callsPage - 2 + i;
                     return (
                       <button key={page} onClick={() => setCallsPage(page)}
-                        className={`w-7 h-7 rounded text-xs transition ${callsPage === page ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-400'}`}>
+                        className={`w-7 h-7 rounded text-xs transition ${callsPage === page ? 'bg-dss-navy text-white' : 'hover:bg-dss-canvas text-dss-muted'}`}>
                         {page}
                       </button>
                     );
                   })}
                   {totalCallsPages > 5 && callsPage < totalCallsPages - 2 && (
                     <>
-                      <span className="text-xs text-gray-600 px-1">…</span>
+                      <span className="text-xs text-dss-muted px-1">…</span>
                       <button onClick={() => setCallsPage(totalCallsPages)}
-                        className="w-7 h-7 rounded text-xs hover:bg-gray-700 text-gray-400 transition">
+                        className="w-7 h-7 rounded text-xs hover:bg-dss-canvas text-dss-muted transition">
                         {totalCallsPages}
                       </button>
                     </>
                   )}
                   <button onClick={() => setCallsPage(p => Math.min(totalCallsPages, p + 1))} disabled={callsPage >= totalCallsPages}
-                    className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
-                    <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+                    className="p-1.5 rounded hover:bg-dss-canvas disabled:opacity-30 transition">
+                    <ChevronRightIcon className="w-4 h-4 text-dss-muted" />
                   </button>
                 </div>
               </div>
@@ -1023,14 +1026,14 @@ const handleConfirmAssign = async () => {
 {showStatusFilter && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 px-4"
           onClick={() => setShowStatusFilter(false)}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-lg overflow-hidden"
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-lg overflow-hidden"
             onClick={e => e.stopPropagation()}>
 
             {/* Header */}
-            <div className="flex items-start justify-between px-6 py-4 border-b border-gray-700">
+            <div className="flex items-start justify-between px-6 py-4 border-b border-dss-border">
               <div>
-                <h3 className="text-base font-semibold text-gray-100">Filter by status before assigning</h3>
-                <p className="text-xs text-gray-500 mt-1">
+                <h3 className="text-base font-semibold text-dss-ink">Filter by status before assigning</h3>
+                <p className="text-xs text-dss-muted mt-1">
                   {pendingAssignRepName}
                   {step2View === 'dealers'
                     ? ` · ${selectedDealers.size} dealer${selectedDealers.size !== 1 ? 's' : ''} selected`
@@ -1038,20 +1041,20 @@ const handleConfirmAssign = async () => {
                   {filterState ? ` · ${filterState}` : ' · All States'}
                 </p>
               </div>
-              <button onClick={() => setShowStatusFilter(false)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              <button onClick={() => setShowStatusFilter(false)} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
             </div>
 
             <div className="p-5 space-y-4">
               {/* Inline error */}
               {error && (
-                <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-4 py-3">
-                  <p className="text-xs text-red-300 leading-relaxed">{error}</p>
+                <div className="bg-rose-50 bg-opacity-30 border border-rose-200 rounded-dss-sm px-4 py-3">
+                  <p className="text-xs text-dss-danger leading-relaxed">{error}</p>
                 </div>
               )}
               {/* Status chips */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs text-gray-500 uppercase tracking-wider">Select which statuses to include</p>
+                  <p className="text-xs text-dss-muted uppercase tracking-wider">Select which statuses to include</p>
                   <button
                     onClick={() => {
                       if (selectedStatuses.size === STATUS_FILTER_OPTIONS.length) {
@@ -1060,7 +1063,7 @@ const handleConfirmAssign = async () => {
                         setSelectedStatuses(new Set(STATUS_FILTER_OPTIONS.map(s => s.label)));
                       }
                     }}
-                    className="text-xs text-blue-400 hover:text-blue-300 transition">
+                    className="text-xs text-dss-accent hover:text-dss-accent transition">
                     {selectedStatuses.size === STATUS_FILTER_OPTIONS.length ? 'Reset to defaults' : 'Select all'}
                   </button>
                 </div>
@@ -1093,37 +1096,37 @@ const handleConfirmAssign = async () => {
                 const matching = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses)).length;
                 const skipped = pendingAssignCalls.length - matching;
                 return (
-                  <div className="bg-gray-750 border border-gray-700 rounded-lg px-4 py-3 space-y-2">
+                  <div className="bg-dss-canvas border border-dss-border rounded-dss-sm px-4 py-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-400">Total calls in selection</span>
-                      <span className="text-sm font-medium text-gray-200">{pendingAssignCalls.length}</span>
+                      <span className="text-xs text-dss-muted">Total calls in selection</span>
+                      <span className="text-sm font-medium text-dss-ink">{pendingAssignCalls.length}</span>
                     </div>
-                    <div className="h-px bg-gray-700" />
+                    <div className="h-px bg-dss-canvas" />
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-400">Calls matching selected statuses</span>
-                      <span className="text-sm font-bold text-green-400">{matching}</span>
+                      <span className="text-xs text-dss-muted">Calls matching selected statuses</span>
+                      <span className="text-sm font-bold text-dss-success">{matching}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-400">Calls skipped (stay unassigned)</span>
-                      <span className="text-sm text-gray-500">{skipped}</span>
+                      <span className="text-xs text-dss-muted">Calls skipped (stay unassigned)</span>
+                      <span className="text-sm text-dss-muted">{skipped}</span>
                     </div>
                   </div>
                 );
               })()}
 
-              <p className="text-xs text-gray-600">Skipped calls stay in the unassigned pool and can be assigned later.</p>
+              <p className="text-xs text-dss-muted">Skipped calls stay in the unassigned pool and can be assigned later.</p>
             </div>
 
             {/* Footer */}
-            <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-700">
+            <div className="flex items-center gap-3 px-6 py-4 border-t border-dss-border">
             <button onClick={() => { setShowStatusFilter(false); setError(''); }}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">
+                className="px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">
                 Cancel
               </button>
               <button
                 onClick={handleConfirmAssign}
                 disabled={selectedStatuses.size === 0}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition">
+                className="flex-1 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition">
                 {(() => {
                   const matching = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses)).length;
                   return `Assign ${matching} call${matching !== 1 ? 's' : ''} to ${pendingAssignRepName} →`;
@@ -1138,34 +1141,34 @@ const handleConfirmAssign = async () => {
       {viewCallsRep && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
           onClick={() => setViewCallsRep(null)}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-4xl overflow-hidden"
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-4xl overflow-hidden"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dss-border">
               <div>
-                <h3 className="text-lg font-semibold text-gray-100">{viewCallsRep.name}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <h3 className="text-lg font-semibold text-dss-ink">{viewCallsRep.name}</h3>
+                <p className="text-xs text-dss-muted mt-0.5">
                   {viewRepCalls.length} call{viewRepCalls.length !== 1 ? 's' : ''} · {viewRepDealers.length} dealer{viewRepDealers.length !== 1 ? 's' : ''} · press Escape to close
                 </p>
               </div>
-              <button onClick={() => setViewCallsRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              <button onClick={() => setViewCallsRep(null)} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
             </div>
-            <div className="flex border-b border-gray-700">
+            <div className="flex border-b border-dss-border">
               <button onClick={() => { setViewTab('calls'); setViewSearchQuery(''); }}
-                className={`flex-1 px-4 py-2.5 text-sm font-medium transition border-b-2 ${viewTab === 'calls' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-300'}`}>
+                className={`flex-1 px-4 py-2.5 text-sm font-medium transition border-b-2 ${viewTab === 'calls' ? 'border-dss-accent text-dss-accent' : 'border-transparent text-dss-muted hover:text-dss-ink/80'}`}>
                 Calls ({viewRepCalls.length})
               </button>
               <button onClick={() => { setViewTab('dealers'); setViewSearchQuery(''); }}
-                className={`flex-1 px-4 py-2.5 text-sm font-medium transition border-b-2 ${viewTab === 'dealers' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-300'}`}>
+                className={`flex-1 px-4 py-2.5 text-sm font-medium transition border-b-2 ${viewTab === 'dealers' ? 'border-dss-accent text-dss-accent' : 'border-transparent text-dss-muted hover:text-dss-ink/80'}`}>
                 Dealers ({viewRepDealers.length})
               </button>
             </div>
-            <div className="px-4 py-3 border-b border-gray-700">
+            <div className="px-4 py-3 border-b border-dss-border">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dss-muted" />
                 <input type="text"
                   placeholder={viewTab === 'calls' ? 'Search App ID, dealer, customer…' : 'Search dealer name…'}
                   value={viewSearchQuery} onChange={e => setViewSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full pl-8 pr-3 py-1.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                   autoFocus />
               </div>
             </div>
@@ -1178,31 +1181,31 @@ const handleConfirmAssign = async () => {
                     <col style={{ width: '70px' }} /><col style={{ width: '62px' }} />
                     <col style={{ width: '105px' }} /><col style={{ width: '88px' }} />
                   </colgroup>
-                  <thead className="bg-gray-750 sticky top-0">
-                    <tr className="border-b border-gray-700">
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
+                  <thead className="bg-dss-canvas sticky top-0">
+                    <tr className="border-b border-dss-border">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">App ID</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Dealer</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Customer</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">St</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Amount</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Date</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Status Last</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">FU Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
                     {filteredViewCalls.length === 0 ? (
-                      <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">No calls found</td></tr>
+                      <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-dss-muted">No calls found</td></tr>
                     ) : filteredViewCalls.map(call => (
-                      <tr key={call.id} className="hover:bg-gray-750 transition-colors">
-                        <td className="px-2 py-2 text-xs text-blue-400 font-medium truncate">{call.applicationId}</td>
-                        <td className="px-2 py-2 text-xs text-gray-200 truncate">{call.dealerName}</td>
-                        <td className="px-2 py-2 text-xs text-gray-400 truncate">{call.customerName || '—'}</td>
-                        <td className="px-2 py-2"><span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span></td>
-                        <td className="px-2 py-2 text-xs font-medium text-gray-100">${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>
-                        <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{call.submittedDate}</td>
+                      <tr key={call.id} className="hover:bg-dss-canvas transition-colors">
+                        <td className="px-2 py-2 text-xs text-dss-accent font-medium truncate">{call.applicationId}</td>
+                        <td className="px-2 py-2 text-xs text-dss-ink truncate">{call.dealerName}</td>
+                        <td className="px-2 py-2 text-xs text-dss-muted truncate">{call.customerName || '—'}</td>
+                        <td className="px-2 py-2"><span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border">{call.state}</span></td>
+                        <td className="px-2 py-2 text-xs font-medium text-dss-ink">${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>
+                        <td className="px-2 py-2 text-xs text-dss-muted whitespace-nowrap">{call.submittedDate}</td>
                         <td className="px-2 py-2"><span className={`px-1.5 py-0 rounded-full text-[10px] border truncate ${getStatusLastStyle(call.statusLast)}`}>{call.statusLast}</span></td>
-                        <td className="px-2 py-2 text-xs text-gray-400">{call.fuStatus || '—'}</td>
+                        <td className="px-2 py-2 text-xs text-dss-muted">{call.fuStatus || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1212,30 +1215,30 @@ const handleConfirmAssign = async () => {
             {viewTab === 'dealers' && (
               <div className="overflow-y-auto max-h-[55vh]">
                 {filteredViewDealers.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-gray-500">No dealers found</div>
+                  <div className="px-4 py-8 text-center text-sm text-dss-muted">No dealers found</div>
                 ) : (
                   <table className="w-full" style={{ tableLayout: 'fixed' }}>
                     <colgroup>
                       <col style={{ width: '200px' }} /><col style={{ width: '50px' }} />
                       <col style={{ width: '180px' }} /><col style={{ width: '115px' }} />
                     </colgroup>
-                    <thead className="bg-gray-750 sticky top-0">
-                      <tr className="border-b border-gray-700">
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Calls</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
+                    <thead className="bg-dss-canvas sticky top-0">
+                      <tr className="border-b border-dss-border">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Dealer</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">St</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Calls</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Status Last</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-700">
                       {filteredViewDealers.map(dealer => (
-                        <tr key={dealer.name} className="hover:bg-gray-750 transition-colors">
-                          <td className="px-3 py-2.5 text-sm font-medium text-gray-100 truncate">{dealer.name}</td>
-                          <td className="px-3 py-2.5"><span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{dealer.state}</span></td>
+                        <tr key={dealer.name} className="hover:bg-dss-canvas transition-colors">
+                          <td className="px-3 py-2.5 text-sm font-medium text-dss-ink truncate">{dealer.name}</td>
+                          <td className="px-3 py-2.5"><span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border">{dealer.state}</span></td>
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-300 w-5 flex-shrink-0">{dealer.callCount}</span>
-                              <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                              <span className="text-xs text-dss-ink/80 w-5 flex-shrink-0">{dealer.callCount}</span>
+                              <div className="flex-1 h-1.5 bg-dss-canvas rounded-full overflow-hidden">
                                 <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.round((dealer.callCount / dealer.maxCount) * 100)}%` }} />
                               </div>
                             </div>
@@ -1248,8 +1251,8 @@ const handleConfirmAssign = async () => {
                 )}
               </div>
             )}
-            <div className="px-6 py-3 border-t border-gray-700">
-              <p className="text-xs text-gray-500">Press Escape to close</p>
+            <div className="px-6 py-3 border-t border-dss-border">
+              <p className="text-xs text-dss-muted">Press Escape to close</p>
             </div>
           </div>
         </div>
@@ -1259,21 +1262,21 @@ const handleConfirmAssign = async () => {
       {unassignRep && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
           onClick={() => setUnassignRep(null)}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-2xl overflow-hidden"
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-2xl overflow-hidden"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dss-border">
               <div>
-                <h3 className="text-lg font-semibold text-gray-100">Unassign from {unassignRep.name}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">{unassignRepCalls.length} calls currently assigned</p>
+                <h3 className="text-lg font-semibold text-dss-ink">Unassign from {unassignRep.name}</h3>
+                <p className="text-xs text-dss-muted mt-0.5">{unassignRepCalls.length} calls currently assigned</p>
               </div>
-              <button onClick={() => setUnassignRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+              <button onClick={() => setUnassignRep(null)} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
             </div>
-            <div className="flex border-b border-gray-700">
+            <div className="flex border-b border-dss-border">
             {(['dealer', 'state', 'individual'] as const).map(mode => (
                 <button
                   key={mode}
                   onClick={() => { setUnassignMode(mode); setSelectedUnassignDealers(new Set()); setSelectedUnassignStates(new Set()); setSelectedUnassignCalls(new Set()); setUnassignSearch(''); }}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition border-b-2 capitalize ${unassignMode === mode ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-gray-300'}`}>
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition border-b-2 capitalize ${unassignMode === mode ? 'border-dss-accent text-dss-accent' : 'border-transparent text-dss-muted hover:text-dss-ink/80'}`}>
                   By {mode}
                 </button>
               ))}
@@ -1281,10 +1284,10 @@ const handleConfirmAssign = async () => {
             <div className="p-5">
             {unassignMode === 'dealer' && (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-400">Select one or more dealers to remove all their calls from {unassignRep.name}.</p>
+                  <p className="text-xs text-dss-muted">Select one or more dealers to remove all their calls from {unassignRep.name}.</p>
                   <div>
-                    <div className="flex items-center justify-between px-3 py-2 bg-gray-750 border border-gray-600 border-b-0 rounded-t-lg">
-                      <span className="text-xs text-gray-400">
+                    <div className="flex items-center justify-between px-3 py-2 bg-dss-canvas border border-dss-border border-b-0 rounded-t-lg">
+                      <span className="text-xs text-dss-muted">
                         {selectedUnassignDealers.size > 0
                           ? `${selectedUnassignDealers.size} of ${unassignDealers.length} selected`
                           : `${unassignDealers.length} dealers`}
@@ -1297,13 +1300,13 @@ const handleConfirmAssign = async () => {
                             setSelectedUnassignDealers(new Set(unassignDealers));
                           }
                         }}
-                        className="text-xs text-blue-400 hover:text-blue-300 transition">
+                        className="text-xs text-dss-accent hover:text-dss-accent transition">
                         {selectedUnassignDealers.size === unassignDealers.length ? 'Clear all' : 'Select all'}
                       </button>
                     </div>
-                    <div className="border border-gray-600 rounded-b-lg overflow-hidden max-h-52 overflow-y-auto">
+                    <div className="border border-dss-border rounded-b-lg overflow-hidden max-h-52 overflow-y-auto">
                       {unassignDealers.length === 0 ? (
-                        <p className="px-4 py-6 text-center text-sm text-gray-500">No dealers found</p>
+                        <p className="px-4 py-6 text-center text-sm text-dss-muted">No dealers found</p>
                       ) : unassignDealers.map(d => {
                         const cnt = unassignRepCalls.filter(c => c.dealerName === d).length;
                         const isSelected = selectedUnassignDealers.has(d);
@@ -1311,7 +1314,7 @@ const handleConfirmAssign = async () => {
                         return (
                           <div
                             key={d}
-                            className={`flex items-center gap-3 px-3 py-2.5 border-b border-gray-700 last:border-0 cursor-pointer transition-colors ${isSelected ? 'bg-red-900 bg-opacity-10' : 'hover:bg-gray-750'}`}
+                            className={`flex items-center gap-3 px-3 py-2.5 border-b border-dss-border last:border-0 cursor-pointer transition-colors ${isSelected ? 'bg-rose-50 bg-opacity-10' : 'hover:bg-dss-canvas'}`}
                             onClick={() => {
                               setSelectedUnassignDealers(prev => {
                                 const n = new Set(prev);
@@ -1325,17 +1328,17 @@ const handleConfirmAssign = async () => {
                               readOnly
                               className="w-3.5 h-3.5 accent-red-500 flex-shrink-0 pointer-events-none"
                             />
-                            <span className="text-xs text-gray-200 flex-1 truncate">{d}</span>
-                            <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600 flex-shrink-0">{repState}</span>
-                            <span className="text-xs text-gray-500 flex-shrink-0">{cnt} call{cnt !== 1 ? 's' : ''}</span>
+                            <span className="text-xs text-dss-ink flex-1 truncate">{d}</span>
+                            <span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border flex-shrink-0">{repState}</span>
+                            <span className="text-xs text-dss-muted flex-shrink-0">{cnt} call{cnt !== 1 ? 's' : ''}</span>
                           </div>
                         );
                       })}
                     </div>
                   </div>
                   {selectedUnassignDealers.size > 0 && (
-                    <div className="bg-gray-750 border border-gray-600 rounded-lg px-4 py-3">
-                      <p className="text-sm text-gray-300">
+                    <div className="bg-dss-canvas border border-dss-border rounded-dss-sm px-4 py-3">
+                      <p className="text-sm text-dss-ink/80">
                         This will unassign <span className="font-medium text-white">{getUnassignCallIds().length} calls</span> from <span className="font-medium text-white">{selectedUnassignDealers.size} dealer{selectedUnassignDealers.size !== 1 ? 's' : ''}</span>.
                       </p>
                     </div>
@@ -1344,10 +1347,10 @@ const handleConfirmAssign = async () => {
               )}
               {unassignMode === 'state' && (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-400">Select one or more states to remove all calls in those states from {unassignRep.name}.</p>
+                  <p className="text-xs text-dss-muted">Select one or more states to remove all calls in those states from {unassignRep.name}.</p>
                   <div>
-                    <div className="flex items-center justify-between px-3 py-2 bg-gray-750 border border-gray-600 border-b-0 rounded-t-lg">
-                      <span className="text-xs text-gray-400">
+                    <div className="flex items-center justify-between px-3 py-2 bg-dss-canvas border border-dss-border border-b-0 rounded-t-lg">
+                      <span className="text-xs text-dss-muted">
                         {selectedUnassignStates.size > 0
                           ? `${selectedUnassignStates.size} of ${unassignStates.length} selected`
                           : `${unassignStates.length} states`}
@@ -1360,20 +1363,20 @@ const handleConfirmAssign = async () => {
                             setSelectedUnassignStates(new Set(unassignStates));
                           }
                         }}
-                        className="text-xs text-blue-400 hover:text-blue-300 transition">
+                        className="text-xs text-dss-accent hover:text-dss-accent transition">
                         {selectedUnassignStates.size === unassignStates.length ? 'Clear all' : 'Select all'}
                       </button>
                     </div>
-                    <div className="border border-gray-600 rounded-b-lg overflow-hidden max-h-52 overflow-y-auto">
+                    <div className="border border-dss-border rounded-b-lg overflow-hidden max-h-52 overflow-y-auto">
                       {unassignStates.length === 0 ? (
-                        <p className="px-4 py-6 text-center text-sm text-gray-500">No states found</p>
+                        <p className="px-4 py-6 text-center text-sm text-dss-muted">No states found</p>
                       ) : unassignStates.map(s => {
                         const cnt = unassignRepCalls.filter(c => c.state === s).length;
                         const isSelected = selectedUnassignStates.has(s);
                         return (
                           <div
                             key={s}
-                            className={`flex items-center gap-3 px-3 py-2.5 border-b border-gray-700 last:border-0 cursor-pointer transition-colors ${isSelected ? 'bg-red-900 bg-opacity-10' : 'hover:bg-gray-750'}`}
+                            className={`flex items-center gap-3 px-3 py-2.5 border-b border-dss-border last:border-0 cursor-pointer transition-colors ${isSelected ? 'bg-rose-50 bg-opacity-10' : 'hover:bg-dss-canvas'}`}
                             onClick={() => {
                               setSelectedUnassignStates(prev => {
                                 const n = new Set(prev);
@@ -1387,17 +1390,17 @@ const handleConfirmAssign = async () => {
                               readOnly
                               className="w-3.5 h-3.5 accent-red-500 flex-shrink-0 pointer-events-none"
                             />
-                            <span className="text-xs text-gray-200 flex-1">{s}</span>
-                            <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600 flex-shrink-0">{s}</span>
-                            <span className="text-xs text-gray-500 flex-shrink-0">{cnt} call{cnt !== 1 ? 's' : ''}</span>
+                            <span className="text-xs text-dss-ink flex-1">{s}</span>
+                            <span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border flex-shrink-0">{s}</span>
+                            <span className="text-xs text-dss-muted flex-shrink-0">{cnt} call{cnt !== 1 ? 's' : ''}</span>
                           </div>
                         );
                       })}
                     </div>
                   </div>
                   {selectedUnassignStates.size > 0 && (
-                    <div className="bg-gray-750 border border-gray-600 rounded-lg px-4 py-3">
-                      <p className="text-sm text-gray-300">
+                    <div className="bg-dss-canvas border border-dss-border rounded-dss-sm px-4 py-3">
+                      <p className="text-sm text-dss-ink/80">
                         This will unassign <span className="font-medium text-white">{getUnassignCallIds().length} calls</span> from <span className="font-medium text-white">{selectedUnassignStates.size} state{selectedUnassignStates.size !== 1 ? 's' : ''}</span>.
                       </p>
                     </div>
@@ -1406,34 +1409,34 @@ const handleConfirmAssign = async () => {
               )}
               {unassignMode === 'individual' && (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-400">Select specific calls to unassign from {unassignRep.name}.</p>
+                  <p className="text-xs text-dss-muted">Select specific calls to unassign from {unassignRep.name}.</p>
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-dss-muted" />
                     <input type="text" placeholder="Search App ID or dealer…" value={unassignSearch} onChange={e => setUnassignSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" autoFocus />
+                      className="w-full pl-8 pr-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30" autoFocus />
                   </div>
-                  <div className="border border-gray-600 rounded-lg overflow-hidden max-h-60 overflow-y-auto">
+                  <div className="border border-dss-border rounded-dss-sm overflow-hidden max-h-60 overflow-y-auto">
                     {filteredUnassignIndividual.length === 0 ? (
-                      <p className="px-4 py-6 text-center text-sm text-gray-500">No calls found</p>
+                      <p className="px-4 py-6 text-center text-sm text-dss-muted">No calls found</p>
                     ) : filteredUnassignIndividual.map(call => (
                       <div key={call.id}
-                        className={`flex items-center gap-3 px-3 py-2.5 border-b border-gray-700 last:border-0 cursor-pointer hover:bg-gray-750 transition-colors ${selectedUnassignCalls.has(call.id) ? 'bg-red-900 bg-opacity-10' : ''}`}
+                        className={`flex items-center gap-3 px-3 py-2.5 border-b border-dss-border last:border-0 cursor-pointer hover:bg-dss-canvas transition-colors ${selectedUnassignCalls.has(call.id) ? 'bg-rose-50 bg-opacity-10' : ''}`}
                         onClick={() => { setSelectedUnassignCalls(prev => { const n = new Set(prev); if (n.has(call.id)) n.delete(call.id); else n.add(call.id); return n; }); }}>
                         <input type="checkbox" checked={selectedUnassignCalls.has(call.id)} readOnly className="w-3.5 h-3.5 accent-red-500 flex-shrink-0 pointer-events-none" />
-                        <span className="text-xs text-blue-400 font-medium w-28 flex-shrink-0">{call.applicationId}</span>
-                        <span className="text-xs text-gray-200 flex-1 truncate">{call.dealerName}</span>
-                        <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600 flex-shrink-0">{call.state}</span>
+                        <span className="text-xs text-dss-accent font-medium w-28 flex-shrink-0">{call.applicationId}</span>
+                        <span className="text-xs text-dss-ink flex-1 truncate">{call.dealerName}</span>
+                        <span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border flex-shrink-0">{call.state}</span>
                       </div>
                     ))}
                   </div>
-                  {selectedUnassignCalls.size > 0 && <p className="text-xs text-gray-400">{selectedUnassignCalls.size} call{selectedUnassignCalls.size !== 1 ? 's' : ''} selected</p>}
+                  {selectedUnassignCalls.size > 0 && <p className="text-xs text-dss-muted">{selectedUnassignCalls.size} call{selectedUnassignCalls.size !== 1 ? 's' : ''} selected</p>}
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-700">
-              <button onClick={() => setUnassignRep(null)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">Cancel</button>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-dss-border">
+              <button onClick={() => setUnassignRep(null)} className="px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">Cancel</button>
               <button onClick={handleUnassign} disabled={unassigning || getUnassignCallIds().length === 0}
-                className="px-4 py-2 bg-red-700 hover:bg-red-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition">
+                className="px-4 py-2 bg-red-700 hover:bg-red-600 disabled:bg-dss-canvas disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition">
                 {unassigning ? 'Unassigning…' : `Unassign ${getUnassignCallIds().length > 0 ? `(${getUnassignCallIds().length})` : ''}`}
               </button>
             </div>
@@ -1445,26 +1448,26 @@ const handleConfirmAssign = async () => {
       {goalRep && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 px-4"
           onClick={() => setGoalRep(null)}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-sm overflow-hidden"
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-sm overflow-hidden"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700">
-              <h3 className="text-base font-semibold text-gray-100">Set daily goal</h3>
-              <button onClick={() => setGoalRep(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-dss-border">
+              <h3 className="text-base font-semibold text-dss-ink">Set daily goal</h3>
+              <button onClick={() => setGoalRep(null)} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
             </div>
             <div className="p-5 space-y-4">
-              <p className="text-sm text-gray-300">Daily deal goal for <span className="font-medium text-white">{goalRep.name}</span></p>
+              <p className="text-sm text-dss-ink/80">Daily deal goal for <span className="font-medium text-white">{goalRep.name}</span></p>
               <div>
-                <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Deals per day</label>
+                <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Deals per day</label>
                 <input type="number" min="0" value={goalValue} onChange={e => setGoalValue(e.target.value)}
                   placeholder="0" autoFocus onKeyDown={e => { if (e.key === 'Enter') handleSaveGoal(); }}
-                  className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-lg text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 text-center font-medium" />
+                  className="w-full px-3 py-2.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-lg text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30 text-center font-medium" />
               </div>
-              {goals.daily[goalRep.id] > 0 && <p className="text-xs text-gray-500 text-center">Current goal: {goals.daily[goalRep.id]}/day</p>}
+              {goals.daily[goalRep.id] > 0 && <p className="text-xs text-dss-muted text-center">Current goal: {goals.daily[goalRep.id]}/day</p>}
             </div>
-            <div className="flex items-center gap-3 px-5 py-4 border-t border-gray-700">
-              <button onClick={() => setGoalRep(null)} className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">Cancel</button>
+            <div className="flex items-center gap-3 px-5 py-4 border-t border-dss-border">
+              <button onClick={() => setGoalRep(null)} className="flex-1 px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">Cancel</button>
               <button onClick={handleSaveGoal} disabled={savingGoal}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg text-sm font-medium transition">
+                className="flex-1 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas text-white rounded-dss-sm text-sm font-medium transition">
                 {savingGoal ? 'Saving…' : 'Save goal'}
               </button>
             </div>

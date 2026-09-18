@@ -16,7 +16,7 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-[#f4f6f8] text-slate-900 min-h-[calc(100vh-8.5rem)]">
+    <div className="min-h-[calc(100vh-3.5rem)] bg-[#f4f6f8] text-slate-900">
       <header className="iv-no-print border-b border-slate-800 bg-slate-900 text-white">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-6 py-3">
           <div>

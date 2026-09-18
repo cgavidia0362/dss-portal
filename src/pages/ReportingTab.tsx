@@ -1008,8 +1008,8 @@ export default function ReportingTab({
     );
   };
 
-  const dealCountButtonCls = 'inline-flex items-center rounded-full border border-green-700/60 bg-green-900/30 px-2.5 py-1 text-sm font-semibold text-green-300 hover:bg-green-800/40 transition';
-  const confirmedCountButtonCls = 'inline-flex items-center gap-1 rounded-full border border-emerald-700/60 bg-emerald-900/30 px-2.5 py-1 text-sm font-semibold text-emerald-300 hover:bg-emerald-800/40 transition';
+  const dealCountButtonCls = 'inline-flex items-center rounded-full border border-emerald-200/60 bg-emerald-50/30 px-2.5 py-1 text-sm font-semibold text-dss-success hover:bg-green-800/40 transition';
+  const confirmedCountButtonCls = 'inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 transition';
 
   const handleSetGoal = async () => {
     if (!selectedState || !goalForm.monthlyGoal || !goalForm.fundingDays) {
@@ -1057,7 +1057,7 @@ export default function ReportingTab({
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
   const getProgressColor = (p: number) => p >= 90 ? 'bg-green-500' : p >= 70 ? 'bg-blue-500' : p >= 50 ? 'bg-yellow-500' : 'bg-red-500';
-  const getProgressTextColor = (p: number) => p >= 90 ? 'text-green-400' : p >= 70 ? 'text-blue-400' : p >= 50 ? 'text-yellow-400' : 'text-red-400';
+  const getProgressTextColor = (p: number) => p >= 90 ? 'text-dss-success' : p >= 70 ? 'text-dss-accent' : p >= 50 ? 'text-amber-700' : 'text-dss-danger';
 
   const resetRangeToToday = () => {
     const today = getTodayString();
@@ -1083,15 +1083,15 @@ export default function ReportingTab({
 
   return (
     <div className="space-y-8">
-      {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded">{error}</div>}
+      {error && <div className="bg-rose-50 border border-rose-200 text-dss-danger px-4 py-3 rounded">{error}</div>}
 
       {/* Month picker bar */}
-      <div className="flex items-center justify-between bg-gray-800 rounded-lg border border-gray-700 px-4 py-3">
+      <div className="flex items-center justify-between bg-dss-surface rounded-dss-sm border border-dss-border px-4 py-3">
         <div className="flex items-center gap-3">
-          <Calendar className="w-5 h-5 text-blue-400" />
+          <Calendar className="w-5 h-5 text-dss-accent" />
           <div>
-            <p className="text-sm font-medium text-gray-200">Reporting Period</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-sm font-medium text-dss-ink">Reporting Period</p>
+            <p className="text-xs text-dss-muted">
               {isViewingCurrentMonth ? 'Current month' : 'Historical view'} · Use date range below for performance metrics
             </p>
           </div>
@@ -1102,13 +1102,13 @@ export default function ReportingTab({
               if (viewMonth === 1) goToMonth(viewYear - 1, 12);
               else goToMonth(viewYear, viewMonth - 1);
             }}
-            className="p-2 rounded-lg hover:bg-gray-700 text-gray-400 transition"
+            className="p-2 rounded-dss-sm hover:bg-dss-canvas text-dss-muted transition"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={() => setShowMonthPicker(true)}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg text-sm font-medium text-gray-200 transition min-w-[160px]"
+            className="px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft border border-dss-border rounded-dss-sm text-sm font-medium text-dss-ink transition min-w-[160px]"
           >
             {viewMonthLabel}
           </button>
@@ -1120,14 +1120,14 @@ export default function ReportingTab({
               }
             }}
             disabled={isViewingCurrentMonth}
-            className="p-2 rounded-lg hover:bg-gray-700 text-gray-400 transition disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-2 rounded-dss-sm hover:bg-dss-canvas text-dss-muted transition disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
           {!isViewingCurrentMonth && (
             <button
               onClick={() => goToMonth(currentYear, currentMonth)}
-              className="ml-2 px-3 py-2 text-xs bg-blue-900 text-blue-300 border border-blue-700 rounded-lg hover:bg-blue-800 transition"
+              className="ml-2 px-3 py-2 text-xs bg-dss-accent-soft text-dss-accent border border-dss-accent/30 rounded-dss-sm hover:bg-blue-800 transition"
             >
               Today
             </button>
@@ -1136,35 +1136,35 @@ export default function ReportingTab({
       </div>
 
       {/* Shared date range */}
-      <div className="bg-gray-800 rounded-xl border border-gray-700 px-5 py-4 shadow-lg shadow-black/10">
+      <div className="bg-dss-surface rounded-dss border border-dss-border px-5 py-4 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-gray-100">Date Range</p>
-            <p className="text-xs text-gray-500 mt-0.5">Shared by Performance Overview and Rep Performance · {rangeLabel}</p>
+            <p className="text-sm font-semibold text-dss-ink">Date Range</p>
+            <p className="text-xs text-dss-muted mt-0.5">Shared by Performance Overview and Rep Performance · {rangeLabel}</p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">From</label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-dss-muted mb-1.5">From</label>
               <input
                 type="date"
                 value={rangeStart}
                 onChange={e => handleRangeStartChange(e.target.value)}
-                className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
               />
             </div>
-            <span className="text-gray-500 pb-2 hidden sm:inline">→</span>
+            <span className="text-dss-muted pb-2 hidden sm:inline">→</span>
             <div>
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">To</label>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-dss-muted mb-1.5">To</label>
               <input
                 type="date"
                 value={rangeEnd}
                 onChange={e => handleRangeEndChange(e.target.value)}
-                className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
               />
             </div>
             <button
               onClick={resetRangeToToday}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-gray-300 rounded-lg text-sm transition"
+              className="px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft border border-dss-border text-dss-ink/80 rounded-dss-sm text-sm transition"
             >
               Reset to Today
             </button>
@@ -1177,12 +1177,12 @@ export default function ReportingTab({
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300 shadow-lg shadow-blue-950/20">
+              <div className="flex h-11 w-11 items-center justify-center rounded-dss border border-dss-accent/30 bg-blue-500/10 text-dss-accent shadow-lg shadow-blue-950/20">
                 <Target className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold text-gray-100">Performance Overview</h2>
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+                <h2 className="text-2xl font-bold text-dss-ink">Performance Overview</h2>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-dss-muted">
                   <Calendar className="h-3.5 w-3.5" /> {rangeLabel}
                 </p>
               </div>
@@ -1192,7 +1192,7 @@ export default function ReportingTab({
             {(currentUserRole === 'admin' || currentUserRole === 'manager') && isViewingCurrentMonth && (
               <button
                 onClick={() => setShowTeamGoals(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-lg text-sm transition shadow-lg shadow-black/10"
+                className="flex items-center gap-2 px-4 py-2 bg-dss-surface hover:bg-dss-canvas border border-dss-border text-dss-ink/80 rounded-dss-sm text-sm transition shadow-sm"
               >
                 <Target className="w-4 h-4" /> Set Goals
               </button>
@@ -1200,7 +1200,7 @@ export default function ReportingTab({
           </div>
         </div>
 
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Deal results</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-dss-muted mb-3">Deal results</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
           {[
             {
@@ -1209,9 +1209,9 @@ export default function ReportingTab({
               amount: formatCurrency(allDealsAmount),
               sub: 'Booked deals · 24h lock for status changes',
               Icon: Layers,
-              color: 'text-cyan-300',
+              color: 'text-cyan-800',
               accent: 'border-cyan-500/30 bg-cyan-500/10',
-              card: 'to-cyan-950/25',
+              card: '',
             },
             {
               label: 'Deals on the Way',
@@ -1219,9 +1219,9 @@ export default function ReportingTab({
               amount: formatCurrency(dealsOnTheWayAmount),
               sub: 'Status: Deal only',
               Icon: Handshake,
-              color: 'text-green-300',
+              color: 'text-dss-success',
               accent: 'border-green-500/30 bg-green-500/10',
-              card: 'to-green-950/25',
+              card: '',
             },
             {
               label: 'Confirmed Deals',
@@ -1229,9 +1229,9 @@ export default function ReportingTab({
               amount: formatCurrency(confirmedDealAmount),
               sub: 'Status: Confirmed Deal',
               Icon: BadgeCheck,
-              color: 'text-emerald-300',
+              color: 'text-emerald-700',
               accent: 'border-emerald-500/30 bg-emerald-500/10',
-              card: 'to-emerald-950/25',
+              card: '',
             },
             {
               label: 'Conversion Rate',
@@ -1239,27 +1239,27 @@ export default function ReportingTab({
               amount: null as string | null,
               sub: `Confirmed ÷ All Deals · Avg ${formatCurrency(rangeAvgDeal)}`,
               Icon: BarChart3,
-              color: 'text-blue-300',
-              accent: 'border-blue-500/30 bg-blue-500/10',
-              card: 'to-blue-950/25',
+              color: 'text-dss-accent',
+              accent: 'border-dss-accent/30 bg-blue-500/10',
+              card: '',
             },
           ].map(({ label, value, amount, sub, Icon, color, accent, card }) => (
-            <div key={label} className={`relative overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 ${card} p-4 shadow-xl shadow-black/10`}>
+            <div key={label} className={`relative overflow-hidden rounded-dss border border-dss-border bg-dss-surface ${card} p-4 shadow-sm`}>
               <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
-              <div className={`relative mb-4 flex h-11 w-11 items-center justify-center rounded-xl border ${accent} ${color}`}>
+              <div className={`relative mb-4 flex h-11 w-11 items-center justify-center rounded-dss border ${accent} ${color}`}>
                 <Icon className="h-5 w-5" />
               </div>
-              <p className="relative text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+              <p className="relative text-xs font-semibold uppercase tracking-wider text-dss-muted">{label}</p>
               <p className={`relative mt-1 text-3xl font-bold ${color}`}>{value}</p>
               {amount !== null && (
-                <p className="relative mt-1 text-lg font-semibold text-gray-200">{amount}</p>
+                <p className="relative mt-1 text-lg font-semibold text-dss-ink">{amount}</p>
               )}
-              <p className="relative mt-2 inline-flex rounded-full border border-gray-700 bg-gray-900/40 px-2 py-1 text-xs text-gray-500">{sub}</p>
+              <p className="relative mt-2 inline-flex rounded-full border border-dss-border bg-dss-canvas px-2 py-1 text-xs text-dss-muted">{sub}</p>
             </div>
           ))}
         </div>
 
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Call workload (assigned rep)</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-dss-muted mb-3">Call workload (assigned rep)</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
           {[
             {
@@ -1267,17 +1267,17 @@ export default function ReportingTab({
               value: teamTotals.totalCalls,
               sub: 'Assigned in range',
               Icon: Phone,
-              color: 'text-blue-300',
-              accent: 'border-blue-500/30 bg-blue-500/10',
-              card: 'to-blue-950/25',
+              color: 'text-dss-accent',
+              accent: 'border-dss-accent/30 bg-blue-500/10',
+              card: '',
             },
             {
               label: 'No Call',
               value: teamTotals.noCall,
               sub: 'Not yet called',
               Icon: PhoneOff,
-              color: 'text-gray-300',
-              accent: 'border-gray-500/30 bg-gray-500/10',
+              color: 'text-dss-ink/80',
+              accent: 'border-dss-border bg-dss-canvas',
               card: 'to-gray-700/20',
             },
             {
@@ -1285,104 +1285,104 @@ export default function ReportingTab({
               value: teamTotals.pending,
               sub: 'Waiting on response',
               Icon: Hourglass,
-              color: 'text-yellow-300',
+              color: 'text-amber-800',
               accent: 'border-yellow-500/30 bg-yellow-500/10',
-              card: 'to-yellow-950/25',
+              card: '',
             },
             {
               label: 'No Answer',
               value: teamTotals.noAnswer,
               sub: 'Needs retry',
               Icon: PhoneOff,
-              color: 'text-orange-300',
+              color: 'text-orange-800',
               accent: 'border-orange-500/30 bg-orange-500/10',
-              card: 'to-orange-950/25',
+              card: '',
             },
           ].map(({ label, value, sub, Icon, color, accent, card }) => (
-            <div key={label} className={`relative overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 ${card} p-4 shadow-xl shadow-black/10`}>
+            <div key={label} className={`relative overflow-hidden rounded-dss border border-dss-border bg-dss-surface ${card} p-4 shadow-sm`}>
               <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
-              <div className={`relative mb-4 flex h-11 w-11 items-center justify-center rounded-xl border ${accent} ${color}`}>
+              <div className={`relative mb-4 flex h-11 w-11 items-center justify-center rounded-dss border ${accent} ${color}`}>
                 <Icon className="h-5 w-5" />
               </div>
-              <p className="relative text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+              <p className="relative text-xs font-semibold uppercase tracking-wider text-dss-muted">{label}</p>
               <p className={`relative mt-1 text-3xl font-bold ${color}`}>{value}</p>
-              <p className="relative mt-2 inline-flex rounded-full border border-gray-700 bg-gray-900/40 px-2 py-1 text-xs text-gray-500">{sub}</p>
+              <p className="relative mt-2 inline-flex rounded-full border border-dss-border bg-dss-canvas px-2 py-1 text-xs text-dss-muted">{sub}</p>
             </div>
           ))}
         </div>
 
         {isViewingCurrentMonth && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div className="relative overflow-hidden rounded-xl border border-cyan-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-cyan-950/25 p-5 shadow-xl shadow-cyan-950/10">
+            <div className="relative overflow-hidden rounded-dss border border-cyan-500/30 bg-dss-surface p-5 shadow-sm">
               <div className="absolute -left-10 -top-10 h-28 w-28 rounded-full bg-cyan-500/10 blur-2xl" />
               <div className="relative flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-800">
                     <Target className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-gray-100">Team Daily Goal</p>
-                    <p className="text-xs text-gray-500">Daily pace target</p>
+                    <p className="text-sm font-semibold text-dss-ink">Team Daily Goal</p>
+                    <p className="text-xs text-dss-muted">Daily pace target</p>
                   </div>
                 </div>
-                <span className="text-sm font-bold text-cyan-300">{dealsToday} / {goals.team}</span>
+                <span className="text-sm font-bold text-cyan-800">{dealsToday} / {goals.team}</span>
               </div>
-              <div className="relative w-full bg-gray-700 rounded-full h-2.5 mb-3 overflow-hidden">
+              <div className="relative w-full bg-dss-canvas rounded-full h-2.5 mb-3 overflow-hidden">
                 <div className="bg-gradient-to-r from-cyan-400 to-blue-500 h-2.5 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
               </div>
-              <p className="relative text-xs text-gray-500"><span className="text-cyan-300 font-semibold">{teamGoalPct.toFixed(0)}%</span> complete today</p>
+              <p className="relative text-xs text-dss-muted"><span className="text-cyan-800 font-semibold">{teamGoalPct.toFixed(0)}%</span> complete today</p>
             </div>
-            <div className="relative overflow-hidden rounded-xl border border-purple-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-purple-950/25 p-5 shadow-xl shadow-purple-950/10">
+            <div className="relative overflow-hidden rounded-dss border border-purple-500/30 bg-dss-surface p-5 shadow-sm">
               <div className="absolute -left-10 -top-10 h-28 w-28 rounded-full bg-purple-500/10 blur-2xl" />
               <div className="relative flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-300">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-purple-500/30 bg-purple-500/10 text-dss-accent">
                     <Calendar className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-gray-100">Monthly Goal</p>
-                    <p className="text-xs text-gray-500">Month-to-date progress</p>
+                    <p className="text-sm font-semibold text-dss-ink">Monthly Goal</p>
+                    <p className="text-xs text-dss-muted">Month-to-date progress</p>
                   </div>
                 </div>
-                <span className="text-sm font-bold text-purple-300">{monthTotalDeals} / {goals.monthly}</span>
+                <span className="text-sm font-bold text-dss-accent">{monthTotalDeals} / {goals.monthly}</span>
               </div>
-              <div className="relative w-full bg-gray-700 rounded-full h-2.5 mb-3 overflow-hidden">
+              <div className="relative w-full bg-dss-canvas rounded-full h-2.5 mb-3 overflow-hidden">
                 <div className="bg-gradient-to-r from-purple-400 to-fuchsia-500 h-2.5 rounded-full transition-all" style={{ width: `${monthlyGoalPct}%` }} />
               </div>
-              <p className="relative text-xs text-gray-500"><span className="text-purple-300 font-semibold">{monthlyGoalPct.toFixed(0)}%</span> complete this month</p>
+              <p className="relative text-xs text-dss-muted"><span className="text-dss-accent font-semibold">{monthlyGoalPct.toFixed(0)}%</span> complete this month</p>
             </div>
           </div>
         )}
 
         {dealsByState.length > 0 && (
-          <div className="rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 p-5 shadow-xl shadow-black/10">
+          <div className="rounded-dss border border-dss-border bg-dss-surface p-5 shadow-sm">
             <div className="flex items-center gap-3 mb-5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-600 bg-gray-900/50 text-gray-300">
+              <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-dss-border bg-dss-canvas/50 text-dss-ink/80">
                 <MapPin className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-gray-100">Deals by State — {rangeLabel}</p>
-                <p className="text-xs text-gray-500">Share of funded deals by state</p>
+                <p className="text-sm font-semibold text-dss-ink">Deals by State — {rangeLabel}</p>
+                <p className="text-xs text-dss-muted">Share of funded deals by state</p>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {dealsByState.map(item => {
                 const share = rangeDealCount > 0 ? Math.round((item.deals / rangeDealCount) * 100) : 0;
                 return (
-                  <div key={item.state} className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-gray-900/80 to-emerald-950/20 p-5">
+                  <div key={item.state} className="relative overflow-hidden rounded-dss border border-emerald-500/30 bg-dss-surface p-5">
                     <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
                     <div className="relative flex items-center justify-between gap-4">
                       <div>
-                        <p className="text-2xl font-bold text-gray-100">{item.state}</p>
-                        <p className="mt-2 text-4xl font-bold text-emerald-300">{item.deals}</p>
-                        <p className="mt-1 text-sm text-gray-400">{formatCurrency(item.amount)}</p>
+                        <p className="text-2xl font-bold text-dss-ink">{item.state}</p>
+                        <p className="mt-2 text-4xl font-bold text-emerald-700">{item.deals}</p>
+                        <p className="mt-1 text-sm text-dss-muted">{formatCurrency(item.amount)}</p>
                       </div>
                       <div className="grid h-16 w-16 place-items-center rounded-full text-sm font-bold text-emerald-200"
-                        style={{ background: `conic-gradient(rgb(16 185 129) ${share}%, rgba(55,65,81,.85) 0)` }}>
-                        <div className="grid h-12 w-12 place-items-center rounded-full bg-gray-900">{share}%</div>
+                        style={{ background: `conic-gradient(rgb(16 185 129) ${share}%, rgb(226 232 240) 0)` }}>
+                        <div className="grid h-12 w-12 place-items-center rounded-full bg-dss-canvas">{share}%</div>
                       </div>
                     </div>
-                    <div className="relative mt-5 h-2.5 overflow-hidden rounded-full bg-gray-700/80">
+                    <div className="relative mt-5 h-2.5 overflow-hidden rounded-full bg-dss-canvas/80">
                       <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-green-500 transition-all" style={{ width: `${share}%` }} />
                     </div>
                   </div>
@@ -1397,45 +1397,45 @@ export default function ReportingTab({
       <div>
         <div className="flex items-start justify-between gap-4 mb-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+            <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-emerald-500/30 bg-emerald-500/10 text-emerald-700">
               <MapPin className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-100">State Performance</h2>
-              <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+              <h2 className="text-2xl font-bold text-dss-ink">State Performance</h2>
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-dss-muted">
                 <Calendar className="h-3.5 w-3.5" /> {viewMonthLabel}
               </p>
             </div>
           </div>
           {(currentUserRole === 'admin' || currentUserRole === 'manager') && isViewingCurrentMonth && (
             <button onClick={() => setShowGoalModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition text-sm shadow-lg shadow-blue-950/30">
+              className="flex items-center gap-2 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm transition text-sm shadow-lg shadow-blue-950/30">
               <Settings className="w-4 h-4" /> Set State Goals
             </button>
           )}
         </div>
 
         {hasFundingData && (
-          <div className="relative overflow-hidden bg-gradient-to-r from-green-950 via-emerald-950 to-green-900 rounded-xl p-5 border border-green-700/60 mb-4 flex items-center justify-between flex-wrap gap-4 shadow-xl shadow-green-950/20">
+          <div className="relative overflow-hidden bg-emerald-50 rounded-dss p-5 border border-emerald-200/60 mb-4 flex items-center justify-between flex-wrap gap-4 shadow-sm">
             <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(34,197,94,0.18),transparent_45%)]" />
             <div className="relative">
-              <p className="text-green-300 text-xs font-semibold mb-2 uppercase tracking-wider">All States Combined</p>
+              <p className="text-dss-success text-xs font-semibold mb-2 uppercase tracking-wider">All States Combined</p>
               <div className="flex items-end gap-6">
                 <div>
                   <p className="text-4xl font-bold text-white leading-none">{totalFundedCount}</p>
-                  <p className="text-green-400 text-xs mt-0.5">funded deals</p>
+                  <p className="text-dss-success text-xs mt-0.5">funded deals</p>
                 </div>
                 <div className="h-10 w-px bg-green-700/70" />
                 <div>
-                  <p className="text-2xl font-bold text-green-200">{formatCurrency(totalFundedAmount)}</p>
+                  <p className="text-2xl font-bold text-dss-success">{formatCurrency(totalFundedAmount)}</p>
                   <p className="text-green-500 text-xs mt-0.5">total volume</p>
                 </div>
               </div>
             </div>
-            <div className="relative flex items-center gap-3 rounded-xl border border-green-600/50 bg-green-950/40 px-4 py-3 text-right">
-              <DollarSign className="h-7 w-7 text-green-300" />
+            <div className="relative flex items-center gap-3 rounded-dss border border-green-600/50 bg-green-950/40 px-4 py-3 text-right">
+              <DollarSign className="h-7 w-7 text-dss-success" />
               <div>
-                <p className="text-green-400 text-xs">Avg per deal</p>
+                <p className="text-dss-success text-xs">Avg per deal</p>
                 <p className="text-xl font-bold text-green-100">
                 {formatCurrency(totalFundedCount > 0 ? totalFundedAmount / totalFundedCount : 0)}
                 </p>
@@ -1457,32 +1457,32 @@ export default function ReportingTab({
             ];
             const accent = accentColors[idx % accentColors.length];
             return (
-              <div key={stat.state} className="relative overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 p-4 shadow-lg shadow-black/10">
+              <div key={stat.state} className="relative overflow-hidden rounded-dss border border-dss-border bg-dss-surface p-4 shadow-sm">
                 <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full opacity-20 blur-2xl" style={{ backgroundColor: accent }} />
                 <div className="relative flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="grid h-14 w-14 place-items-center rounded-full text-xs font-bold text-gray-100"
-                      style={{ background: `conic-gradient(${accent} ${stat.monthlyGoal > 0 ? Math.min(stat.progress, 100) : share}%, rgba(55,65,81,.85) 0)` }}>
-                      <div className="grid h-10 w-10 place-items-center rounded-full bg-gray-900">{stat.state}</div>
+                    <div className="grid h-14 w-14 place-items-center rounded-full text-xs font-bold text-dss-ink"
+                      style={{ background: `conic-gradient(${accent} ${stat.monthlyGoal > 0 ? Math.min(stat.progress, 100) : share}%, rgb(226 232 240) 0)` }}>
+                      <div className="grid h-10 w-10 place-items-center rounded-full bg-dss-canvas">{stat.state}</div>
                     </div>
                     <div>
-                      <p className="text-xl font-bold text-gray-100">{stat.state}</p>
-                      <p className="text-xs text-gray-500">{stat.totalApps} total apps</p>
+                      <p className="text-xl font-bold text-dss-ink">{stat.state}</p>
+                      <p className="text-xs text-dss-muted">{stat.totalApps} total apps</p>
                     </div>
                   </div>
                   {stat.monthlyGoal > 0 ? (
                     <div className="text-right">
                       <p className={`text-xl font-bold ${getProgressTextColor(stat.progress)}`}>{stat.funded}</p>
-                      <p className="text-xs text-gray-500">/ {stat.monthlyGoal} goal</p>
+                      <p className="text-xs text-dss-muted">/ {stat.monthlyGoal} goal</p>
                     </div>
                   ) : (
-                    <span className="rounded-full border border-gray-700 bg-gray-900/50 px-2 py-1 text-xs italic text-gray-500">No goal set</span>
+                    <span className="rounded-full border border-dss-border bg-dss-canvas/50 px-2 py-1 text-xs italic text-dss-muted">No goal set</span>
                   )}
                 </div>
 
               {stat.monthlyGoal > 0 ? (
                 <>
-                  <div className="w-full bg-gray-700/80 rounded-full h-2.5 mb-3 overflow-hidden">
+                  <div className="w-full bg-dss-canvas/80 rounded-full h-2.5 mb-3 overflow-hidden">
                     <div className={`h-2.5 rounded-full ${getProgressColor(stat.progress)}`}
                       style={{ width: `${Math.min(stat.progress, 100)}%` }} />
                   </div>
@@ -1492,27 +1492,27 @@ export default function ReportingTab({
                     </span>
                     {isViewingCurrentMonth && (
                       <>
-                        <span className="text-gray-400">
-                          Need <span className="text-gray-200 font-medium">{stat.neededPerDay}/day</span>
+                        <span className="text-dss-muted">
+                          Need <span className="text-dss-ink font-medium">{stat.neededPerDay}/day</span>
                         </span>
-                        <span className="text-gray-400">
-                          <span className="text-gray-200 font-medium">{stat.daysRemaining}</span> days left
+                        <span className="text-dss-muted">
+                          <span className="text-dss-ink font-medium">{stat.daysRemaining}</span> days left
                         </span>
                       </>
                     )}
                   </div>
                   {stat.totalAmount > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-700">
-                      <span className="text-xs text-green-400 font-semibold">{formatCurrency(stat.totalAmount)}</span>
-                      <span className="text-xs text-gray-500 ml-2">funded volume</span>
+                    <div className="mt-3 pt-3 border-t border-dss-border">
+                      <span className="text-xs text-dss-success font-semibold">{formatCurrency(stat.totalAmount)}</span>
+                      <span className="text-xs text-dss-muted ml-2">funded volume</span>
                     </div>
                   )}
                 </>
               ) : (
-                <div className="relative flex items-center justify-between text-xs text-gray-400">
+                <div className="relative flex items-center justify-between text-xs text-dss-muted">
                   <span>{share}% of funded deals</span>
                   {stat.funded > 0 && (
-                    <span className="rounded-full border border-green-700/60 bg-green-900/30 px-2 py-1 text-green-300">
+                    <span className="rounded-full border border-emerald-200/60 bg-emerald-50/30 px-2 py-1 text-dss-success">
                       {stat.funded} funded
                     </span>
                   )}
@@ -1529,12 +1529,12 @@ export default function ReportingTab({
         <div>
           <div className="flex items-start justify-between gap-4 mb-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300">
+              <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-dss-accent/30 bg-blue-500/10 text-dss-accent">
                 <BarChart3 className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold text-gray-100">Rep Performance</h2>
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+                <h2 className="text-2xl font-bold text-dss-ink">Rep Performance</h2>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-dss-muted">
                   <Calendar className="h-3.5 w-3.5" /> {rangeLabel} · Deals credited to who marked them
                 </p>
               </div>
@@ -1542,10 +1542,10 @@ export default function ReportingTab({
           </div>
 
           {repPerformance.length > 0 ? (
-            <div className="bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-hidden shadow-xl shadow-black/10">
+            <div className="bg-dss-surface rounded-dss border border-dss-border overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
               <table className="w-full min-w-[820px]">
-                <thead className="bg-gray-950/70">
+                <thead className="bg-dss-canvas">
                   <tr>
                     {([
                       { key: 'repName', label: 'Rep' },
@@ -1560,11 +1560,11 @@ export default function ReportingTab({
                       const active = repSortKey === col.key;
                       const SortIcon = !active ? ArrowUpDown : repSortDir === 'asc' ? ArrowUp : ArrowDown;
                       return (
-                        <th key={col.key} className="px-5 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                        <th key={col.key} className="px-5 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">
                           <button
                             type="button"
                             onClick={() => toggleRepSort(col.key)}
-                            className={`inline-flex items-center gap-1 hover:text-gray-200 transition ${active ? 'text-blue-300' : ''}`}
+                            className={`inline-flex items-center gap-1 hover:text-dss-ink transition ${active ? 'text-dss-accent' : ''}`}
                           >
                             {col.label}
                             <SortIcon className="h-3.5 w-3.5" />
@@ -1582,20 +1582,20 @@ export default function ReportingTab({
                       .join('')
                       .slice(0, 2)
                       .toUpperCase();
-                    const avatarColors = ['bg-purple-600', 'bg-blue-600', 'bg-cyan-600', 'bg-indigo-600', 'bg-orange-600', 'bg-emerald-600'];
+                    const avatarColors = ['bg-purple-600', 'bg-dss-navy', 'bg-cyan-600', 'bg-indigo-600', 'bg-orange-600', 'bg-emerald-600'];
                     return (
-                    <tr key={rep.repId} className={`${idx % 2 === 0 ? 'bg-gray-800/40' : 'bg-gray-900/20'} hover:bg-gray-750 transition`}>
+                    <tr key={rep.repId} className={`${idx % 2 === 0 ? 'bg-dss-surface/40' : 'bg-dss-canvas'} hover:bg-dss-canvas transition`}>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ${avatarColors[idx % avatarColors.length]}`}>
                             {initials || <UserRound className="h-4 w-4" />}
                           </div>
-                          <span className="text-sm font-medium text-gray-200">{rep.repName}</span>
+                          <span className="text-sm font-medium text-dss-ink">{rep.repName}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-4"><span className="text-sm font-semibold text-blue-400">{rep.totalCalls}</span></td>
-                      <td className="px-5 py-4"><span className="text-sm text-gray-400">{rep.noCall}</span></td>
-                      <td className="px-5 py-4"><span className="text-sm font-semibold text-yellow-400">{rep.pending}</span></td>
+                      <td className="px-5 py-4"><span className="text-sm font-semibold text-dss-accent">{rep.totalCalls}</span></td>
+                      <td className="px-5 py-4"><span className="text-sm text-dss-muted">{rep.noCall}</span></td>
+                      <td className="px-5 py-4"><span className="text-sm font-semibold text-amber-700">{rep.pending}</span></td>
                       <td className="px-5 py-4"><span className="text-sm font-semibold text-orange-400">{rep.noAnswer}</span></td>
                       <td className="px-5 py-4">
                         {rep.deals > 0 ? (
@@ -1606,7 +1606,7 @@ export default function ReportingTab({
                             {rep.deals}
                           </button>
                         ) : (
-                          <span className="text-sm font-semibold text-green-400">0</span>
+                          <span className="text-sm font-semibold text-dss-success">0</span>
                         )}
                       </td>
                       <td className="px-5 py-4">
@@ -1618,22 +1618,22 @@ export default function ReportingTab({
                             <BadgeCheck className="h-3 w-3" /> {rep.confirmedDeals}
                           </button>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-400">
+                          <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-700">
                             <BadgeCheck className="h-3 w-3" /> 0
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-4"><span className="text-sm font-semibold text-blue-400">{rep.conversionRate}%</span></td>
+                      <td className="px-5 py-4"><span className="text-sm font-semibold text-dss-accent">{rep.conversionRate}%</span></td>
                     </tr>
                     );
                   })}
                 </tbody>
-                <tfoot className="bg-gray-950/70 border-t-2 border-gray-600">
+                <tfoot className="bg-dss-canvas border-t-2 border-dss-border">
                   <tr>
-                    <td className="px-5 py-4 text-sm font-bold text-gray-200">Team Total</td>
-                    <td className="px-5 py-4"><span className="text-sm font-bold text-blue-400">{teamTotals.totalCalls}</span></td>
-                    <td className="px-5 py-4"><span className="text-sm font-bold text-gray-300">{teamTotals.noCall}</span></td>
-                    <td className="px-5 py-4"><span className="text-sm font-bold text-yellow-400">{teamTotals.pending}</span></td>
+                    <td className="px-5 py-4 text-sm font-bold text-dss-ink">Team Total</td>
+                    <td className="px-5 py-4"><span className="text-sm font-bold text-dss-accent">{teamTotals.totalCalls}</span></td>
+                    <td className="px-5 py-4"><span className="text-sm font-bold text-dss-ink/80">{teamTotals.noCall}</span></td>
+                    <td className="px-5 py-4"><span className="text-sm font-bold text-amber-700">{teamTotals.pending}</span></td>
                     <td className="px-5 py-4"><span className="text-sm font-bold text-orange-400">{teamTotals.noAnswer}</span></td>
                     <td className="px-5 py-4">
                       {teamTotals.deals > 0 ? (
@@ -1644,7 +1644,7 @@ export default function ReportingTab({
                           {teamTotals.deals}
                         </button>
                       ) : (
-                        <span className="text-sm font-bold text-green-400">0</span>
+                        <span className="text-sm font-bold text-dss-success">0</span>
                       )}
                     </td>
                     <td className="px-5 py-4">
@@ -1656,19 +1656,19 @@ export default function ReportingTab({
                           <BadgeCheck className="h-3 w-3" /> {teamTotals.confirmedDeals}
                         </button>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-sm font-bold text-emerald-400">
+                        <span className="inline-flex items-center gap-1 text-sm font-bold text-emerald-700">
                           <BadgeCheck className="h-3 w-3" /> 0
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-4"><span className="text-sm font-bold text-blue-400">{teamConvRate}%</span></td>
+                    <td className="px-5 py-4"><span className="text-sm font-bold text-dss-accent">{teamConvRate}%</span></td>
                   </tr>
                 </tfoot>
               </table>
               </div>
-              <div className="px-5 py-3 bg-gray-950/40 border-t border-gray-700">
-                <p className="text-xs text-gray-500">
-                  Showing <span className="text-gray-400 font-medium">{rangeLabel}</span>
+              <div className="px-5 py-3 bg-dss-canvas border-t border-dss-border">
+                <p className="text-xs text-dss-muted">
+                  Showing <span className="text-dss-muted font-medium">{rangeLabel}</span>
                   &nbsp;·&nbsp; Click deal or confirmed count to view &amp; edit
                   &nbsp;·&nbsp; Deals credited to who marked them
                   &nbsp;·&nbsp; Deals lock into All Deals after 24h (earlier status changes drop out)
@@ -1678,7 +1678,7 @@ export default function ReportingTab({
               </div>
             </div>
           ) : (
-            <div className="bg-gray-800 rounded-lg p-8 border border-gray-700 text-center text-gray-400">
+            <div className="bg-dss-surface rounded-dss-sm p-8 border border-dss-border text-center text-dss-muted">
               No rep activity for this period
             </div>
           )}
@@ -1689,17 +1689,17 @@ export default function ReportingTab({
       {showMonthPicker && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50"
           onClick={() => setShowMonthPicker(false)}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-sm p-6"
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-sm p-6"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <button onClick={() => setViewYear(y => y - 1)} className="p-1 hover:bg-gray-700 rounded text-gray-400">
+              <button onClick={() => setViewYear(y => y - 1)} className="p-1 hover:bg-dss-canvas rounded text-dss-muted">
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <h3 className="text-lg font-semibold text-gray-100">{viewYear}</h3>
+              <h3 className="text-lg font-semibold text-dss-ink">{viewYear}</h3>
               <button
                 onClick={() => { if (viewYear < currentYear) setViewYear(y => y + 1); }}
                 disabled={viewYear >= currentYear}
-                className="p-1 hover:bg-gray-700 rounded text-gray-400 disabled:opacity-30"
+                className="p-1 hover:bg-dss-canvas rounded text-dss-muted disabled:opacity-30"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
@@ -1714,12 +1714,12 @@ export default function ReportingTab({
                     key={name}
                     disabled={isFuture}
                     onClick={() => goToMonth(viewYear, month)}
-                    className={`px-3 py-2 rounded-lg text-sm transition ${
+                    className={`px-3 py-2 rounded-dss-sm text-sm transition ${
                       isSelected
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-dss-navy text-white'
                         : isFuture
-                          ? 'text-gray-600 cursor-not-allowed'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          ? 'text-dss-muted cursor-not-allowed'
+                          : 'bg-dss-canvas text-dss-ink/80 hover:bg-dss-accent-soft'
                     }`}
                   >
                     {name.slice(0, 3)}
@@ -1728,7 +1728,7 @@ export default function ReportingTab({
               })}
             </div>
             <button onClick={() => setShowMonthPicker(false)}
-              className="mt-4 w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">
+              className="mt-4 w-full px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">
               Close
             </button>
           </div>
@@ -1743,14 +1743,14 @@ export default function ReportingTab({
             setRepDealsSearch('');
             setRepDealsStatusFilter('all');
           }}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 shrink-0">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dss-border shrink-0">
               <div>
-                <h3 className="text-lg font-semibold text-gray-100">
+                <h3 className="text-lg font-semibold text-dss-ink">
                   {repDealsModal.repName}&apos;s {repDealsModal.dealType === 'deal' ? 'Deals' : 'Confirmed Deals'}
                 </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-dss-muted mt-0.5">
                   {rangeLabel} ·{' '}
                   {(repDealsSearchQuery || repDealsStatusFilter !== 'all')
                     ? `${filteredRepDealsRows.length} of ${repDealsRows.length}`
@@ -1763,7 +1763,7 @@ export default function ReportingTab({
                 <button
                   onClick={exportRepDealsModal}
                   disabled={repDealsLoading || filteredRepDealsRows.length === 0}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-700 text-sm text-gray-200 hover:bg-gray-600 disabled:opacity-40 transition"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-sm text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
                 >
                   <Download className="h-4 w-4" />
                   Export
@@ -1774,31 +1774,31 @@ export default function ReportingTab({
                     setRepDealsSearch('');
                     setRepDealsStatusFilter('all');
                   }}
-                  className="text-gray-400 hover:text-gray-200 text-2xl font-light"
+                  className="text-dss-muted hover:text-dss-ink text-2xl font-light"
                 >
                   &times;
                 </button>
               </div>
             </div>
             {!repDealsLoading && repDealsRows.length > 0 && (
-              <div className="px-6 py-3 border-b border-gray-700 shrink-0 space-y-2">
+              <div className="px-6 py-3 border-b border-dss-border shrink-0 space-y-2">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-dss-muted" />
                   <input
                     type="text"
                     value={repDealsSearch}
                     onChange={e => setRepDealsSearch(e.target.value)}
                     placeholder="Search App ID, customer, dealer, or rep…"
-                    className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-9 pr-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-2 focus:ring-dss-accent/30"
                   />
                 </div>
                 {repDealsModal.dealType === 'deal' && (
                   <div className="flex items-center gap-2">
-                    <label className="text-xs text-gray-400 whitespace-nowrap">Filter by status</label>
+                    <label className="text-xs text-dss-muted whitespace-nowrap">Filter by status</label>
                     <select
                       value={repDealsStatusFilter}
                       onChange={e => setRepDealsStatusFilter(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-2 focus:ring-dss-accent/30"
                     >
                       <option value="all">All statuses</option>
                       {repDealsStatusOptions.map(s => (
@@ -1811,14 +1811,14 @@ export default function ReportingTab({
             )}
             <div className="overflow-auto flex-1">
               {repDealsLoading ? (
-                <p className="text-center text-gray-500 py-12">Loading deals…</p>
+                <p className="text-center text-dss-muted py-12">Loading deals…</p>
               ) : repDealsRows.length === 0 ? (
-                <p className="text-center text-gray-500 py-12">No {repDealsModal.dealType === 'deal' ? 'deals' : 'confirmed deals'} found.</p>
+                <p className="text-center text-dss-muted py-12">No {repDealsModal.dealType === 'deal' ? 'deals' : 'confirmed deals'} found.</p>
               ) : filteredRepDealsRows.length === 0 ? (
-                <p className="text-center text-gray-500 py-12">No deals match your search{repDealsStatusFilter !== 'all' ? ' / filter' : ''}.</p>
+                <p className="text-center text-dss-muted py-12">No deals match your search{repDealsStatusFilter !== 'all' ? ' / filter' : ''}.</p>
               ) : (
                 <table className="w-full text-sm">
-                  <thead className="bg-gray-900 sticky top-0">
+                  <thead className="bg-dss-canvas sticky top-0">
                     <tr>
                       {([
                         { key: 'repName', label: 'Rep' },
@@ -1837,11 +1837,11 @@ export default function ReportingTab({
                         const active = repDealsSortKey === col.key;
                         const SortIcon = !active ? ArrowUpDown : repDealsSortDir === 'asc' ? ArrowUp : ArrowDown;
                         return (
-                          <th key={col.key} className="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                          <th key={col.key} className="px-3 py-2.5 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">
                             <button
                               type="button"
                               onClick={() => toggleRepDealsSort(col.key)}
-                              className={`inline-flex items-center gap-1 hover:text-gray-200 transition ${active ? 'text-blue-300' : ''}`}
+                              className={`inline-flex items-center gap-1 hover:text-dss-ink transition ${active ? 'text-dss-accent' : ''}`}
                             >
                               {col.label}
                               <SortIcon className="h-3 w-3" />
@@ -1853,12 +1853,12 @@ export default function ReportingTab({
                   </thead>
                   <tbody className="divide-y divide-gray-700">
                     {filteredRepDealsRows.map(row => (
-                      <tr key={row.key} className="hover:bg-gray-750">
-                        <td className="px-3 py-2.5 text-gray-300 whitespace-nowrap">{row.repName}</td>
-                        <td className="px-3 py-2.5 text-blue-400 font-mono text-xs whitespace-nowrap">{row.applicationId}</td>
-                        <td className="px-3 py-2.5 text-gray-300 max-w-[140px] truncate">{row.dealerName}</td>
-                        <td className="px-3 py-2.5 text-gray-300 max-w-[120px] truncate">{row.customerName}</td>
-                        <td className="px-3 py-2.5"><span className="px-1.5 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{row.state}</span></td>
+                      <tr key={row.key} className="hover:bg-dss-canvas">
+                        <td className="px-3 py-2.5 text-dss-ink/80 whitespace-nowrap">{row.repName}</td>
+                        <td className="px-3 py-2.5 text-dss-accent font-mono text-xs whitespace-nowrap">{row.applicationId}</td>
+                        <td className="px-3 py-2.5 text-dss-ink/80 max-w-[140px] truncate">{row.dealerName}</td>
+                        <td className="px-3 py-2.5 text-dss-ink/80 max-w-[120px] truncate">{row.customerName}</td>
+                        <td className="px-3 py-2.5"><span className="px-1.5 py-0.5 bg-dss-canvas text-dss-ink/80 text-xs rounded border border-dss-border">{row.state}</span></td>
                         <td className="px-3 py-2.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                           {editingRepDealAmount === row.key ? (
                             <div className="flex items-center gap-1">
@@ -1870,18 +1870,18 @@ export default function ReportingTab({
                                   if (e.key === 'Enter') handleRepDealAmountSave(row);
                                   if (e.key === 'Escape') { setEditingRepDealAmount(null); setTempRepDealAmount(''); }
                                 }}
-                                className="w-24 px-1.5 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-24 px-1.5 py-0.5 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                               />
                               <button
                                 onClick={() => handleRepDealAmountSave(row)}
-                                className="text-green-400 hover:text-green-300"
+                                className="text-dss-success hover:text-dss-success"
                                 title="Save amount"
                               >
                                 <Check className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={() => { setEditingRepDealAmount(null); setTempRepDealAmount(''); }}
-                                className="text-gray-400 hover:text-gray-200"
+                                className="text-dss-muted hover:text-dss-ink"
                                 title="Cancel"
                               >
                                 <X className="w-3.5 h-3.5" />
@@ -1889,13 +1889,13 @@ export default function ReportingTab({
                             </div>
                           ) : (
                             <div className="flex items-center gap-1.5 group">
-                              <span className="text-green-400">{formatCurrency(row.amount)}</span>
+                              <span className="text-dss-success">{formatCurrency(row.amount)}</span>
                               <button
                                 onClick={() => {
                                   setEditingRepDealAmount(row.key);
                                   setTempRepDealAmount(String(row.amount || 0));
                                 }}
-                                className="text-gray-500 hover:text-blue-300 opacity-60 group-hover:opacity-100 transition"
+                                className="text-dss-muted hover:text-dss-accent opacity-60 group-hover:opacity-100 transition"
                                 title="Edit amount"
                               >
                                 <Edit2 className="w-3 h-3" />
@@ -1903,14 +1903,14 @@ export default function ReportingTab({
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-2.5 text-gray-400 whitespace-nowrap">{row.date.toLocaleDateString()}</td>
-                        <td className="px-3 py-2.5 text-gray-400 text-xs">{row.statusLast}</td>
-                        <td className="px-3 py-2.5 text-gray-500 text-xs whitespace-nowrap">{row.activity}</td>
+                        <td className="px-3 py-2.5 text-dss-muted whitespace-nowrap">{row.date.toLocaleDateString()}</td>
+                        <td className="px-3 py-2.5 text-dss-muted text-xs">{row.statusLast}</td>
+                        <td className="px-3 py-2.5 text-dss-muted text-xs whitespace-nowrap">{row.activity}</td>
                         <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                           <select
                             value={row.fuStatus}
                             onChange={e => handleRepDealStatusChange(row, e.target.value)}
-                            className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="px-2 py-1 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                           >
                             {FU_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                             {!FU_OPTIONS.includes(row.fuStatus) && row.fuStatus && (
@@ -1918,9 +1918,9 @@ export default function ReportingTab({
                             )}
                           </select>
                         </td>
-                        <td className="px-3 py-2.5 text-gray-400 text-xs max-w-[160px] truncate" title={row.note}>{row.note}</td>
+                        <td className="px-3 py-2.5 text-dss-muted text-xs max-w-[160px] truncate" title={row.note}>{row.note}</td>
                         <td className="px-3 py-2.5">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${row.source === 'call' ? 'bg-purple-900 text-purple-300 border border-purple-700' : 'bg-gray-700 text-gray-400 border border-gray-600'}`}>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${row.source === 'call' ? 'bg-dss-accent-soft text-dss-accent border border-dss-accent/30' : 'bg-dss-canvas text-dss-muted border border-dss-border'}`}>
                             {row.source === 'call' ? 'Calls' : 'Manual'}
                           </span>
                         </td>
@@ -1937,17 +1937,17 @@ export default function ReportingTab({
       {creditModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4"
           onClick={() => setCreditModal(null)}>
-          <div className="bg-gray-800 border border-gray-600 rounded-xl w-full max-w-md p-5 shadow-xl"
+          <div className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-md p-5 shadow-sm"
             onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-100 mb-1">Credit this deal</h3>
-            <p className="text-sm text-gray-400 mb-4">
-              Set status to <span className="text-green-300 font-medium">{creditModal.newStatus}</span> and choose who gets credit.
+            <h3 className="text-lg font-semibold text-dss-ink mb-1">Credit this deal</h3>
+            <p className="text-sm text-dss-muted mb-4">
+              Set status to <span className="text-dss-success font-medium">{creditModal.newStatus}</span> and choose who gets credit.
             </p>
-            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Credit to</label>
+            <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Credit to</label>
             <select
               value={creditModal.creditId}
               onChange={e => setCreditModal({ ...creditModal, creditId: e.target.value })}
-              className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 mb-5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink mb-5 focus:outline-none focus:ring-2 focus:ring-dss-accent/30"
             >
               {creditOptions.map(u => (
                 <option key={u.id} value={u.id}>{u.name}</option>
@@ -1956,13 +1956,13 @@ export default function ReportingTab({
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setCreditModal(null)}
-                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700"
+                className="px-4 py-2 rounded-dss-sm border border-dss-border text-dss-ink/80 text-sm hover:bg-dss-canvas"
               >
                 Cancel
               </button>
               <button
                 onClick={applyRepDealCreditModal}
-                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-medium"
+                className="px-4 py-2 rounded-dss-sm bg-dss-success hover:bg-green-500 text-white text-sm font-medium"
               >
                 Confirm
               </button>
@@ -1974,13 +1974,13 @@ export default function ReportingTab({
       {/* Goal modals */}
       {showGoalModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
-            <h3 className="text-xl font-bold text-gray-100 mb-4">Set State Goal — {viewMonthLabel}</h3>
+          <div className="bg-dss-surface rounded-dss-sm max-w-md w-full p-6 border border-dss-border">
+            <h3 className="text-xl font-bold text-dss-ink mb-4">Set State Goal — {viewMonthLabel}</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">State</label>
+                <label className="block text-sm font-medium text-dss-ink/80 mb-2">State</label>
                 <select value={selectedState} onChange={e => setSelectedState(e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="w-full px-4 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink focus:outline-none focus:ring-2 focus:ring-dss-accent/30">
                   <option value="">Select State</option>
                   {[...new Set(calls.map(c => c.state))].sort().map(state => (
                     <option key={state} value={state}>{state}</option>
@@ -1988,27 +1988,27 @@ export default function ReportingTab({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Monthly Funded Goal</label>
+                <label className="block text-sm font-medium text-dss-ink/80 mb-2">Monthly Funded Goal</label>
                 <input type="number" value={goalForm.monthlyGoal}
                   onChange={e => setGoalForm({ ...goalForm, monthlyGoal: e.target.value })}
                   placeholder="e.g., 200"
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full px-4 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink focus:outline-none focus:ring-2 focus:ring-dss-accent/30" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Funding Days in Month</label>
+                <label className="block text-sm font-medium text-dss-ink/80 mb-2">Funding Days in Month</label>
                 <input type="number" value={goalForm.fundingDays}
                   onChange={e => setGoalForm({ ...goalForm, fundingDays: e.target.value })}
                   placeholder="e.g., 20"
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full px-4 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink focus:outline-none focus:ring-2 focus:ring-dss-accent/30" />
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={handleSetGoal} disabled={loading}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition">
+                className="flex-1 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas text-white rounded-dss-sm transition">
                 {loading ? 'Saving...' : 'Set Goal'}
               </button>
               <button onClick={() => { setShowGoalModal(false); setSelectedState(''); setGoalForm({ monthlyGoal: '', fundingDays: '' }); setError(''); }}
-                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition">
+                className="flex-1 px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm transition">
                 Cancel
               </button>
             </div>
@@ -2018,25 +2018,25 @@ export default function ReportingTab({
 
       {showTeamGoals && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 rounded-lg max-w-md w-full p-6 border border-gray-700">
-            <h3 className="text-xl font-bold text-gray-100 mb-4">Set Team Goals</h3>
+          <div className="bg-dss-surface rounded-dss-sm max-w-md w-full p-6 border border-dss-border">
+            <h3 className="text-xl font-bold text-dss-ink mb-4">Set Team Goals</h3>
             <div className="space-y-4">
               {[{ label: 'Daily Team Goal', key: 'daily' }, { label: 'Weekly Team Goal', key: 'weekly' }, { label: 'Monthly Team Goal', key: 'monthly' }].map(({ label, key }) => (
                 <div key={key}>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">{label}</label>
+                  <label className="block text-sm font-medium text-dss-ink/80 mb-2">{label}</label>
                   <input type="number" value={teamGoalInput[key as keyof typeof teamGoalInput]}
                     onChange={e => setTeamGoalInput({ ...teamGoalInput, [key]: e.target.value })}
-                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full px-4 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink focus:outline-none focus:ring-2 focus:ring-dss-accent/30" />
                 </div>
               ))}
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={handleSaveTeamGoals}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">
+                className="flex-1 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm transition">
                 Save Goals
               </button>
               <button onClick={() => setShowTeamGoals(false)}
-                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition">
+                className="flex-1 px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm transition">
                 Cancel
               </button>
             </div>

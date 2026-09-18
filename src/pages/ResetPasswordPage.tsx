@@ -40,71 +40,70 @@ export default function ResetPasswordPage({ onSuccess }: ResetPasswordPageProps)
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-      <div className="max-w-md w-full space-y-8">
+    <div className="flex min-h-screen items-center justify-center bg-dss-canvas px-4">
+      <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-blue-400 mb-2">DSS Portal</h1>
-          <p className="text-gray-400">Set up your password to get started</p>
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded bg-dss-navy text-xs font-bold text-white">
+            DSS
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-dss-ink">DSS Portal</h1>
+          <p className="mt-1 text-sm text-dss-muted">Set up your password to get started</p>
         </div>
 
-        <div className="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700">
+        <div className="dss-panel p-6">
           {success ? (
-            <div className="text-center py-4">
-              <div className="w-16 h-16 bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
-                <KeyRound className="w-8 h-8 text-green-400" />
+            <div className="py-4 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50">
+                <KeyRound className="h-6 w-6 text-dss-success" />
               </div>
-              <h3 className="text-xl font-bold text-green-400 mb-2">Password Set!</h3>
-              <p className="text-gray-400">Redirecting you to the portal...</p>
+              <h3 className="text-lg font-semibold text-dss-success">Password set</h3>
+              <p className="mt-1 text-sm text-dss-muted">Redirecting you to the portal…</p>
             </div>
           ) : (
-            <form onSubmit={handleSetPassword} className="space-y-6">
-              <div className="text-center mb-6">
-                <KeyRound className="w-12 h-12 text-blue-400 mx-auto mb-3" />
-                <h2 className="text-xl font-bold text-gray-100">Create Your Password</h2>
-                <p className="text-sm text-gray-400 mt-1">Choose a password to access the DSS Portal</p>
+            <form onSubmit={handleSetPassword} className="space-y-4">
+              <div className="mb-2 text-center">
+                <KeyRound className="mx-auto mb-2 h-8 w-8 text-dss-accent" />
+                <h2 className="text-lg font-semibold text-dss-ink">Create your password</h2>
+                <p className="mt-1 text-sm text-dss-muted">Choose a password to access DSS Portal</p>
               </div>
 
               {error && (
-                <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded">
+                <div className="rounded-dss-sm border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-dss-danger">
                   {error}
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-dss-muted">
                   New Password
                 </label>
                 <input
                   type="password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={6}
                   placeholder="Minimum 6 characters"
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="dss-input"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-dss-muted">
                   Confirm Password
                 </label>
                 <input
                   type="password"
                   value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   placeholder="Re-enter your password"
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="dss-input"
                 />
               </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition"
-              >
-                {loading ? 'Setting Password...' : 'Set Password & Enter Portal'}
+              <button type="submit" disabled={loading} className="dss-btn-primary w-full">
+                {loading ? 'Setting password…' : 'Set password & enter portal'}
               </button>
             </form>
           )}

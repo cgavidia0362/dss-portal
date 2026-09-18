@@ -45,28 +45,28 @@ export default function NoteItem({
     : new Date(createdAt).toLocaleString();
 
   return (
-    <div className="bg-gray-700 px-3 py-2 rounded-lg border border-gray-600">
+    <div className="bg-dss-canvas px-3 py-2 rounded-dss-sm border border-dss-border">
       {editing ? (
         <div className="space-y-2">
           <textarea
             value={editText}
             onChange={e => setEditText(e.target.value)}
             rows={2}
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+            className="w-full px-3 py-2 bg-dss-surface border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30 resize-none"
             autoFocus
           />
           <div className="flex gap-2">
             <button
               onClick={handleSave}
               disabled={saving || !editText.trim()}
-              className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded text-xs transition"
+              className="flex items-center gap-1 px-3 py-1.5 bg-dss-success hover:bg-green-700 disabled:opacity-50 text-white rounded text-xs transition"
             >
               <Check className="w-3 h-3" /> Save
             </button>
             <button
               onClick={() => { setEditing(false); setEditText(noteText); }}
               disabled={saving}
-              className="flex items-center gap-1 px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-gray-200 rounded text-xs transition"
+              className="flex items-center gap-1 px-3 py-1.5 bg-dss-canvas hover:bg-dss-muted text-dss-ink rounded text-xs transition"
             >
               <X className="w-3 h-3" /> Cancel
             </button>
@@ -75,13 +75,13 @@ export default function NoteItem({
       ) : (
         <>
           <div className="flex items-start justify-between gap-2">
-            <p className="text-sm text-gray-200 flex-1">{noteText}</p>
+            <p className="text-sm text-dss-ink flex-1">{noteText}</p>
             {canEdit && (
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => { setEditText(noteText); setEditing(true); }}
                   disabled={saving}
-                  className="p-1 text-gray-500 hover:text-blue-400 transition"
+                  className="p-1 text-dss-muted hover:text-dss-accent transition"
                   title="Edit note"
                 >
                   <Pencil className="w-3.5 h-3.5" />
@@ -89,7 +89,7 @@ export default function NoteItem({
                 <button
                   onClick={handleDelete}
                   disabled={saving}
-                  className="p-1 text-gray-500 hover:text-red-400 transition"
+                  className="p-1 text-dss-muted hover:text-dss-danger transition"
                   title="Delete note"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -97,7 +97,7 @@ export default function NoteItem({
               </div>
             )}
           </div>
-          <p className="text-xs text-gray-500 mt-1">{createdByName} · {dateLabel}</p>
+          <p className="text-xs text-dss-muted mt-1">{createdByName} · {dateLabel}</p>
         </>
       )}
     </div>

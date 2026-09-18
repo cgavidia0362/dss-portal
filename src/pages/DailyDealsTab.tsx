@@ -118,25 +118,27 @@ const formatDateLabel = (dateStr: string) => {
 
 const getFuStatusStyle = (status: string) => {
   const s = status.toLowerCase();
-  if (s.includes('confirmed')) return 'bg-emerald-900 text-emerald-300 border-emerald-700';
-  if (s.includes('follow up')) return 'bg-amber-900 text-amber-300 border-amber-700';
-  if (s.includes('deal')) return 'bg-green-900 text-green-300 border-green-700';
-  if (s.includes('pending')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
-  if (s.includes('no answer')) return 'bg-orange-900 text-orange-300 border-orange-700';
-  if (s.includes('no deal')) return 'bg-red-900 text-red-300 border-red-700';
-  return 'bg-gray-700 text-gray-300 border-gray-600';
+  if (s.includes('confirmed')) return 'bg-emerald-50 text-emerald-900 border-emerald-300';
+  if (s.includes('follow up')) return 'bg-amber-50 text-amber-900 border-amber-300';
+  if (s.includes('deal')) return 'bg-emerald-50 text-emerald-900 border-emerald-300';
+  if (s.includes('pending')) return 'bg-amber-50 text-amber-900 border-amber-300';
+  if (s.includes('no answer')) return 'bg-orange-50 text-orange-900 border-orange-300';
+  if (s.includes('no deal')) return 'bg-rose-50 text-rose-900 border-rose-300';
+  return 'bg-dss-canvas text-dss-ink border-dss-border';
 };
 
 const getStatusLastStyle = (status: string) => {
   const s = (status || '').toLowerCase();
-  if (s.includes('approved') || s === 'approval') return 'bg-green-900 text-green-300 border-green-700';
-  if (s === 'pending approval' || s.includes('pending approval')) return 'bg-purple-900 text-purple-300 border-purple-700';
-  if (s.includes('counter')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
-  if (s.includes('denial') || s.includes('declined')) return 'bg-red-900 text-red-300 border-red-700';
-  if (s.includes('accepted')) return 'bg-blue-900 text-blue-300 border-blue-700';
-  if (s.includes('funded') || s.includes('funding')) return 'bg-emerald-900 text-emerald-300 border-emerald-700';
-  if (s.includes('new application')) return 'bg-cyan-900 text-cyan-300 border-cyan-700';
-  return 'bg-gray-700 text-gray-300 border-gray-600';
+  if (s.includes('approved') || s === 'approval') return 'bg-emerald-50 text-emerald-900 border-emerald-300';
+  if (s === 'pending approval' || s.includes('pending approval')) return 'bg-violet-50 text-violet-900 border-violet-300';
+  if (s.includes('counter')) return 'bg-amber-50 text-amber-900 border-amber-300';
+  if (s.includes('denial') || s.includes('declined')) return 'bg-rose-50 text-rose-900 border-rose-300';
+  if (s.includes('accepted')) return 'bg-sky-50 text-sky-900 border-sky-300';
+  if (s.includes('funded') || s.includes('funding')) return 'bg-emerald-50 text-emerald-900 border-emerald-300';
+  if (s.includes('new application')) return 'bg-cyan-50 text-cyan-900 border-cyan-300';
+  if (s.includes('reconsider')) return 'bg-slate-100 text-slate-800 border-slate-300';
+  if (s.includes('follow up')) return 'bg-amber-50 text-amber-900 border-amber-300';
+  return 'bg-dss-canvas text-dss-ink border-dss-border';
 };
 
 const formatCurrency = (amount: number) =>
@@ -993,7 +995,7 @@ export default function DailyDealsTab({
   for (let d = 1; d <= daysInMonth; d++) calendarDays.push(d);
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-  const inputCls = 'px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  const inputCls = 'px-2 py-1 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30';
   const allDealerCalls = dealerPopup
     ? calls.filter(c => c.dealerName === dealerPopup).sort((a, b) => new Date(b.submittedDate).getTime() - new Date(a.submittedDate).getTime())
     : [];
@@ -1014,83 +1016,83 @@ export default function DailyDealsTab({
       {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-100">Daily Deals</h2>
-          <p className="text-sm text-gray-400 mt-0.5">{formatDateLabel(today)} &nbsp;·&nbsp; Resets at midnight</p>
+          <h2 className="text-2xl font-bold text-dss-ink">Daily Deals</h2>
+          <p className="text-sm text-dss-muted mt-0.5">{formatDateLabel(today)} &nbsp;·&nbsp; Resets at midnight</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => { setShowHistory(true); fetchDatesWithDeals(calendarYear, calendarMonth); }}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-lg text-sm transition">
+            className="flex items-center gap-2 px-4 py-2 bg-dss-surface hover:bg-dss-canvas border border-dss-border text-dss-ink/80 rounded-dss-sm text-sm transition">
             📅 View History
           </button>
           <button onClick={() => { navigator.clipboard.writeText('https://dss-portal-delta.vercel.app/deals'); alert('Link copied to clipboard!'); }}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-gray-300 rounded-lg text-sm transition">
+            className="flex items-center gap-2 px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft border border-dss-border text-dss-ink/80 rounded-dss-sm text-sm transition">
             🔗 Share Link
           </button>
           <button onClick={() => setShowForm(f => !f)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-dss-sm text-sm font-medium transition shadow-sm">
             + Log Deal
           </button>
         </div>
       </div>
 
-      {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">{error}</div>}
-      {success && <div className="bg-green-900 border border-green-700 text-green-200 px-4 py-3 rounded-lg text-sm">{success}</div>}
+      {error && <div className="bg-rose-50 border border-rose-200 text-dss-danger px-4 py-3 rounded-dss-sm text-sm">{error}</div>}
+      {success && <div className="bg-emerald-50 border border-emerald-200 text-dss-success px-4 py-3 rounded-dss-sm text-sm">{success}</div>}
 
       {/* TOP ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-            <div className="relative overflow-hidden rounded-xl border border-green-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-green-950/25 p-4 shadow-xl shadow-green-950/10">
+            <div className="relative overflow-hidden rounded-dss border border-green-500/30 bg-dss-surface p-4 shadow-sm">
               <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-green-500/10 blur-2xl" />
               <div className="relative flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Deals Today</p>
-                  <p className="mt-2 text-3xl font-bold text-green-300 leading-none">{totalDealCount}</p>
-                  {callDealCount > 0 && <p className="mt-2 text-xs text-green-400/80">+{callDealCount} from calls</p>}
+                  <p className="text-xs font-semibold text-dss-muted uppercase tracking-wider">Deals Today</p>
+                  <p className="mt-2 text-3xl font-bold text-dss-success leading-none">{totalDealCount}</p>
+                  {callDealCount > 0 && <p className="mt-2 text-xs text-dss-success/80">+{callDealCount} from calls</p>}
                 </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-green-500/30 bg-green-500/10 text-green-300">
+                <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-green-500/30 bg-green-500/10 text-dss-success">
                   <Trophy className="h-5 w-5" />
                 </div>
               </div>
             </div>
-            <div className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-emerald-950/25 p-4 shadow-xl shadow-emerald-950/10">
+            <div className="relative overflow-hidden rounded-dss border border-emerald-500/30 bg-dss-surface p-4 shadow-sm">
               <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
               <div className="relative flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Amount</p>
-                  <p className="mt-2 text-2xl font-bold text-emerald-300 leading-none">{formatCurrency(totalAmount)}</p>
-                  {callDealAmount > 0 && <p className="mt-2 text-xs text-gray-500">+{formatCurrency(callDealAmount)} from calls</p>}
+                  <p className="text-xs font-semibold text-dss-muted uppercase tracking-wider">Total Amount</p>
+                  <p className="mt-2 text-2xl font-bold text-emerald-700 leading-none">{formatCurrency(totalAmount)}</p>
+                  {callDealAmount > 0 && <p className="mt-2 text-xs text-dss-muted">+{formatCurrency(callDealAmount)} from calls</p>}
                 </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-emerald-500/30 bg-emerald-500/10 text-emerald-700">
                   <DollarSign className="h-5 w-5" />
                 </div>
               </div>
             </div>
-            <div className="relative overflow-hidden rounded-xl border border-cyan-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-cyan-950/25 p-4 shadow-xl shadow-cyan-950/10">
+            <div className="relative overflow-hidden rounded-dss border border-cyan-500/30 bg-dss-surface p-4 shadow-sm">
               <div className="relative flex items-start justify-between mb-3">
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-cyan-300" />
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Team Goal</p>
+                    <Users className="w-3.5 h-3.5 text-cyan-800" />
+                    <p className="text-xs font-semibold text-dss-muted uppercase tracking-wider">Team Goal</p>
                   </div>
-                  <p className="mt-2 text-xl font-bold text-cyan-300 leading-none">
-                    {totalDealCount} <span className="text-sm font-normal text-gray-500">/ {goals.team}</span>
+                  <p className="mt-2 text-xl font-bold text-cyan-800 leading-none">
+                    {totalDealCount} <span className="text-sm font-normal text-dss-muted">/ {goals.team}</span>
                   </p>
                 </div>
-                <Target className="h-5 w-5 text-cyan-300" />
+                <Target className="h-5 w-5 text-cyan-800" />
               </div>
-              <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-dss-canvas rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
               </div>
             </div>
-            <div className="relative overflow-hidden rounded-xl border border-blue-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-blue-950/25 p-4 shadow-xl shadow-blue-950/10">
+            <div className="relative overflow-hidden rounded-dss border border-dss-accent/30 bg-dss-surface p-4 shadow-sm">
               <div className="relative flex items-start justify-between">
                 <div>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Entries</p>
-                  <p className="mt-2 text-3xl font-bold text-blue-300 leading-none">{combinedEntries.length}</p>
-                  <p className="mt-2 text-xs text-gray-500">all sources</p>
+                    <p className="text-xs font-semibold text-dss-muted uppercase tracking-wider">Entries</p>
+                  <p className="mt-2 text-3xl font-bold text-dss-accent leading-none">{combinedEntries.length}</p>
+                  <p className="mt-2 text-xs text-dss-muted">all sources</p>
                 </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-300">
+                <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-dss-accent/30 bg-blue-500/10 text-dss-accent">
                   <ClipboardList className="h-5 w-5" />
                 </div>
               </div>
@@ -1098,51 +1100,51 @@ export default function DailyDealsTab({
           </div>
 
           {/* FORM */}
-          <div className="bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-hidden shadow-xl shadow-black/10">
+          <div className="bg-dss-surface rounded-dss border border-dss-border overflow-hidden shadow-sm">
             <button onClick={() => setShowForm(f => !f)}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-700/60 transition border-b border-gray-700">
-              <span className="text-sm font-medium text-gray-200 flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-green-500/30 bg-green-500/10 text-green-300">
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-dss-canvas/60 transition border-b border-dss-border">
+              <span className="text-sm font-medium text-dss-ink flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-dss-sm border border-green-500/30 bg-green-500/10 text-dss-success">
                   <PlusCircle className="h-4 w-4" />
                 </span>
                 Log a deal
               </span>
-              <span className="text-gray-400">{showForm ? '▲' : '▼'}</span>
+              <span className="text-dss-muted">{showForm ? '▲' : '▼'}</span>
             </button>
             {showForm && (
               <div className="p-5">
-                {formError && <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded text-sm mb-4">{formError}</div>}
+                {formError && <div className="bg-rose-50 border border-rose-200 text-dss-danger px-3 py-2 rounded text-sm mb-4">{formError}</div>}
 
                 {/* Search — only when no call linked */}
                 {!linkedCall && (
-                  <div className="bg-gray-900/40 border border-gray-700 rounded-xl p-4 mb-4">
-                    <label className="block text-xs text-gray-400 uppercase tracking-wider mb-2">Search existing app first</label>
+                  <div className="bg-dss-canvas border border-dss-border rounded-dss p-4 mb-4">
+                    <label className="block text-xs text-dss-muted uppercase tracking-wider mb-2">Search existing app first</label>
                     <div className="flex gap-2">
                       <input type="text" value={searchQuery}
                         onChange={e => { setSearchQuery(e.target.value); if (!e.target.value) setSearchResults([]); }}
                         onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
                         placeholder="Type App ID to search…"
-                        className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                      <button onClick={handleSearch} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Search</button>
+                        className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30" />
+                      <button onClick={handleSearch} className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">Search</button>
                     </div>
                     {searchResults.length > 0 && (
                       <div className="mt-2 space-y-1">
                         {searchResults.map(call => (
-                          <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
+                          <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-dss-canvas rounded-dss-sm border border-dss-border">
                             <div className="flex items-center gap-3 flex-wrap">
-                              <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
+                              <span className="text-sm text-dss-accent font-medium">{call.applicationId}</span>
                               <button
                                 onClick={() => openDealerPopup(call.dealerName)}
-                                className="text-xs text-gray-300 hover:text-blue-300 underline underline-offset-2 transition"
+                                className="text-xs text-dss-ink/80 hover:text-dss-accent underline underline-offset-2 transition"
                                 title={`View all calls for ${call.dealerName}`}>
                                 {call.dealerName}
                               </button>
-                              <span className="text-xs text-gray-500">{call.state}</span>
-                              <span className="text-xs text-gray-400">{formatCurrency(parseAmount(call.buyerFinal))}</span>
-                              {call.customerName && <span className="text-xs text-gray-400 italic">{call.customerName}</span>}
+                              <span className="text-xs text-dss-muted">{call.state}</span>
+                              <span className="text-xs text-dss-muted">{formatCurrency(parseAmount(call.buyerFinal))}</span>
+                              {call.customerName && <span className="text-xs text-dss-muted italic">{call.customerName}</span>}
                             </div>
                             <button onClick={() => handleSelectCall(call)}
-                              className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex-shrink-0">
+                              className="text-xs px-3 py-1 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm transition flex-shrink-0">
                               Use this app →
                             </button>
                           </div>
@@ -1150,27 +1152,27 @@ export default function DailyDealsTab({
                       </div>
                     )}
                     {searchResults.length === 0 && searchQuery && (
-                      <p className="text-xs text-gray-500 mt-2">No match in search — you can enter a new App ID below only if it is not already in Calls.</p>
+                      <p className="text-xs text-dss-muted mt-2">No match in search — you can enter a new App ID below only if it is not already in Calls.</p>
                     )}
                   </div>
                 )}
 
                 {appIdConflicts.length > 0 && !linkedCall && (
-                  <div className="mb-4 rounded-xl border border-amber-700/70 bg-amber-950/40 px-4 py-3">
+                  <div className="mb-4 rounded-dss border border-amber-700/70 bg-amber-950/40 px-4 py-3">
                     <p className="text-sm font-medium text-amber-200">
                       This App ID already exists in Calls. Manual entry is blocked — select the existing app to avoid duplicates.
                     </p>
                     <div className="mt-2 space-y-1">
                       {appIdConflicts.map(call => (
-                        <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-800/80 rounded-lg border border-amber-800/50">
+                        <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-dss-surface/80 rounded-dss-sm border border-amber-800/50">
                           <div className="flex items-center gap-3 flex-wrap">
-                            <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
-                            <span className="text-xs text-gray-300">{call.dealerName}</span>
-                            <span className="text-xs text-gray-500">{call.state}</span>
-                            {call.customerName && <span className="text-xs text-gray-400 italic">{call.customerName}</span>}
+                            <span className="text-sm text-dss-accent font-medium">{call.applicationId}</span>
+                            <span className="text-xs text-dss-ink/80">{call.dealerName}</span>
+                            <span className="text-xs text-dss-muted">{call.state}</span>
+                            {call.customerName && <span className="text-xs text-dss-muted italic">{call.customerName}</span>}
                           </div>
                           <button onClick={() => handleSelectCall(call)}
-                            className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition flex-shrink-0">
+                            className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-dss-sm transition flex-shrink-0">
                             Use this app →
                           </button>
                         </div>
@@ -1179,15 +1181,15 @@ export default function DailyDealsTab({
                   </div>
                 )}
                 {checkingAppId && !linkedCall && form.appId.trim() && (
-                  <p className="text-xs text-gray-500 mb-4">Checking App ID against Calls…</p>
+                  <p className="text-xs text-dss-muted mb-4">Checking App ID against Calls…</p>
                 )}
 
                 <div className="mb-4">
-                  <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">
+                  <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">
                     {canForceCredit ? 'Credit to *' : 'Your name *'}
                   </label>
                   <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    className="w-full px-3 py-2.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
                     <option value="">Select {canForceCredit ? 'who gets credit' : 'your name'}…</option>
                     {selectableUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
@@ -1195,35 +1197,35 @@ export default function DailyDealsTab({
 
                 {/* COMPACT FORM when call linked */}
                 {linkedCall ? (
-                  <div className="border border-blue-700 rounded-lg overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 bg-blue-900 bg-opacity-20 border-b border-blue-800">
+                  <div className="border border-dss-accent/30 rounded-dss-sm overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 bg-dss-accent-soft bg-opacity-20 border-b border-blue-800">
                       <div>
-                        <span className="text-sm font-medium text-blue-400">{linkedCall.applicationId}</span>
-                        <span className="text-xs text-gray-400 ml-2">·</span>
-                        <span className="text-xs text-gray-300 ml-2">{linkedCall.dealerName}</span>
-                        <span className="text-xs text-gray-500 ml-2">· {formatCurrency(parseAmount(linkedCall.buyerFinal))} · {linkedCall.state}</span>
+                        <span className="text-sm font-medium text-dss-accent">{linkedCall.applicationId}</span>
+                        <span className="text-xs text-dss-muted ml-2">·</span>
+                        <span className="text-xs text-dss-ink/80 ml-2">{linkedCall.dealerName}</span>
+                        <span className="text-xs text-dss-muted ml-2">· {formatCurrency(parseAmount(linkedCall.buyerFinal))} · {linkedCall.state}</span>
                       </div>
-                      <button onClick={clearLinkedCall} className="text-gray-500 hover:text-gray-300 transition"><X className="w-4 h-4" /></button>
+                      <button onClick={clearLinkedCall} className="text-dss-muted hover:text-dss-ink/80 transition"><X className="w-4 h-4" /></button>
                     </div>
                     <div className="p-4">
                       <div className="grid grid-cols-3 gap-3">
                         <div>
-                          <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer name <span className="text-gray-600 normal-case">(optional)</span></label>
+                          <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Customer name <span className="text-dss-muted normal-case">(optional)</span></label>
                           <input type="text" value={form.customerName}
                             onChange={e => setForm({ ...form, customerName: e.target.value })}
                             placeholder="Leave blank if unknown"
-                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                            className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30" />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">FU Status *</label>
+                          <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">FU Status *</label>
                           <select value={form.fuStatus} onChange={e => setForm({ ...form, fuStatus: e.target.value })}
-                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                            className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
                             {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                         </div>
                         <div className="flex items-end">
                           <button onClick={handleAddDeal}
-                            className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
+                            className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-dss-sm text-sm font-medium transition shadow-sm">
                             Log Deal
                           </button>
                         </div>
@@ -1234,84 +1236,84 @@ export default function DailyDealsTab({
                   <>
                     <div className="grid grid-cols-3 gap-3 mb-3">
                       <div>
-                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">App ID *</label>
+                        <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">App ID *</label>
                         <input type="text" value={form.appId} onChange={e => setForm({ ...form, appId: e.target.value })}
                           placeholder="e.g. DTBFE001"
-                          className={`w-full px-3 py-2 bg-gray-700 border rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 ${appIdConflicts.length > 0 ? 'border-amber-600' : 'border-gray-600'}`} />
+                          className={`w-full px-3 py-2 bg-dss-canvas border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30 ${appIdConflicts.length > 0 ? 'border-amber-600' : 'border-dss-border'}`} />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Dealer *</label>
+                        <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Dealer *</label>
                         <DealerNameInput
                           value={form.dealerName}
                           onChange={(dealerName) => setForm({ ...form, dealerName })}
                           suggestions={dealerMasterList}
                           placeholder="Dealer name"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Customer *</label>
+                        <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Customer *</label>
                         <input type="text" value={form.customerName} onChange={e => setForm({ ...form, customerName: e.target.value })}
                           placeholder="Customer name"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                          className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30" />
                       </div>
                     </div>
                     {softMatches.length > 0 && appIdConflicts.length === 0 && (
-                      <div className="mb-3 rounded-xl border border-sky-700/70 bg-sky-950/30 px-4 py-3">
+                      <div className="mb-3 rounded-dss border border-sky-700/70 bg-sky-950/30 px-4 py-3">
                         <p className="text-sm font-medium text-sky-200">
                           Possible match: same dealer &amp; customer, different App ID. This may be the same deal — link it, or continue as a new Manual entry.
                         </p>
                         <div className="mt-2 space-y-1">
                           {softMatches.map(call => (
-                            <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-gray-800/80 rounded-lg border border-sky-800/50">
+                            <div key={call.id} className="flex items-center justify-between px-3 py-2 bg-dss-surface/80 rounded-dss-sm border border-sky-800/50">
                               <div className="flex items-center gap-3 flex-wrap">
-                                <span className="text-sm text-blue-400 font-medium">{call.applicationId}</span>
-                                <span className="text-xs text-gray-300">{call.dealerName}</span>
-                                <span className="text-xs text-gray-500">{call.state}</span>
-                                {call.customerName && <span className="text-xs text-gray-400 italic">{call.customerName}</span>}
+                                <span className="text-sm text-dss-accent font-medium">{call.applicationId}</span>
+                                <span className="text-xs text-dss-ink/80">{call.dealerName}</span>
+                                <span className="text-xs text-dss-muted">{call.state}</span>
+                                {call.customerName && <span className="text-xs text-dss-muted italic">{call.customerName}</span>}
                               </div>
                               <button onClick={() => handleSelectCall(call)}
-                                className="text-xs px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition flex-shrink-0">
+                                className="text-xs px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-dss-sm transition flex-shrink-0">
                                 Use this app →
                               </button>
                             </div>
                           ))}
                         </div>
-                        <p className="text-xs text-sky-300/80 mt-2">Add Deal stays available if this is truly a different deal.</p>
+                        <p className="text-xs text-sky-800 mt-2">Add Deal stays available if this is truly a different deal.</p>
                       </div>
                     )}
                     {checkingSoftMatch && appIdConflicts.length === 0 && form.dealerName.trim() && form.customerName.trim() && (
-                      <p className="text-xs text-gray-500 mb-3">Checking dealer + customer for possible matches…</p>
+                      <p className="text-xs text-dss-muted mb-3">Checking dealer + customer for possible matches…</p>
                     )}
                     <div className="grid grid-cols-4 gap-3">
                       <div>
-                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Amount *</label>
+                        <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Amount *</label>
                         <input type="text" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })}
                           placeholder="$0"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                          className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30" />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">State *</label>
+                        <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">State *</label>
                         <input type="text" value={form.state} onChange={e => setForm({ ...form, state: e.target.value.toUpperCase() })}
                           placeholder="IL" maxLength={2}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                          className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30" />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">FU Status *</label>
+                        <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">FU Status *</label>
                         <select value={form.fuStatus} onChange={e => setForm({ ...form, fuStatus: e.target.value })}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                          className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
                           {FU_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </div>
                       <div className="flex items-end">
                         <button onClick={handleAddDeal}
                           disabled={appIdConflicts.length > 0 || checkingAppId}
-                          className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition shadow-lg shadow-green-950/30">
+                          className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition shadow-sm">
                           Add Deal
                         </button>
                       </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-3">Counts toward today's goal only. Expand each row to add notes.</p>
+                    <p className="text-xs text-dss-muted mt-3">Counts toward today's goal only. Expand each row to add notes.</p>
                   </>
                 )}
               </div>
@@ -1320,38 +1322,38 @@ export default function DailyDealsTab({
         </div>
 
         {/* Leaderboard */}
-          <div className="bg-gradient-to-b from-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-hidden shadow-xl shadow-black/10">
-            <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between gap-2">
+          <div className="bg-dss-surface rounded-dss border border-dss-border overflow-hidden shadow-sm">
+            <div className="px-4 py-3 border-b border-dss-border flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                <span className="flex h-8 w-8 items-center justify-center rounded-dss-sm border border-amber-500/30 bg-amber-500/10 text-amber-800">
                   <Trophy className="h-4 w-4" />
                 </span>
-                <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
+                <p className="text-sm font-semibold text-dss-ink">Today's Rankings</p>
               </div>
-              <span className="rounded-full bg-gray-700 px-2 py-0.5 text-[10px] font-semibold text-gray-400">{leaderboard.length}</span>
+              <span className="rounded-full bg-dss-canvas px-2 py-0.5 text-[10px] font-semibold text-dss-muted">{leaderboard.length}</span>
           </div>
             <div className="divide-y divide-gray-700/70">
             {leaderboard.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-gray-500">No entries yet today</p>
+              <p className="px-4 py-8 text-center text-sm text-dss-muted">No entries yet today</p>
             ) : leaderboard.map((rep, idx) => {
               const m = medal(idx);
               const isMe = rep.id === selectedUser;
               return (
-                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-blue-900/20 ring-1 ring-inset ring-blue-500/20' : 'hover:bg-gray-750'}`}>
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${idx < 3 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-gray-700 text-gray-400'}`}>
-                    {m || <span className="text-xs text-gray-400 font-medium">{idx + 1}</span>}
+                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-dss-accent-soft/20 ring-1 ring-inset ring-blue-500/20' : 'hover:bg-dss-canvas'}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${idx < 3 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-dss-canvas text-dss-muted'}`}>
+                    {m || <span className="text-xs text-dss-muted font-medium">{idx + 1}</span>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium truncate ${isMe ? 'text-blue-300' : 'text-gray-200'}`}>
-                      {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
+                    <p className={`text-sm font-medium truncate ${isMe ? 'text-dss-accent' : 'text-dss-ink'}`}>
+                      {rep.name}{isMe && <span className="ml-1 text-xs text-dss-accent font-normal">(you)</span>}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-dss-muted">
                       {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className={`text-xl font-bold leading-none ${rep.dealCount > 0 ? 'text-green-400' : 'text-gray-600'}`}>{rep.dealCount}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">deals</p>
+                    <p className={`text-xl font-bold leading-none ${rep.dealCount > 0 ? 'text-dss-success' : 'text-dss-muted'}`}>{rep.dealCount}</p>
+                    <p className="text-xs text-dss-muted mt-0.5">deals</p>
                   </div>
                 </div>
               );
@@ -1363,43 +1365,43 @@ export default function DailyDealsTab({
       {/* TODAY'S ENTRIES */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-gray-100 flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-blue-300" />
+          <h3 className="text-base font-semibold text-dss-ink flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-dss-accent" />
             Today's entries
           </h3>
           <div className="flex items-center gap-2">
             <button
               onClick={exportTodayEntries}
               disabled={combinedEntries.length === 0}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-700 text-xs text-gray-200 hover:bg-gray-600 disabled:opacity-40 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
             >
               <Download className="h-3.5 w-3.5" />
               Export
             </button>
-            <span className="rounded-full border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs text-gray-400">{combinedEntries.length} total</span>
+            <span className="rounded-full border border-dss-border bg-dss-surface px-2.5 py-1 text-xs text-dss-muted">{combinedEntries.length} total</span>
           </div>
         </div>
         {loading ? (
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center text-gray-400">Loading...</div>
+          <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-8 text-center text-dss-muted">Loading...</div>
         ) : combinedEntries.length === 0 ? (
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-10 text-center">
-            <p className="text-base font-medium text-gray-400">No deals logged yet today.</p>
-            <p className="text-sm text-gray-500 mt-1">Use the form above to log the first deal.</p>
+          <div className="bg-dss-surface rounded-dss-sm border border-dss-border p-10 text-center">
+            <p className="text-base font-medium text-dss-muted">No deals logged yet today.</p>
+            <p className="text-sm text-dss-muted mt-1">Use the form above to log the first deal.</p>
           </div>
         ) : (
-          <div className="bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 rounded-xl border border-gray-700 overflow-x-auto shadow-xl shadow-black/10">
+          <div className="bg-dss-surface rounded-dss border border-dss-border overflow-x-auto shadow-sm">
             <table className="w-full">
-              <thead className="bg-gray-950/60">
-                <tr className="border-b border-gray-700">
+              <thead className="bg-dss-canvas">
+                <tr className="border-b border-dss-border">
                   <th className="w-8 px-3 py-3"></th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Dealer</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">State</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Source</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">By</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">App ID</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Dealer</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Customer</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Amount</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">State</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Status</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Source</th>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">By</th>
                   <th className="w-8 px-3 py-3"></th>
                   <th className="w-16 px-3 py-3"></th>
                 </tr>
@@ -1415,36 +1417,36 @@ export default function DailyDealsTab({
                   return (
                     <>
                       <tr key={entry.id}
-                        className={`hover:bg-gray-750 transition-colors odd:bg-gray-900/10 ${!isEditing && entry.source === 'manual' ? 'cursor-pointer' : ''}`}
+                        className={`hover:bg-dss-canvas transition-colors odd:bg-dss-canvas/10 ${!isEditing && entry.source === 'manual' ? 'cursor-pointer' : ''}`}
                         onClick={() => { if (!isEditing && entry.source === 'manual') toggleRow(entry.id); }}>
                         <td className="px-3 py-3 text-center">
                           {entry.source === 'manual' && (isExpanded
-                            ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
-                            : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />)}
+                            ? <ChevronDown className="w-4 h-4 text-dss-accent mx-auto" />
+                            : <ChevronRight className="w-4 h-4 text-dss-muted mx-auto" />)}
                         </td>
-                        <td className="px-3 py-3 text-sm text-blue-400 font-medium">{entry.appId}</td>
+                        <td className="px-3 py-3 text-sm text-dss-accent font-medium">{entry.appId}</td>
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           <button onClick={() => openDealerPopup(entry.dealerName)}
-                            className="text-sm text-left hover:text-blue-300 transition text-gray-200 max-w-[150px] truncate"
+                            className="text-sm text-left hover:text-dss-accent transition text-dss-ink max-w-[150px] truncate"
                             title={`View all calls for ${entry.dealerName}`}>
                             {entry.dealerName}
                           </button>
                         </td>
-                        <td className="px-3 py-3 text-sm text-gray-400">{entry.customerName}</td>
+                        <td className="px-3 py-3 text-sm text-dss-muted">{entry.customerName}</td>
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <input value={editAmount} onChange={e => setEditAmount(e.target.value)} className={`${inputCls} w-24`} />
                           ) : (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-semibold text-gray-100">{formatCurrency(parseAmount(entry.amount))}</span>
-                              <button onClick={() => startEditing(entry)} className="text-gray-600 hover:text-gray-400 transition"><Edit2 className="w-3 h-3" /></button>
+                              <span className="text-sm font-semibold text-dss-ink">{formatCurrency(parseAmount(entry.amount))}</span>
+                              <button onClick={() => startEditing(entry)} className="text-dss-muted hover:text-dss-muted transition"><Edit2 className="w-3 h-3" /></button>
                             </div>
                           )}
                         </td>
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing && entry.source === 'manual'
                             ? <input value={editState} onChange={e => setEditState(e.target.value.toUpperCase())} maxLength={2} className={`${inputCls} w-14`} />
-                            : <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{entry.state}</span>}
+                            : <span className="px-2 py-0.5 bg-dss-canvas text-dss-ink/80 text-xs rounded border border-dss-border">{entry.state}</span>}
                         </td>
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing
@@ -1454,11 +1456,11 @@ export default function DailyDealsTab({
                             : <span className={`px-2.5 py-1 rounded-full text-xs border ${getFuStatusStyle(entry.fuStatus)}`}>{entry.fuStatus}</span>}
                         </td>
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${entry.source === 'call' ? 'bg-purple-900 text-purple-300 border border-purple-700' : 'bg-gray-700 text-gray-400 border border-gray-600'}`}>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${entry.source === 'call' ? 'bg-dss-accent-soft text-dss-accent border border-dss-accent/30' : 'bg-dss-canvas text-dss-muted border border-dss-border'}`}>
                             {entry.source === 'call' ? 'Calls' : 'Manual'}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-sm text-gray-400" onClick={e => e.stopPropagation()}>
+                        <td className="px-3 py-3 text-sm text-dss-muted" onClick={e => e.stopPropagation()}>
                           {isEditing && canForceCredit ? (
                             <select
                               value={editCreditId}
@@ -1480,7 +1482,7 @@ export default function DailyDealsTab({
                         <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                           {entry.source === 'manual' && (
                             <button onClick={e => toggleNotes(e, entry.id)} title="Notes"
-                              className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition ${notes.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'}`}>
+                              className={`inline-flex items-center justify-center w-7 h-7 rounded-dss-sm transition ${notes.length > 0 ? 'bg-dss-navy-soft text-white hover:bg-dss-navy' : 'bg-violet-50 text-violet-800 hover:bg-violet-100'}`}>
                               <MessageSquare className="w-3.5 h-3.5" />
                             </button>
                           )}
@@ -1488,11 +1490,11 @@ export default function DailyDealsTab({
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           {isEditing ? (
                             <div className="flex items-center gap-1">
-                              <button onClick={() => handleUpdateCombined(entry)} className="text-green-400 hover:text-green-300"><Check className="w-4 h-4" /></button>
-                              <button onClick={() => setEditingDeal(null)} className="text-red-400 hover:text-red-300"><X className="w-4 h-4" /></button>
+                              <button onClick={() => handleUpdateCombined(entry)} className="text-dss-success hover:text-dss-success"><Check className="w-4 h-4" /></button>
+                              <button onClick={() => setEditingDeal(null)} className="text-dss-danger hover:text-dss-danger"><X className="w-4 h-4" /></button>
                             </div>
                           ) : canDelete && manualDeal ? (
-                            <button onClick={() => handleDeleteDeal(manualDeal)} className="text-gray-600 hover:text-red-400 transition">
+                            <button onClick={() => handleDeleteDeal(manualDeal)} className="text-dss-muted hover:text-dss-danger transition">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           ) : null}
@@ -1500,10 +1502,10 @@ export default function DailyDealsTab({
                       </tr>
                       {isExpanded && !isEditing && entry.source === 'manual' && (
                         <tr key={`${entry.id}-exp`}>
-                          <td colSpan={11} className="px-4 py-4 pl-12 bg-gray-750">
+                          <td colSpan={11} className="px-4 py-4 pl-12 bg-dss-canvas">
                             <div className="space-y-3 max-w-2xl">
-                              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({notes.length})</p>
-                              {notes.length === 0 ? <p className="text-sm text-gray-500 italic">No notes yet.</p> : (
+                              <p className="text-xs font-medium text-dss-muted uppercase tracking-wider">Notes ({notes.length})</p>
+                              {notes.length === 0 ? <p className="text-sm text-dss-muted italic">No notes yet.</p> : (
                                 <div className="space-y-2">
                                   {notes.map(note => (
                                     <NoteItem
@@ -1524,10 +1526,10 @@ export default function DailyDealsTab({
                                   value={newNoteText[entry.id] || ''}
                                   onChange={e => setNewNoteText(prev => ({ ...prev, [entry.id]: e.target.value }))}
                                   onKeyDown={e => { if (e.key === 'Enter') handleAddNote(entry.id); }}
-                                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                                   autoFocus />
                                 <button onClick={() => handleAddNote(entry.id)}
-                                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Save</button>
+                                  className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">Save</button>
                               </div>
                             </div>
                           </td>
@@ -1546,15 +1548,15 @@ export default function DailyDealsTab({
       {dealerPopup && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-10 z-50 px-4"
           onClick={closeDealerPopup}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-5xl overflow-hidden"
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-5xl overflow-hidden"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dss-border">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-100">{dealerPopup}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <h3 className="text-lg font-semibold text-dss-ink">{dealerPopup}</h3>
+                  <p className="text-xs text-dss-muted mt-0.5">
                     {dealerCalls.length} call{dealerCalls.length !== 1 ? 's' : ''}
                     {!showAllPopupStatuses && allDealerCalls.length !== dealerCalls.length && (
-                      <span className="text-gray-600"> · {allDealerCalls.length - dealerCalls.length} hidden</span>
+                      <span className="text-dss-muted"> · {allDealerCalls.length - dealerCalls.length} hidden</span>
                     )}
                     · press Escape to close
                   </p>
@@ -1563,12 +1565,12 @@ export default function DailyDealsTab({
                   <button onClick={() => setShowAllPopupStatuses(f => !f)}
                     className={`text-xs px-3 py-1.5 rounded-full border transition ${
                       showAllPopupStatuses
-                        ? 'bg-gray-700 border-gray-500 text-gray-300 hover:bg-gray-600'
-                        : 'bg-blue-900 bg-opacity-40 border-blue-700 text-blue-300 hover:bg-opacity-60'
+                        ? 'bg-dss-canvas border-dss-border text-dss-ink/80 hover:bg-dss-accent-soft'
+                        : 'bg-dss-accent-soft bg-opacity-40 border-dss-accent/30 text-dss-accent hover:bg-opacity-60'
                     }`}>
                     {showAllPopupStatuses ? 'Showing all' : 'Active only'}
                   </button>
-                  <button onClick={closeDealerPopup} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+                  <button onClick={closeDealerPopup} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
                 </div>
               </div>
             <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
@@ -1585,23 +1587,23 @@ export default function DailyDealsTab({
                         <col style={{ width: '38px' }} />
                         <col style={{ width: '30px' }} />
                       </colgroup>
-                    <thead className="bg-gray-750 sticky top-0 z-10">
-                      <tr className="border-b border-gray-700">
+                    <thead className="bg-dss-canvas sticky top-0 z-10">
+                      <tr className="border-b border-dss-border">
                         <th className="px-2 py-2"></th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">App ID</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Customer</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">St</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Last</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">FU Status</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Notes</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">App ID</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Customer</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Amount</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">St</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Date</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Status Last</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">FU Status</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">Notes</th>
                         <th className="px-2 py-2"></th>
                       </tr>
                     </thead>
                 <tbody className="divide-y divide-gray-700">
                   {dealerCalls.length === 0 ? (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">No calls found for this dealer</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-dss-muted">No calls found for this dealer</td></tr>
                   ) : dealerCalls.map(call => {
                     const isNew = isNewUpload(call);
                     const callNotes = popupNotes[call.id] || [];
@@ -1613,30 +1615,30 @@ export default function DailyDealsTab({
                     return (
                       <>
                         <tr key={call.id}
-                          className={`transition-colors ${isNew ? 'bg-amber-950 border-l-2 border-l-amber-500 hover:bg-amber-900 hover:bg-opacity-20' : 'hover:bg-gray-750'}`}>
+                          className={`transition-colors ${isNew ? 'bg-amber-50 border-l-2 border-l-amber-500 hover:bg-amber-100' : 'hover:bg-dss-canvas'}`}>
                           <td className="px-3 py-3 text-center cursor-pointer" onClick={() => togglePopupNotes(call.id)}>
                             {isExpanded
-                              ? <ChevronDown className="w-4 h-4 text-blue-400 mx-auto" />
-                              : <ChevronRight className="w-4 h-4 text-gray-500 mx-auto" />}
+                              ? <ChevronDown className="w-4 h-4 text-dss-accent mx-auto" />
+                              : <ChevronRight className="w-4 h-4 text-dss-muted mx-auto" />}
                           </td>
 
                           {/* App ID */}
                           <td className="px-2 py-2">
                             <div className="flex items-center gap-1 flex-wrap">
-                              <span className="text-xs text-blue-400 font-medium cursor-pointer hover:underline truncate"
+                              <span className="text-xs text-dss-accent font-medium cursor-pointer hover:underline truncate"
                                 onClick={() => navigator.clipboard.writeText(call.applicationId)}
                                 title="Click to copy">
                                 {call.applicationId}
                               </span>
-                              {isNew && <span className="px-1 bg-amber-900 text-amber-300 text-[9px] rounded border border-amber-700 font-medium flex-shrink-0">NEW</span>}
+                              {isNew && <span className="px-1 bg-amber-100 text-amber-900 text-[9px] rounded border border-amber-300 font-medium flex-shrink-0">NEW</span>}
                             </div>
                           </td>
 
                           {/* Customer */}
                           <td className="px-2 py-2">
                             {call.customerName
-                              ? <span className="text-xs text-gray-400 truncate block" title={call.customerName}>{call.customerName}</span>
-                              : <span className="text-xs text-gray-600">—</span>}
+                              ? <span className="text-xs text-dss-muted truncate block" title={call.customerName}>{call.customerName}</span>
+                              : <span className="text-xs text-dss-muted">—</span>}
                           </td>
 
                           {/* Amount */}
@@ -1644,43 +1646,43 @@ export default function DailyDealsTab({
                           {popupEditingAmount === call.id ? (
                               <div className="flex items-center gap-1">
                                 <input type="text" value={popupTempAmount} onChange={e => setPopupTempAmount(e.target.value)}
-                                  className="w-14 px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none" autoFocus />
-                                <button onClick={() => handlePopupSaveAmount(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3 h-3" /></button>
-                                <button onClick={() => setPopupEditingAmount(null)} className="text-red-400 hover:text-red-300"><X className="w-3 h-3" /></button>
+                                  className="w-14 px-1 py-0.5 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none" autoFocus />
+                                <button onClick={() => handlePopupSaveAmount(call.id)} className="text-dss-success hover:text-dss-success"><Check className="w-3 h-3" /></button>
+                                <button onClick={() => setPopupEditingAmount(null)} className="text-dss-danger hover:text-dss-danger"><X className="w-3 h-3" /></button>
                               </div>
                             ) : (
                               <div className="flex items-center gap-1">
-                                <span className="text-xs font-medium text-gray-100">{formatCurrency(parseAmount(amount))}</span>
+                                <span className="text-xs font-medium text-dss-ink">{formatCurrency(parseAmount(amount))}</span>
                                 <button onClick={() => { setPopupEditingAmount(call.id); setPopupTempAmount(amount); }}
-                                  className="text-gray-600 hover:text-gray-400 transition"><Edit2 className="w-2.5 h-2.5" /></button>
+                                  className="text-dss-muted hover:text-dss-muted transition"><Edit2 className="w-2.5 h-2.5" /></button>
                               </div>
                             )}
                           </td>
 
                           {/* State */}
                           <td className="px-2 py-2">
-                            <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
+                            <span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border">{call.state}</span>
                           </td>
 
                           {/* Date */}
-                          <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{call.submittedDate}</td>
+                          <td className="px-2 py-2 text-xs text-dss-muted whitespace-nowrap">{call.submittedDate}</td>
 
                           {/* Status Last */}
                           <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                             {popupEditingStatusLast === call.id ? (
                               <div className="flex items-center gap-1">
                                 <select value={popupTempStatusLast} onChange={e => setPopupTempStatusLast(e.target.value)}
-                                  className="px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none" autoFocus>
+                                  className="px-1 py-0.5 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none" autoFocus>
                                   {STATUS_LAST_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
-                                <button onClick={() => handlePopupSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3 h-3" /></button>
-                                <button onClick={() => setPopupEditingStatusLast(null)} className="text-red-400 hover:text-red-300"><X className="w-3 h-3" /></button>
+                                <button onClick={() => handlePopupSaveStatusLast(call.id)} className="text-dss-success hover:text-dss-success"><Check className="w-3 h-3" /></button>
+                                <button onClick={() => setPopupEditingStatusLast(null)} className="text-dss-danger hover:text-dss-danger"><X className="w-3 h-3" /></button>
                               </div>
                             ) : (
                               <div className="flex items-center gap-1">
                                 <span className={`px-1.5 py-0 rounded-full text-[10px] border truncate ${getStatusLastStyle(statusLast)}`}>{statusLast}</span>
                                 <button onClick={() => { setPopupEditingStatusLast(call.id); setPopupTempStatusLast(statusLast); }}
-                                  className="text-gray-600 hover:text-gray-400 transition flex-shrink-0"><Edit2 className="w-2.5 h-2.5" /></button>
+                                  className="text-dss-muted hover:text-dss-muted transition flex-shrink-0"><Edit2 className="w-2.5 h-2.5" /></button>
                               </div>
                             )}
                           </td>
@@ -1689,7 +1691,7 @@ export default function DailyDealsTab({
                           <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                             <select value={fuStatus}
                               onChange={e => handlePopupFuStatus(call.id, e.target.value)}
-                              className="px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
+                              className="px-1.5 py-1 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30 w-full">
                               <option value="">Select…</option>
                               <option>Deal</option><option>No Deal</option>
                               <option>Pending</option><option>No Answer</option><option>Duplicates</option>
@@ -1700,7 +1702,7 @@ export default function DailyDealsTab({
                           {/* Notes count */}
                           <td className="px-2 py-2">
                             {callNotes.length > 0 && (
-                              <div className="flex items-center gap-1 text-blue-400">
+                              <div className="flex items-center gap-1 text-dss-accent">
                                 <MessageSquare className="w-3 h-3" />
                                 <span className="text-[10px] font-bold">{callNotes.length}</span>
                               </div>
@@ -1710,7 +1712,7 @@ export default function DailyDealsTab({
                           {/* Note button */}
                           <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
                             <button onClick={() => togglePopupNotes(call.id)}
-                              className={`inline-flex items-center justify-center w-6 h-6 rounded transition ${callNotes.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'}`}>
+                              className={`inline-flex items-center justify-center w-6 h-6 rounded transition ${callNotes.length > 0 ? 'bg-dss-navy-soft text-white hover:bg-dss-navy' : 'bg-violet-50 text-violet-800 hover:bg-violet-100'}`}>
                               <MessageSquare className="w-3 h-3" />
                             </button>
                           </td>
@@ -1719,10 +1721,10 @@ export default function DailyDealsTab({
                         {/* Expanded notes */}
                         {isExpanded && (
                           <tr key={`${call.id}-popup-notes`}>
-                          <td colSpan={10} className="px-3 py-2 pl-8 bg-gray-750">
+                          <td colSpan={10} className="px-3 py-2 pl-8 bg-dss-canvas">
                               <div className="space-y-3 max-w-2xl">
-                                <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
-                                {callNotes.length === 0 ? <p className="text-sm text-gray-500 italic">No notes yet.</p> : (
+                                <p className="text-xs font-medium text-dss-muted uppercase tracking-wider">Notes ({callNotes.length})</p>
+                                {callNotes.length === 0 ? <p className="text-sm text-dss-muted italic">No notes yet.</p> : (
                                   <div className="space-y-2">
                                     {callNotes.map((note: any) => (
                                       <NoteItem
@@ -1743,10 +1745,10 @@ export default function DailyDealsTab({
                                     value={popupNewNoteText[call.id] || ''}
                                     onChange={e => setPopupNewNoteText(prev => ({ ...prev, [call.id]: e.target.value }))}
                                     onKeyDown={e => { if (e.key === 'Enter') handlePopupAddNote(call.id); }}
-                                    className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                                     autoFocus />
                                   <button onClick={() => handlePopupAddNote(call.id)}
-                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">Save</button>
+                                    className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">Save</button>
                                 </div>
                               </div>
                             </td>
@@ -1758,12 +1760,12 @@ export default function DailyDealsTab({
                 </tbody>
               </table>
             </div>
-            <div className="px-6 py-3 border-t border-gray-700 flex items-center justify-between">
-              <p className="text-xs text-gray-500">Press Escape to close · Click dealer name to copy App ID</p>
+            <div className="px-6 py-3 border-t border-dss-border flex items-center justify-between">
+              <p className="text-xs text-dss-muted">Press Escape to close · Click dealer name to copy App ID</p>
               {dealerCalls.some(c => isNewUpload(c)) && (
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-amber-400" />
-                  <span className="text-xs text-amber-300">Amber = uploaded today</span>
+                  <span className="text-xs text-amber-800">Amber = uploaded today</span>
                 </div>
               )}
             </div>
@@ -1775,23 +1777,23 @@ export default function DailyDealsTab({
       {showHistory && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-16 z-50 px-4"
           onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}>
-          <div className="bg-gray-800 rounded-xl border border-gray-600 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700 shrink-0">
-              <h3 className="text-lg font-semibold text-gray-100">Deal History</h3>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-dss-border shrink-0">
+              <h3 className="text-lg font-semibold text-dss-ink">Deal History</h3>
               <button onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}
-                className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
+                className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
             </div>
             <div className="p-6 overflow-y-auto flex-1 min-h-0">
               <div className="flex items-center justify-between mb-4">
                 <button onClick={() => { if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); } else setCalendarMonth(m => m - 1); }}
-                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">‹</button>
-                <span className="text-base font-medium text-gray-100">{monthNames[calendarMonth]} {calendarYear}</span>
+                  className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">‹</button>
+                <span className="text-base font-medium text-dss-ink">{monthNames[calendarMonth]} {calendarYear}</span>
                 <button onClick={() => { if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); } else setCalendarMonth(m => m + 1); }}
-                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition">›</button>
+                  className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">›</button>
               </div>
               <div className="grid grid-cols-7 gap-1 mb-2">
-                {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="text-center text-xs text-gray-500 py-1">{d}</div>)}
+                {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="text-center text-xs text-dss-muted py-1">{d}</div>)}
               </div>
               <div className="grid grid-cols-7 gap-1 mb-4">
                 {calendarDays.map((day, i) => {
@@ -1801,12 +1803,12 @@ export default function DailyDealsTab({
                   const isFuture = dateStr > today;
                   const hasDeals = datesWithDeals.has(dateStr);
                   const isSelected = selectedDate === dateStr;
-                  let cls = 'relative text-center text-sm py-2 rounded-lg transition font-normal ';
-                  if (isTodayDate) cls += 'bg-blue-600 text-white font-medium';
-                  else if (isFuture) cls += 'text-gray-600';
-                  else if (isSelected) cls += 'bg-blue-900 border border-blue-500 text-blue-300 cursor-pointer';
-                  else if (hasDeals) cls += 'bg-green-900 text-green-300 hover:bg-green-800 cursor-pointer font-medium';
-                  else cls += 'text-gray-500';
+                  let cls = 'relative text-center text-sm py-2 rounded-dss-sm transition font-normal ';
+                  if (isTodayDate) cls += 'bg-dss-navy text-white font-medium';
+                  else if (isFuture) cls += 'text-dss-muted';
+                  else if (isSelected) cls += 'bg-dss-accent-soft border border-dss-accent text-dss-accent cursor-pointer';
+                  else if (hasDeals) cls += 'bg-emerald-50 text-dss-success hover:bg-green-800 cursor-pointer font-medium';
+                  else cls += 'text-dss-muted';
                   return (
                     <div key={i} className={cls} onClick={() => handleCalendarClick(day)}>
                       {day}
@@ -1815,48 +1817,48 @@ export default function DailyDealsTab({
                   );
                 })}
               </div>
-              <div className="flex gap-5 mb-4 pb-4 border-b border-gray-700">
-                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-400" /><span className="text-xs text-gray-400">Has entries</span></div>
-                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-blue-500" /><span className="text-xs text-gray-400">Today</span></div>
+              <div className="flex gap-5 mb-4 pb-4 border-b border-dss-border">
+                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-400" /><span className="text-xs text-dss-muted">Has entries</span></div>
+                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-blue-500" /><span className="text-xs text-dss-muted">Today</span></div>
               </div>
               {selectedDate && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold text-gray-200">{formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}</p>
+                    <p className="text-sm font-semibold text-dss-ink">{formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}</p>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={exportHistoryDeals}
                         disabled={selectedDateDeals.length === 0}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-700 text-xs text-gray-200 hover:bg-gray-600 disabled:opacity-40 transition"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
                       >
                         <Download className="h-3.5 w-3.5" />
                         Export
                       </button>
-                      <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-gray-400 hover:text-gray-200">clear</button>
+                      <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-dss-muted hover:text-dss-ink">clear</button>
                     </div>
                   </div>
-                  <div className="rounded-lg border border-gray-700 overflow-hidden max-h-[45vh] overflow-y-auto">
+                  <div className="rounded-dss-sm border border-dss-border overflow-hidden max-h-[45vh] overflow-y-auto">
                     <table className="w-full text-sm">
-                      <thead className="bg-gray-700 sticky top-0 z-10">
+                      <thead className="bg-dss-canvas sticky top-0 z-10">
                         <tr>{['App ID','Dealer','Customer','Amount','State','Status','By'].map(h => (
-                          <th key={h} className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{h}</th>
+                          <th key={h} className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">{h}</th>
                         ))}</tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-700 bg-gray-800">
+                      <tbody className="divide-y divide-gray-700 bg-dss-surface">
                         {selectedDateDeals.map(deal => (
-                          <tr key={deal.id} className="hover:bg-gray-750">
-                            <td className="px-3 py-2.5 text-blue-400 font-medium">
+                          <tr key={deal.id} className="hover:bg-dss-canvas">
+                            <td className="px-3 py-2.5 text-dss-accent font-medium">
                               {deal.appId}
                               {deal.id.startsWith('call-') && (
-                                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300 border border-blue-800">Calls</span>
+                                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-dss-accent-soft/40 text-dss-accent border border-blue-800">Calls</span>
                               )}
                             </td>
-                            <td className="px-3 py-2.5 text-gray-200">{deal.dealerName}</td>
-                            <td className="px-3 py-2.5 text-gray-200">{deal.customerName}</td>
-                            <td className="px-3 py-2.5 font-medium text-gray-100">{formatCurrency(parseAmount(deal.amount))}</td>
-                            <td className="px-3 py-2.5"><span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded border border-gray-600">{deal.state}</span></td>
+                            <td className="px-3 py-2.5 text-dss-ink">{deal.dealerName}</td>
+                            <td className="px-3 py-2.5 text-dss-ink">{deal.customerName}</td>
+                            <td className="px-3 py-2.5 font-medium text-dss-ink">{formatCurrency(parseAmount(deal.amount))}</td>
+                            <td className="px-3 py-2.5"><span className="px-2 py-0.5 bg-dss-canvas text-dss-ink/80 text-xs rounded border border-dss-border">{deal.state}</span></td>
                             <td className="px-3 py-2.5"><span className={`px-2 py-0.5 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>{deal.fuStatus}</span></td>
-                            <td className="px-3 py-2.5 text-gray-400">{deal.addedByName}</td>
+                            <td className="px-3 py-2.5 text-dss-muted">{deal.addedByName}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1872,17 +1874,17 @@ export default function DailyDealsTab({
       {creditModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
           onClick={() => setCreditModal(null)}>
-          <div className="bg-gray-800 border border-gray-600 rounded-xl w-full max-w-md p-5 shadow-xl"
+          <div className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-md p-5 shadow-sm"
             onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-100 mb-1">Credit this deal</h3>
-            <p className="text-sm text-gray-400 mb-4">
-              Set status to <span className="text-green-300 font-medium">{creditModal.newStatus}</span> and choose who gets credit.
+            <h3 className="text-lg font-semibold text-dss-ink mb-1">Credit this deal</h3>
+            <p className="text-sm text-dss-muted mb-4">
+              Set status to <span className="text-dss-success font-medium">{creditModal.newStatus}</span> and choose who gets credit.
             </p>
-            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Credit to</label>
+            <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Credit to</label>
             <select
               value={creditModal.creditId}
               onChange={e => setCreditModal({ ...creditModal, creditId: e.target.value })}
-              className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 mb-5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink mb-5 focus:outline-none focus:ring-2 focus:ring-dss-accent/30"
             >
               {selectableUsers.map(u => (
                 <option key={u.id} value={u.id}>{u.name}</option>
@@ -1891,13 +1893,13 @@ export default function DailyDealsTab({
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setCreditModal(null)}
-                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700"
+                className="px-4 py-2 rounded-dss-sm border border-dss-border text-dss-ink/80 text-sm hover:bg-dss-canvas"
               >
                 Cancel
               </button>
               <button
                 onClick={applyPopupCreditModal}
-                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-medium"
+                className="px-4 py-2 rounded-dss-sm bg-dss-success hover:bg-green-500 text-white text-sm font-medium"
               >
                 Confirm
               </button>

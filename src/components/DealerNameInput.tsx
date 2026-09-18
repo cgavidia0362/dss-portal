@@ -62,14 +62,14 @@ export default function DealerNameInput({
         className={className}
       />
       {open && filtered.length > 0 && (
-        <ul className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-gray-800 border border-gray-600 rounded-lg shadow-lg">
+        <ul className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-dss-surface border border-dss-border rounded-dss-sm shadow-lg">
           {filtered.map((name) => (
             <li key={name}>
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleSelect(name)}
-                className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 transition"
+                className="w-full text-left px-3 py-2 text-sm text-dss-ink hover:bg-dss-canvas transition"
               >
                 {name}
               </button>

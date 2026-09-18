@@ -165,15 +165,15 @@ export default function CallsTab({
   ];
 
   const fuStatusChips = [
-    { label: 'No Call',        onCls: 'bg-teal-900 bg-opacity-40 border-teal-600 text-teal-300' },
-    { label: 'Pending',        onCls: 'bg-amber-900 bg-opacity-40 border-amber-600 text-amber-300' },
-    { label: 'No Answer',      onCls: 'bg-red-900 bg-opacity-40 border-red-700 text-red-300' },
-    { label: 'Follow Up',      onCls: 'bg-orange-900 bg-opacity-40 border-orange-600 text-orange-300' },
-    { label: 'Deal',           onCls: 'bg-green-900 bg-opacity-40 border-green-600 text-green-300' },
-    { label: 'Confirmed Deal', onCls: 'bg-emerald-900 bg-opacity-40 border-emerald-600 text-emerald-300' },
-    { label: 'No Deal',        onCls: 'bg-red-900 bg-opacity-40 border-red-900 text-red-400' },
-    { label: 'Duplicates',     onCls: 'bg-orange-900 bg-opacity-40 border-orange-700 text-orange-300' },
-    { label: 'Closed',         onCls: 'bg-gray-700 border-gray-600 text-gray-400' },
+    { label: 'No Call',        onCls: 'bg-teal-50 border-teal-200 text-teal-800' },
+    { label: 'Pending',        onCls: 'bg-amber-50 border-amber-200 text-amber-800' },
+    { label: 'No Answer',      onCls: 'bg-rose-50 bg-opacity-40 border-rose-200 text-dss-danger' },
+    { label: 'Follow Up',      onCls: 'bg-orange-50 border-orange-200 text-orange-800' },
+    { label: 'Deal',           onCls: 'bg-emerald-50 bg-opacity-40 border-green-600 text-dss-success' },
+    { label: 'Confirmed Deal', onCls: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
+    { label: 'No Deal',        onCls: 'bg-rose-50 bg-opacity-40 border-red-900 text-dss-danger' },
+    { label: 'Duplicates',     onCls: 'bg-orange-50 border-orange-200 text-orange-800' },
+    { label: 'Closed',         onCls: 'bg-dss-canvas border-dss-border text-dss-muted' },
   ];
 
   const toggleFuStatusFilter = (label: string) => {
@@ -317,16 +317,19 @@ export default function CallsTab({
 
   const getStatusLastStyle = (status: string) => {
     const s = status.toLowerCase();
-    if (s.includes('approved') || s === 'approval') return 'bg-green-900 text-green-300 border-green-700';
-    if (s === 'pending approval' || s.includes('pending approval')) return 'bg-purple-900 text-purple-300 border-purple-700';
-    if (s.includes('counter')) return 'bg-yellow-900 text-yellow-300 border-yellow-700';
-    if (s.includes('denial') || s.includes('declined')) return 'bg-red-900 text-red-300 border-red-700';
-    if (s.includes('accepted')) return 'bg-blue-900 text-blue-300 border-blue-700';
-    if (s.includes('pending')) return 'bg-orange-900 text-orange-300 border-orange-700';
-    if (s.includes('document received')) return 'bg-purple-900 text-purple-300 border-purple-700';
-    if (s.includes('funded') || s.includes('funding')) return 'bg-emerald-900 text-emerald-300 border-emerald-700';
-    if (s.includes('new application')) return 'bg-cyan-900 text-cyan-300 border-cyan-700';
-    return 'bg-gray-700 text-gray-300 border-gray-600';
+    if (s.includes('approved') || s === 'approval') return 'bg-emerald-50 text-emerald-900 border-emerald-300';
+    if (s === 'pending approval' || s.includes('pending approval')) return 'bg-violet-50 text-violet-900 border-violet-300';
+    if (s.includes('counter')) return 'bg-amber-50 text-amber-900 border-amber-300';
+    if (s.includes('denial') || s.includes('declined')) return 'bg-rose-50 text-rose-900 border-rose-300';
+    if (s.includes('accepted')) return 'bg-sky-50 text-sky-900 border-sky-300';
+    if (s.includes('pending')) return 'bg-orange-50 text-orange-900 border-orange-300';
+    if (s.includes('document received')) return 'bg-indigo-50 text-indigo-900 border-indigo-300';
+    if (s.includes('funded') || s.includes('funding')) return 'bg-emerald-50 text-emerald-900 border-emerald-300';
+    if (s.includes('new application')) return 'bg-cyan-50 text-cyan-900 border-cyan-300';
+    if (s.includes('reconsider')) return 'bg-slate-100 text-slate-800 border-slate-300';
+    if (s.includes('follow up')) return 'bg-amber-50 text-amber-900 border-amber-300';
+    if (s.includes('duplicate')) return 'bg-orange-50 text-orange-900 border-orange-300';
+    return 'bg-dss-canvas text-dss-ink border-dss-border';
   };
 
   const isGlobalSearch = searchQuery.trim().length > 0;
@@ -806,11 +809,11 @@ export default function CallsTab({
 
   const SortIcon = ({ field }: { field: ActiveSortField }) => {
     if (columnSort?.field !== field) {
-      return <ArrowUpDown className="w-3 h-3 inline ml-1 text-gray-600" />;
+      return <ArrowUpDown className="w-3 h-3 inline ml-1 text-dss-muted" />;
     }
     return columnSort.order === 'asc'
-      ? <ChevronUp className="w-3 h-3 inline ml-1 text-blue-400" />
-      : <ChevronDown className="w-3 h-3 inline ml-1 text-blue-400" />;
+      ? <ChevronUp className="w-3 h-3 inline ml-1 text-dss-accent" />
+      : <ChevronDown className="w-3 h-3 inline ml-1 text-dss-accent" />;
   };
 
   return (
@@ -818,8 +821,8 @@ export default function CallsTab({
 
       {/* HEADER */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-100">Calls</h2>
-        <p className="text-sm text-gray-400 mt-0.5">
+        <h2 className="text-2xl font-bold text-dss-ink">Calls</h2>
+        <p className="text-sm text-dss-muted mt-0.5">
           {isAdmin ? 'View and manage all calls' : 'View your assigned calls — search to find and update any call'}
         </p>
       </div>
@@ -828,66 +831,64 @@ export default function CallsTab({
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-4 items-stretch">
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="relative overflow-hidden rounded-xl border border-purple-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-purple-950/30 p-4 shadow-lg shadow-purple-950/10">
-              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-purple-500/10 blur-2xl" />
+            <div className="relative overflow-hidden rounded-dss border border-violet-200 bg-white p-4 shadow-sm">
               <div className="relative flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-dss-sm border border-violet-200 bg-violet-50 text-violet-800">
                       <Target className="h-4 w-4" />
                     </div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-purple-300/80">Daily Goal</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-violet-900">Daily Goal</p>
                   </div>
-                  <p className="text-3xl font-bold text-purple-300">
-                    {dealsToday}<span className="ml-1 text-base font-normal text-gray-500">/ {dailyGoal}</span>
+                  <p className="text-3xl font-bold text-dss-ink">
+                    {dealsToday}<span className="ml-1 text-base font-normal text-dss-muted">/ {dailyGoal}</span>
                   </p>
                 </div>
-                <div className="grid h-16 w-16 place-items-center rounded-full bg-gray-950/40 text-sm font-bold text-purple-200"
-                  style={{ background: `conic-gradient(rgb(168 85 247) ${goalPct}%, rgba(55,65,81,.85) 0)` }}>
-                  <div className="grid h-12 w-12 place-items-center rounded-full bg-gray-900">{goalPct.toFixed(0)}%</div>
+                <div className="grid h-16 w-16 place-items-center rounded-full bg-dss-canvas text-sm font-bold text-violet-900"
+                  style={{ background: `conic-gradient(rgb(139 92 246) ${goalPct}%, rgb(226 232 240) 0)` }}>
+                  <div className="grid h-12 w-12 place-items-center rounded-full bg-white text-dss-ink">{goalPct.toFixed(0)}%</div>
                 </div>
               </div>
-              <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-gray-700/80">
-                <div className="h-full rounded-full bg-purple-400 transition-all" style={{ width: `${goalPct}%` }} />
+              <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-dss-canvas">
+                <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${goalPct}%` }} />
               </div>
-              <p className="relative mt-2 text-xs text-gray-500">{goalPct.toFixed(0)}% complete</p>
+              <p className="relative mt-2 text-xs text-dss-muted">{goalPct.toFixed(0)}% complete</p>
             </div>
 
-            <div className="relative overflow-hidden rounded-xl border border-cyan-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-cyan-950/30 p-4 shadow-lg shadow-cyan-950/10">
-              <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-cyan-500/10 blur-2xl" />
+            <div className="relative overflow-hidden rounded-dss border border-cyan-200 bg-white p-4 shadow-sm">
               <div className="relative flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-dss-sm border border-cyan-200 bg-cyan-50 text-cyan-900">
                       <Users className="h-4 w-4" />
                     </div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300/80">Team Goal</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-cyan-900">Team Goal</p>
                   </div>
-                  <p className="text-3xl font-bold text-cyan-300">
-                    {teamDealsToday}<span className="ml-1 text-base font-normal text-gray-500">/ {teamGoal}</span>
+                  <p className="text-3xl font-bold text-dss-ink">
+                    {teamDealsToday}<span className="ml-1 text-base font-normal text-dss-muted">/ {teamGoal}</span>
                   </p>
                 </div>
-                <div className="grid h-16 w-16 place-items-center rounded-full bg-gray-950/40 text-sm font-bold text-cyan-200"
-                  style={{ background: `conic-gradient(rgb(34 211 238) ${teamGoalPct}%, rgba(55,65,81,.85) 0)` }}>
-                  <div className="grid h-12 w-12 place-items-center rounded-full bg-gray-900">{teamGoalPct.toFixed(0)}%</div>
+                <div className="grid h-16 w-16 place-items-center rounded-full bg-dss-canvas text-sm font-bold text-cyan-900"
+                  style={{ background: `conic-gradient(rgb(8 145 178) ${teamGoalPct}%, rgb(226 232 240) 0)` }}>
+                  <div className="grid h-12 w-12 place-items-center rounded-full bg-white text-dss-ink">{teamGoalPct.toFixed(0)}%</div>
                 </div>
               </div>
-              <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-gray-700/80">
-                <div className="h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${teamGoalPct}%` }} />
+              <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-dss-canvas">
+                <div className="h-full rounded-full bg-cyan-600 transition-all" style={{ width: `${teamGoalPct}%` }} />
               </div>
-              <p className="relative mt-2 text-xs text-gray-500">{teamGoalPct.toFixed(0)}% complete</p>
+              <p className="relative mt-2 text-xs text-dss-muted">{teamGoalPct.toFixed(0)}% complete</p>
             </div>
 
             {currentUserRole === 'rep' ? (
-              <div className="relative overflow-hidden rounded-xl border border-teal-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-teal-950/30 p-4 shadow-lg shadow-teal-950/10">
+              <div className="relative overflow-hidden rounded-dss border border-teal-200 bg-white p-4 shadow-sm">
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-teal-500/30 bg-teal-500/10 text-teal-300">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-dss-sm border border-teal-200 bg-teal-50 text-teal-900">
                     <Target className="h-4 w-4" />
                   </div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-teal-300/80">State Goal</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-teal-900">State Goal</p>
                 </div>
                 {repStates.length === 0 ? (
-                  <p className="text-xs text-gray-500 italic">No state assigned</p>
+                  <p className="text-xs text-dss-muted italic">No state assigned</p>
                 ) : (
                   <div className="space-y-2">
                     {repStates.map(state => {
@@ -897,12 +898,12 @@ export default function CallsTab({
                       return (
                         <div key={state}>
                           <div className="mb-1 flex items-baseline justify-between">
-                            <span className="text-xs font-medium text-gray-400">{state}</span>
-                            <span className="text-sm font-bold text-teal-300">
-                              {deals}<span className="ml-1 text-xs font-normal text-gray-500">/ {goal > 0 ? goal : '—'}</span>
+                            <span className="text-xs font-medium text-dss-muted">{state}</span>
+                            <span className="text-sm font-bold text-teal-800">
+                              {deals}<span className="ml-1 text-xs font-normal text-dss-muted">/ {goal > 0 ? goal : '—'}</span>
                             </span>
                           </div>
-                          <div className="h-1.5 overflow-hidden rounded-full bg-gray-700">
+                          <div className="h-1.5 overflow-hidden rounded-full bg-dss-canvas">
                             <div className="h-full rounded-full bg-teal-400 transition-all" style={{ width: `${pctVal}%` }} />
                           </div>
                         </div>
@@ -912,78 +913,77 @@ export default function CallsTab({
                 )}
               </div>
             ) : (
-              <div className="relative overflow-hidden rounded-xl border border-orange-500/30 bg-gradient-to-br from-gray-800 via-gray-800 to-orange-950/30 p-4 shadow-lg shadow-orange-950/10">
-                <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-orange-500/10 blur-2xl" />
+              <div className="relative overflow-hidden rounded-dss border border-orange-200 bg-white p-4 shadow-sm">
                 <div className="relative flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-orange-500/30 bg-orange-500/10 text-orange-300">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-dss-sm border border-orange-200 bg-orange-50 text-orange-900">
                         <PhoneCall className="h-4 w-4" />
                       </div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-orange-300/80">No Answer</p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-orange-900">No Answer</p>
                     </div>
-                    <p className="text-3xl font-bold text-orange-300">{noAnswerCount}</p>
-                    <p className="mt-1 text-xs text-gray-500">of {dashboardCalls.length} calls</p>
+                    <p className="text-3xl font-bold text-dss-ink">{noAnswerCount}</p>
+                    <p className="mt-1 text-xs text-dss-muted">of {dashboardCalls.length} calls</p>
                   </div>
-                  <div className="rounded-xl border border-orange-500/30 bg-orange-950/20 px-3 py-2 text-right">
-                    <p className="text-lg font-bold text-orange-300">{pctValue(noAnswerCount)}%</p>
-                    <p className="text-[10px] uppercase tracking-wider text-orange-300/70">retry</p>
+                  <div className="rounded-dss border border-orange-200 bg-orange-50 px-3 py-2 text-right">
+                    <p className="text-lg font-bold text-orange-900">{pctValue(noAnswerCount)}%</p>
+                    <p className="text-[10px] uppercase tracking-wider text-orange-800">retry</p>
                   </div>
                 </div>
-                <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-gray-700/80">
-                  <div className="h-full rounded-full bg-orange-400 transition-all" style={{ width: pct(noAnswerCount) }} />
+                <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-dss-canvas">
+                  <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: pct(noAnswerCount) }} />
                 </div>
               </div>
             )}
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-gray-800 via-gray-800 to-gray-900 shadow-xl shadow-black/10">
-            <div className="flex items-center justify-between border-b border-gray-700/70 px-4 py-3">
+          <div className="overflow-hidden rounded-dss border border-dss-border bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-dss-border px-4 py-3">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-300">
+                <div className="flex h-9 w-9 items-center justify-center rounded-dss-sm border border-dss-border bg-dss-accent-soft text-dss-ink">
                   <ListChecks className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-100">Call Status Breakdown</p>
-                  <p className="text-xs text-gray-500">Current filtered view</p>
+                  <p className="text-sm font-semibold text-dss-ink">Call Status Breakdown</p>
+                  <p className="text-xs text-dss-muted">Current filtered view</p>
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-2xl font-bold text-blue-400">{dashboardCalls.length}</span>
-                <span className="ml-1.5 text-xs text-gray-500">total calls</span>
+                <span className="text-2xl font-bold text-dss-ink">{dashboardCalls.length}</span>
+                <span className="ml-1.5 text-xs text-dss-muted">total calls</span>
               </div>
             </div>
 
             <div className="space-y-2.5 p-4">
               {[
-                { label: 'No Call', count: noCallCount, color: 'bg-gray-400', textColor: 'text-gray-300', icon: PhoneCall, pill: 'NO CALL', pillCls: 'bg-gray-700 text-gray-300 border-gray-600' },
-                { label: 'Pending', count: pendingCount, color: 'bg-yellow-400', textColor: 'text-yellow-300', icon: Clock, pill: 'PENDING', pillCls: 'bg-yellow-900/40 text-yellow-300 border-yellow-700/70' },
-                { label: 'No Answer', count: noAnswerCount, color: 'bg-orange-400', textColor: 'text-orange-300', icon: RotateCcw, pill: 'NO ANSWER', pillCls: 'bg-orange-900/40 text-orange-300 border-orange-700/70' },
-                { label: 'Deal', count: dealTotalCount, color: 'bg-green-400', textColor: 'text-green-300', icon: CheckCircle2, pill: 'DEAL', pillCls: 'bg-green-900/40 text-green-300 border-green-700/70' },
-                { label: 'No Deal', count: noDealCount, color: 'bg-red-400', textColor: 'text-red-300', icon: XCircle, pill: 'NO DEAL', pillCls: 'bg-red-900/40 text-red-300 border-red-700/70' },
+                { label: 'No Call', count: noCallCount, color: 'bg-dss-border', textColor: 'text-dss-ink/80', icon: PhoneCall, pill: 'NO CALL', pillCls: 'bg-dss-canvas text-dss-ink/80 border-dss-border' },
+                { label: 'Pending', count: pendingCount, color: 'bg-yellow-400', textColor: 'text-amber-800', icon: Clock, pill: 'PENDING', pillCls: 'bg-yellow-50 text-amber-800 border-yellow-200' },
+                { label: 'No Answer', count: noAnswerCount, color: 'bg-orange-400', textColor: 'text-orange-800', icon: RotateCcw, pill: 'NO ANSWER', pillCls: 'bg-orange-50 text-orange-800 border-orange-200' },
+                { label: 'Deal', count: dealTotalCount, color: 'bg-green-400', textColor: 'text-dss-success', icon: CheckCircle2, pill: 'DEAL', pillCls: 'bg-emerald-50/40 text-dss-success border-emerald-200/70' },
+                { label: 'No Deal', count: noDealCount, color: 'bg-red-400', textColor: 'text-dss-danger', icon: XCircle, pill: 'NO DEAL', pillCls: 'bg-rose-50/40 text-dss-danger border-rose-200/70' },
               ].map(({ label, count, color, textColor, icon: Icon, pill, pillCls }) => (
-                <div key={label} className="grid grid-cols-[128px_minmax(0,1fr)_48px_42px_82px] items-center gap-3 rounded-lg border border-gray-700/50 bg-gray-900/20 px-3 py-2">
+                <div key={label} className="grid grid-cols-[128px_minmax(0,1fr)_48px_42px_82px] items-center gap-3 rounded-dss-sm border border-dss-border/50 bg-dss-canvas px-3 py-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-800 text-gray-400">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-dss-sm bg-dss-surface text-dss-muted">
                       <Icon className="h-3.5 w-3.5" />
                     </div>
-                    <span className="truncate text-sm font-medium text-gray-300">{label}</span>
+                    <span className="truncate text-sm font-medium text-dss-ink/80">{label}</span>
                   </div>
-                  <div className="h-2.5 overflow-hidden rounded-full bg-gray-700/80">
+                  <div className="h-2.5 overflow-hidden rounded-full bg-dss-canvas/80">
                     <div className={`h-full ${color} rounded-full transition-all`} style={{ width: pct(count) }} />
                   </div>
-                  <span className="text-right text-xs font-semibold text-gray-400">{pctValue(count)}%</span>
+                  <span className="text-right text-xs font-semibold text-dss-muted">{pctValue(count)}%</span>
                   <span className={`text-right text-xs font-bold ${textColor}`}>{count}</span>
                   <span className={`rounded-md border px-2 py-1 text-center text-[10px] font-semibold ${pillCls}`}>{pill}</span>
                 </div>
               ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.7fr] gap-3 border-t border-gray-700/70 p-4">
-              <div className="rounded-xl border border-gray-700 bg-gray-900/30 p-4">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.7fr] gap-3 border-t border-dss-border/70 p-4">
+              <div className="rounded-dss border border-dss-border bg-dss-canvas p-4">
                 <div className="flex items-center gap-4">
                   <div
-                    className="h-24 w-24 rounded-full border border-gray-700"
+                    className="h-24 w-24 rounded-full border border-dss-border"
                     style={{
                       background: `conic-gradient(
                         rgb(250 204 21) 0 ${pctValue(pendingCount)}%,
@@ -995,43 +995,43 @@ export default function CallsTab({
                     }}
                   />
                   <div>
-                    <p className="text-sm font-semibold text-gray-100">Overview</p>
-                    <p className="mt-1 text-3xl font-bold text-gray-100">{dashboardCalls.length}</p>
-                    <p className="text-xs text-gray-500">total calls</p>
+                    <p className="text-sm font-semibold text-dss-ink">Overview</p>
+                    <p className="mt-1 text-3xl font-bold text-dss-ink">{dashboardCalls.length}</p>
+                    <p className="text-xs text-dss-muted">total calls</p>
                     <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                      <span className="text-purple-300">Today: <strong>{workedTodayCount}</strong></span>
-                      <span className="text-cyan-300">Queue: <strong>{activeQueueCount}</strong></span>
+                      <span className="text-dss-accent">Today: <strong>{workedTodayCount}</strong></span>
+                      <span className="text-cyan-800">Queue: <strong>{activeQueueCount}</strong></span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-700 bg-gray-900/30 p-4">
+              <div className="rounded-dss border border-dss-border bg-white p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-dss-sm border border-violet-200 bg-violet-50 text-violet-900">
                       <Target className="h-4 w-4" />
                     </div>
-                    <p className="text-sm font-semibold text-gray-100">Action Queue</p>
+                    <p className="text-sm font-semibold text-dss-ink">Action Queue</p>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    Focus: <span className="text-yellow-300">Pending</span>, then <span className="text-orange-300">No Answer</span>
+                  <p className="text-xs text-dss-muted">
+                    Focus: <span className="font-semibold text-amber-900">Pending</span>, then <span className="font-semibold text-orange-900">No Answer</span>
                   </p>
                 </div>
                 <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
                   {[
-                    { label: 'Pending Follow-Up', count: pendingCount, icon: Clock, color: 'text-yellow-300', border: 'border-yellow-700/50', bg: 'bg-yellow-950/20', priority: 'Medium' },
-                    { label: 'Needs First Call', count: noCallCount, icon: PhoneCall, color: 'text-purple-300', border: 'border-purple-700/50', bg: 'bg-purple-950/20', priority: 'High' },
-                    { label: 'No Answer Retry', count: noAnswerCount, icon: RotateCcw, color: 'text-orange-300', border: 'border-orange-700/50', bg: 'bg-orange-950/20', priority: 'Retry' },
-                    { label: 'Stale / Aging', count: staleCount, icon: AlertTriangle, color: 'text-red-300', border: 'border-red-700/50', bg: 'bg-red-950/20', priority: 'Review' },
+                    { label: 'Pending Follow-Up', count: pendingCount, icon: Clock, color: 'text-amber-900', border: 'border-amber-300', bg: 'bg-amber-50', priority: 'Medium' },
+                    { label: 'Needs First Call', count: noCallCount, icon: PhoneCall, color: 'text-violet-900', border: 'border-violet-300', bg: 'bg-violet-50', priority: 'High' },
+                    { label: 'No Answer Retry', count: noAnswerCount, icon: RotateCcw, color: 'text-orange-900', border: 'border-orange-300', bg: 'bg-orange-50', priority: 'Retry' },
+                    { label: 'Stale / Aging', count: staleCount, icon: AlertTriangle, color: 'text-rose-900', border: 'border-rose-300', bg: 'bg-rose-50', priority: 'Review' },
                   ].map(({ label, count, icon: Icon, color, border, bg, priority }) => (
-                    <div key={label} className={`rounded-lg border ${border} ${bg} p-3`}>
+                    <div key={label} className={`rounded-dss-sm border ${border} ${bg} p-3`}>
                       <div className="mb-2 flex items-center justify-between">
                         <Icon className={`h-4 w-4 ${color}`} />
                         <span className={`text-xl font-bold ${color}`}>{count}</span>
                       </div>
-                      <p className="min-h-[32px] text-xs font-medium leading-tight text-gray-300">{label}</p>
-                      <p className={`mt-2 rounded-md border ${border} px-2 py-1 text-center text-[10px] font-semibold ${color}`}>{priority}</p>
+                      <p className="min-h-[32px] text-xs font-semibold leading-tight text-dss-ink">{label}</p>
+                      <p className={`mt-2 rounded-md border ${border} bg-white px-2 py-1 text-center text-[10px] font-semibold ${color}`}>{priority}</p>
                     </div>
                   ))}
                 </div>
@@ -1040,38 +1040,38 @@ export default function CallsTab({
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-b from-gray-800 to-gray-900 shadow-xl shadow-black/10 flex flex-col">
-          <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between gap-2">
+        <div className="overflow-hidden rounded-dss border border-dss-border bg-white shadow-sm flex flex-col">
+          <div className="px-4 py-3 border-b border-dss-border flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300">
+              <div className="flex h-8 w-8 items-center justify-center rounded-dss-sm border border-amber-200 bg-amber-50 text-amber-900">
                 <Trophy className="h-4 w-4" />
               </div>
-              <p className="text-sm font-semibold text-gray-200">Today's Rankings</p>
+              <p className="text-sm font-semibold text-dss-ink">Today's Rankings</p>
             </div>
-            <span className="rounded-full bg-gray-700 px-2 py-0.5 text-[10px] font-semibold text-gray-400">{leaderboard.length}</span>
+            <span className="rounded-full bg-dss-canvas px-2 py-0.5 text-[10px] font-semibold text-dss-muted">{leaderboard.length}</span>
           </div>
-          <div className="divide-y divide-gray-700/70 flex-1 overflow-hidden">
+          <div className="divide-y divide-dss-border flex-1 overflow-hidden">
             {leaderboard.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-gray-500">No deals logged today</p>
+              <p className="px-4 py-6 text-center text-sm text-dss-muted">No deals logged today</p>
             ) : leaderboard.map((rep, idx) => {
               const m = medal(idx);
               const isMe = rep.id === currentUserId;
               return (
-                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-blue-900/20 ring-1 ring-inset ring-blue-500/20' : 'hover:bg-gray-750'}`}>
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${idx < 3 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-gray-700 text-gray-400'}`}>
+                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-dss-accent-soft/20 ring-1 ring-inset ring-blue-500/20' : 'hover:bg-dss-canvas'}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${idx < 3 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-dss-canvas text-dss-muted'}`}>
                     {m || <span className="text-xs font-semibold">{idx + 1}</span>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium truncate ${isMe ? 'text-blue-300' : 'text-gray-200'}`}>
-                      {rep.name}{isMe && <span className="ml-1 text-xs text-blue-400 font-normal">(you)</span>}
+                    <p className={`text-sm font-medium truncate ${isMe ? 'text-dss-accent' : 'text-dss-ink'}`}>
+                      {rep.name}{isMe && <span className="ml-1 text-xs text-dss-accent font-normal">(you)</span>}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-dss-muted">
                       {rep.amount > 0 ? formatCurrency(rep.amount) : <span className="italic">no deals yet</span>}
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className={`text-xl font-bold leading-none ${rep.dealCount > 0 ? 'text-green-400' : 'text-gray-600'}`}>{rep.dealCount}</p>
-                    <p className="text-[10px] text-gray-500 mt-0.5 uppercase tracking-wider">deals</p>
+                    <p className={`text-xl font-bold leading-none ${rep.dealCount > 0 ? 'text-dss-success' : 'text-dss-muted'}`}>{rep.dealCount}</p>
+                    <p className="text-[10px] text-dss-muted mt-0.5 uppercase tracking-wider">deals</p>
                   </div>
                 </div>
               );
@@ -1081,38 +1081,38 @@ export default function CallsTab({
       </div>
 
       {/* FILTER BAR */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-3 flex gap-3 items-center flex-wrap">
+      <div className="bg-dss-surface rounded-dss-sm border border-dss-border px-4 py-3 flex gap-3 items-center flex-wrap">
         <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dss-muted" />
           <input type="text" placeholder={isRep ? 'Search all calls — App ID, Dealer, Customer, State…' : 'Search App ID, Dealer, Customer, State…'}
             value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            className="w-full pl-9 pr-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30" />
         </div>
         <select value={filterState} onChange={e => setFilterState(e.target.value)}
-          className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          className="px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
           <option value="">All States</option>
           {uniqueStates.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         {isAdmin && (
           <select value={filterRep} onChange={e => setFilterRep(e.target.value)}
-            className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            className="px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
             <option value="">All Reps</option>
             {uniqueReps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         )}
-        <div className="flex items-center border border-gray-600 rounded-lg overflow-hidden bg-gray-700">
-          <div className="px-2 py-2 border-r border-gray-600">
-            <Search className="w-3.5 h-3.5 text-gray-500" />
+        <div className="flex items-center border border-dss-border rounded-dss-sm overflow-hidden bg-dss-canvas">
+          <div className="px-2 py-2 border-r border-dss-border">
+            <Search className="w-3.5 h-3.5 text-dss-muted" />
           </div>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className="px-2 py-2 bg-gray-700 text-xs text-gray-300 focus:outline-none w-[120px]" />
-          <span className="px-1 text-xs text-gray-500">—</span>
+            className="px-2 py-2 bg-dss-canvas text-xs text-dss-ink/80 focus:outline-none w-[120px]" />
+          <span className="px-1 text-xs text-dss-muted">—</span>
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className="px-2 py-2 bg-gray-700 text-xs text-gray-300 focus:outline-none w-[120px]" />
+            className="px-2 py-2 bg-dss-canvas text-xs text-dss-ink/80 focus:outline-none w-[120px]" />
         </div>
         {isAdmin && (
           <button onClick={() => setShowCompleted(!showCompleted)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg text-sm text-gray-400 transition">
+            className="flex items-center gap-1.5 px-3 py-2 bg-dss-canvas hover:bg-dss-accent-soft border border-dss-border rounded-dss-sm text-sm text-dss-muted transition">
             {showCompleted ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
             <span className="text-xs">{showCompleted ? 'Hiding' : `Hidden (${completedCount})`}</span>
           </button>
@@ -1120,11 +1120,11 @@ export default function CallsTab({
       </div>
 
       {isRep && isGlobalSearch && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-indigo-900 bg-opacity-25 border border-indigo-700 rounded-lg">
-          <Search className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-          <span className="text-xs text-indigo-300">Searching all calls — not limited to your queue</span>
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-dss-accent-soft border border-dss-border rounded-dss-sm">
+          <Search className="w-3.5 h-3.5 text-dss-accent flex-shrink-0" />
+          <span className="text-xs text-dss-accent">Searching all calls — not limited to your queue</span>
           <button onClick={() => setSearchQuery('')}
-            className="ml-auto flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-200 transition">
+            className="ml-auto flex items-center gap-1 text-xs text-dss-accent hover:text-dss-navy transition">
             <X className="w-3.5 h-3.5" /> Clear search
           </button>
         </div>
@@ -1132,12 +1132,12 @@ export default function CallsTab({
 
       {/* ACTIVE REP FILTER BADGE */}
       {filterRep && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-900 bg-opacity-30 border border-blue-700 rounded-lg">
-          <span className="text-xs text-blue-400 uppercase tracking-wider">Viewing rep</span>
-          <span className="text-xs text-blue-200 font-medium">{selectedRepName}</span>
-          <span className="text-xs text-gray-500">— {repCallCount} calls assigned</span>
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-dss-accent-soft bg-opacity-30 border border-dss-accent/30 rounded-dss-sm">
+          <span className="text-xs text-dss-accent uppercase tracking-wider">Viewing rep</span>
+          <span className="text-xs text-dss-ink font-medium">{selectedRepName}</span>
+          <span className="text-xs text-dss-muted">— {repCallCount} calls assigned</span>
           <button onClick={() => setFilterRep('')}
-            className="ml-auto flex items-center gap-1 text-xs text-blue-400 hover:text-blue-200 transition">
+            className="ml-auto flex items-center gap-1 text-xs text-dss-accent hover:text-dss-navy transition">
             <X className="w-3.5 h-3.5" /> Clear
           </button>
         </div>
@@ -1145,11 +1145,11 @@ export default function CallsTab({
 
       {/* DEALER FILTER BADGE */}
       {dealerFilter && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-900 bg-opacity-30 border border-blue-700 rounded-lg">
-          <span className="text-xs text-blue-400 uppercase tracking-wider">Filtered by dealer</span>
-          <span className="text-xs text-blue-200 font-medium">{dealerFilter}</span>
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-dss-accent-soft bg-opacity-30 border border-dss-accent/30 rounded-dss-sm">
+          <span className="text-xs text-dss-accent uppercase tracking-wider">Filtered by dealer</span>
+          <span className="text-xs text-dss-ink font-medium">{dealerFilter}</span>
           <button onClick={() => setDealerFilter('')}
-            className="ml-auto flex items-center gap-1 text-xs text-blue-400 hover:text-blue-200 transition">
+            className="ml-auto flex items-center gap-1 text-xs text-dss-accent hover:text-dss-navy transition">
             <X className="w-3.5 h-3.5" /> Clear
           </button>
         </div>
@@ -1157,21 +1157,21 @@ export default function CallsTab({
 
       {/* NEW CALLS LEGEND */}
       {calls.some(isNewUpload) && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-amber-900 bg-opacity-20 border border-amber-700 border-opacity-50 rounded-lg w-fit">
+        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-dss-sm w-fit">
           <div className="w-2.5 h-2.5 rounded-full bg-amber-400 flex-shrink-0" />
-          <span className="text-xs text-amber-300">New today — uploaded in today's batch</span>
+          <span className="text-xs text-amber-800">New today — uploaded in today's batch</span>
         </div>
       )}
 
       {/* STATUS LAST CHIPS */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-2.5 flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-gray-500 uppercase tracking-wider whitespace-nowrap w-20 flex-shrink-0">Status Last</span>
-        <div className="w-px h-4 bg-gray-700 flex-shrink-0" />
+      <div className="bg-dss-surface rounded-dss-sm border border-dss-border px-4 py-2.5 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-dss-muted uppercase tracking-wider whitespace-nowrap w-20 flex-shrink-0">Status Last</span>
+        <div className="w-px h-4 bg-dss-canvas flex-shrink-0" />
         <button onClick={() => setFilterNewOnly(f => !f)}
           className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition ${
             filterNewOnly
-              ? 'bg-amber-900 bg-opacity-60 border-amber-700 text-amber-300'
-              : 'bg-gray-700 text-gray-400 border-gray-600 hover:border-gray-500 hover:text-gray-300'
+              ? 'bg-amber-100 border-amber-300 text-amber-900'
+              : 'bg-dss-canvas text-dss-muted border-dss-border hover:border-dss-border hover:text-dss-ink/80'
           }`}>
           <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
           New Only
@@ -1182,8 +1182,8 @@ export default function CallsTab({
             <button key={status} onClick={() => toggleStatusLastFilter(status)}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition ${
                 active
-                  ? 'bg-blue-900 text-blue-300 border-blue-700'
-                  : 'bg-gray-700 text-gray-400 border-gray-600 hover:border-gray-500 hover:text-gray-300'
+                  ? 'bg-dss-accent-soft text-dss-accent border-dss-accent/30'
+                  : 'bg-dss-canvas text-dss-muted border-dss-border hover:border-dss-border hover:text-dss-ink/80'
               }`}>
               {active && <Check className="w-3 h-3 flex-shrink-0" />}
               {status}
@@ -1191,16 +1191,16 @@ export default function CallsTab({
           );
         })}
         {filterStatusLast.size > 0 && (
-          <button onClick={() => setFilterStatusLast(new Set())} className="ml-auto text-xs text-blue-400 hover:text-blue-300">
+          <button onClick={() => setFilterStatusLast(new Set())} className="ml-auto text-xs text-dss-accent hover:text-dss-accent">
             Clear
           </button>
         )}
       </div>
 
       {/* FU STATUS CHIPS */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700 px-4 py-2.5 flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-gray-500 uppercase tracking-wider whitespace-nowrap w-20 flex-shrink-0">FU Status</span>
-        <div className="w-px h-4 bg-gray-700 flex-shrink-0" />
+      <div className="bg-dss-surface rounded-dss-sm border border-dss-border px-4 py-2.5 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-dss-muted uppercase tracking-wider whitespace-nowrap w-20 flex-shrink-0">FU Status</span>
+        <div className="w-px h-4 bg-dss-canvas flex-shrink-0" />
         {fuStatusChips.map(({ label, onCls }) => {
           const active = filterFuStatuses.has(label);
           return (
@@ -1208,7 +1208,7 @@ export default function CallsTab({
               className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition ${
                 active
                   ? onCls
-                  : 'bg-gray-700 text-gray-400 border-gray-600 hover:border-gray-500 hover:text-gray-300'
+                  : 'bg-dss-canvas text-dss-muted border-dss-border hover:border-dss-border hover:text-dss-ink/80'
               }`}>
               {active
                 ? <Check className="w-3 h-3 flex-shrink-0" />
@@ -1218,7 +1218,7 @@ export default function CallsTab({
           );
         })}
         {filterFuStatuses.size > 0 && (
-          <button onClick={() => setFilterFuStatuses(new Set())} className="ml-auto text-xs text-blue-400 hover:text-blue-300">
+          <button onClick={() => setFilterFuStatuses(new Set())} className="ml-auto text-xs text-dss-accent hover:text-dss-accent">
             Clear
           </button>
         )}
@@ -1227,17 +1227,17 @@ export default function CallsTab({
       {/* MY QUEUE INFO BAR — reps only */}
       {isRep && !isGlobalSearch && (
         <div className="flex items-center gap-3 px-1 flex-wrap">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900 bg-opacity-20 border border-blue-800 rounded-lg">
-            <span className="text-xs text-blue-400 font-medium">My Queue</span>
-            <span className="text-xs text-gray-400">{unworkedCalls.length} unworked</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-dss-accent-soft bg-opacity-20 border border-blue-800 rounded-dss-sm">
+            <span className="text-xs text-dss-accent font-medium">My Queue</span>
+            <span className="text-xs text-dss-muted">{unworkedCalls.length} unworked</span>
             {filteredInCalls.length > 0 && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-dss-muted">
                 · {filteredInCalls.length} worked
               </span>
             )}
           </div>
           {effectiveAllowedStatuses.length > 0 ? (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-dss-muted">
               {effectiveAllowedStatuses.length} allowed status{effectiveAllowedStatuses.length !== 1 ? 'es' : ''}
             </span>
           ) : (
@@ -1249,20 +1249,20 @@ export default function CallsTab({
       )}
 
       {/* TABLE */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-        <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
-          <p className="text-sm font-semibold text-gray-200">
+      <div className="bg-dss-surface rounded-dss-sm border border-dss-border overflow-hidden">
+        <div className="px-3 py-2 border-b border-dss-border flex items-center justify-between">
+          <p className="text-sm font-semibold text-dss-ink">
             {sortedCalls.length} calls
-            <span className="ml-2 font-normal text-gray-400">· Page {currentPage} of {totalPages || 1}</span>
+            <span className="ml-2 font-normal text-dss-muted">· Page {currentPage} of {totalPages || 1}</span>
           </p>
           <div className="flex items-center gap-1">
             <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
-              className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
-              <ChevronLeft className="w-4 h-4 text-gray-400" />
+              className="p-1.5 rounded hover:bg-dss-canvas disabled:opacity-30 transition">
+              <ChevronLeft className="w-4 h-4 text-dss-muted" />
             </button>
             <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
-              className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
-              <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+              className="p-1.5 rounded hover:bg-dss-canvas disabled:opacity-30 transition">
+              <ChevronRightIcon className="w-4 h-4 text-dss-muted" />
             </button>
           </div>
         </div>
@@ -1283,45 +1283,45 @@ export default function CallsTab({
               <col style={{ width: '36px' }} />
             </colgroup>
             <thead>
-              <tr className="bg-gray-750 border-b border-gray-700">
+              <tr className="bg-dss-canvas border-b border-dss-border">
                 <th className="px-2 py-2"></th>
                 <th className="px-2 py-2 text-left">
-                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('applicationId'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('applicationId'); }} className="flex items-center text-xs font-medium text-dss-muted uppercase tracking-wider hover:text-dss-ink">
                     App ID <SortIcon field="applicationId" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('dealerName'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('dealerName'); }} className="flex items-center text-xs font-medium text-dss-muted uppercase tracking-wider hover:text-dss-ink">
                     Dealer <SortIcon field="dealerName" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('customerName'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('customerName'); }} className="flex items-center text-xs font-medium text-dss-muted uppercase tracking-wider hover:text-dss-ink">
                     Customer <SortIcon field="customerName" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('state'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('state'); }} className="flex items-center text-xs font-medium text-dss-muted uppercase tracking-wider hover:text-dss-ink">
                     St <SortIcon field="state" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('buyerFinal'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('buyerFinal'); }} className="flex items-center text-xs font-medium text-dss-muted uppercase tracking-wider hover:text-dss-ink">
                     Amount <SortIcon field="buyerFinal" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('submittedDate'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('submittedDate'); }} className="flex items-center text-xs font-medium text-dss-muted uppercase tracking-wider hover:text-dss-ink">
                     Date <SortIcon field="submittedDate" />
                   </button>
                 </th>
                 <th className="px-2 py-2 text-left">
-                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('statusLast'); }} className="flex items-center text-xs font-medium text-gray-400 uppercase tracking-wider hover:text-gray-200 whitespace-nowrap">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('statusLast'); }} className="flex items-center text-xs font-medium text-dss-muted uppercase tracking-wider hover:text-dss-ink whitespace-nowrap">
                     Status Last <SortIcon field="statusLast" />
                   </button>
                 </th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">Activity</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap">FU Status</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Activity</th>
+                <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">FU Status</th>
                 <th className="px-2 py-2"></th>
               </tr>
             </thead>
@@ -1337,10 +1337,10 @@ export default function CallsTab({
                 const rowCls = call.isDuplicate
                   ? 'cursor-pointer transition-colors bg-yellow-900 bg-opacity-10 hover:bg-yellow-900 hover:bg-opacity-20'
                   : isNew
-                    ? 'cursor-pointer transition-colors bg-amber-950 border-l-2 border-l-amber-500 hover:bg-amber-900 hover:bg-opacity-20'
+                    ? 'cursor-pointer transition-colors bg-amber-50 border-l-2 border-l-amber-500 hover:bg-amber-100'
                     : isQueueView && !isWorked
-                      ? 'cursor-pointer transition-colors hover:bg-gray-750 border-l-2 border-l-blue-700'
-                      : 'cursor-pointer transition-colors hover:bg-gray-750';
+                      ? 'cursor-pointer transition-colors hover:bg-dss-canvas border-l-2 border-l-blue-700'
+                      : 'cursor-pointer transition-colors hover:bg-dss-canvas';
 
                 const rows = [];
 
@@ -1350,25 +1350,25 @@ export default function CallsTab({
                     {/* Chevron */}
                     <td className="px-2 py-2 text-center">
                       {isExpanded
-                        ? <ChevronDown className="w-3.5 h-3.5 text-blue-400 mx-auto" />
-                        : <ChevronRight className="w-3.5 h-3.5 text-gray-500 mx-auto" />}
+                        ? <ChevronDown className="w-3.5 h-3.5 text-dss-accent mx-auto" />
+                        : <ChevronRight className="w-3.5 h-3.5 text-dss-muted mx-auto" />}
                     </td>
 
                     {/* App ID */}
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-1 flex-wrap">
                         <span
-                          className="text-xs text-blue-400 font-medium hover:underline cursor-pointer truncate"
+                          className="text-xs text-dss-accent font-medium hover:underline cursor-pointer truncate"
                           onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(call.applicationId); }}
                           title="Click to copy"
                         >
                           {call.applicationId}
                         </span>
                         {call.isDuplicate && (
-                          <span className="px-1 bg-yellow-900 text-yellow-300 text-[9px] rounded border border-yellow-700 font-medium flex-shrink-0">DUPE</span>
+                          <span className="px-1 bg-orange-50 text-orange-900 text-[9px] rounded border border-orange-300 font-medium flex-shrink-0">DUPE</span>
                         )}
                         {isNew && (
-                          <span className="px-1 bg-amber-900 text-amber-300 text-[9px] rounded border border-amber-700 font-medium flex-shrink-0">NEW</span>
+                          <span className="px-1 bg-amber-100 text-amber-900 text-[9px] rounded border border-amber-300 font-medium flex-shrink-0">NEW</span>
                         )}
                       </div>
                     </td>
@@ -1378,8 +1378,8 @@ export default function CallsTab({
                       <button
                         onClick={() => setDealerFilter(prev => prev === call.dealerName ? '' : call.dealerName)}
                         title={call.dealerName}
-                        className={`text-xs text-left truncate block w-full transition hover:text-blue-300 ${
-                          isFilteredDealer ? 'text-blue-400 font-medium' : 'text-gray-200'
+                        className={`text-xs text-left truncate block w-full transition hover:text-dss-accent ${
+                          isFilteredDealer ? 'text-dss-accent font-medium' : 'text-dss-ink'
                         }`}
                       >
                         {call.dealerName}
@@ -1389,13 +1389,13 @@ export default function CallsTab({
                     {/* Customer */}
                     <td className="px-2 py-2">
                       {call.customerName
-                        ? <span className="text-xs text-gray-400 truncate block w-full" title={call.customerName}>{call.customerName}</span>
-                        : <span className="text-xs text-gray-600">—</span>}
+                        ? <span className="text-xs text-dss-muted truncate block w-full" title={call.customerName}>{call.customerName}</span>
+                        : <span className="text-xs text-dss-muted">—</span>}
                     </td>
 
                     {/* State */}
                     <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                      <span className="px-1.5 py-0 bg-gray-700 text-gray-300 text-[10px] rounded border border-gray-600">{call.state}</span>
+                      <span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border">{call.state}</span>
                     </td>
 
                     {/* Amount */}
@@ -1403,18 +1403,18 @@ export default function CallsTab({
                       {editingAmount === call.id ? (
                         <div className="flex items-center gap-1">
                           <input type="text" value={tempAmount} onChange={e => setTempAmount(e.target.value)}
-                            className="w-14 px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
+                            className="w-14 px-1 py-0.5 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none"
                             autoFocus />
-                          <button onClick={() => handleSaveAmount(call.id)} className="text-green-400 hover:text-green-300"><Check className="w-3 h-3" /></button>
-                          <button onClick={() => setEditingAmount(null)} className="text-red-400 hover:text-red-300"><X className="w-3 h-3" /></button>
+                          <button onClick={() => handleSaveAmount(call.id)} className="text-dss-success hover:text-dss-success"><Check className="w-3 h-3" /></button>
+                          <button onClick={() => setEditingAmount(null)} className="text-dss-danger hover:text-dss-danger"><X className="w-3 h-3" /></button>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1">
-                          <span className="text-xs font-medium text-gray-100">
+                          <span className="text-xs font-medium text-dss-ink">
                             ${parseAmount(call.buyerFinal).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                           </span>
                           <button onClick={() => { setEditingAmount(call.id); setTempAmount(call.buyerFinal); }}
-                            className="text-gray-600 hover:text-gray-400 transition flex-shrink-0">
+                            className="text-dss-muted hover:text-dss-muted transition flex-shrink-0">
                             <Edit2 className="w-2.5 h-2.5" />
                           </button>
                         </div>
@@ -1422,19 +1422,19 @@ export default function CallsTab({
                     </td>
 
                     {/* Date */}
-                    <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">{formatShortDate(call.submittedDate)}</td>
+                    <td className="px-2 py-2 text-xs text-dss-muted whitespace-nowrap">{formatShortDate(call.submittedDate)}</td>
 
                     {/* Status Last */}
                     <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                       {editingStatusLast === call.id ? (
                         <div className="flex items-center gap-1">
                           <select value={tempStatusLast} onChange={e => setTempStatusLast(e.target.value)}
-                            className="px-1 py-0.5 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none"
+                            className="px-1 py-0.5 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none"
                             autoFocus>
                             {allStatusLastOptions.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
-                          <button onClick={() => handleSaveStatusLast(call.id)} className="text-green-400 hover:text-green-300 flex-shrink-0"><Check className="w-3 h-3" /></button>
-                          <button onClick={() => setEditingStatusLast(null)} className="text-red-400 hover:text-red-300 flex-shrink-0"><X className="w-3 h-3" /></button>
+                          <button onClick={() => handleSaveStatusLast(call.id)} className="text-dss-success hover:text-dss-success flex-shrink-0"><Check className="w-3 h-3" /></button>
+                          <button onClick={() => setEditingStatusLast(null)} className="text-dss-danger hover:text-dss-danger flex-shrink-0"><X className="w-3 h-3" /></button>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1">
@@ -1442,7 +1442,7 @@ export default function CallsTab({
                             {call.statusLast}
                           </span>
                           <button onClick={() => { setEditingStatusLast(call.id); setTempStatusLast(call.statusLast); }}
-                            className="text-gray-600 hover:text-gray-400 transition flex-shrink-0">
+                            className="text-dss-muted hover:text-dss-muted transition flex-shrink-0">
                             <Edit2 className="w-2.5 h-2.5" />
                           </button>
                         </div>
@@ -1451,7 +1451,7 @@ export default function CallsTab({
 
                     {/* Last Activity */}
                     <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                      <span className={`text-[10px] flex items-center gap-1 whitespace-nowrap ${activity.isToday ? 'text-emerald-400' : 'text-gray-500'}`}>
+                      <span className={`text-[10px] flex items-center gap-1 whitespace-nowrap ${activity.isToday ? 'text-emerald-700' : 'text-dss-muted'}`}>
                         {activity.text !== '—' && (
                           <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
@@ -1459,7 +1459,7 @@ export default function CallsTab({
                         )}
                         {activity.text}
                         {activity.byName && (
-                          <span className="text-gray-600 truncate max-w-[72px]" title={activity.byName}>· {activity.byName}</span>
+                          <span className="text-dss-muted truncate max-w-[72px]" title={activity.byName}>· {activity.byName}</span>
                         )}
                       </span>
                     </td>
@@ -1468,7 +1468,7 @@ export default function CallsTab({
                     <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                       <select value={call.fuStatus || ''}
                         onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
-                        className="px-1.5 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full">
+                        className="px-1.5 py-1 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30 w-full">
                         <option value="">Select…</option>
                         <option>Deal</option>
                         <option>Confirmed Deal</option>
@@ -1486,8 +1486,8 @@ export default function CallsTab({
                       <button onClick={e => openNotes(e, call.id)} title="Notes"
                         className={`relative inline-flex items-center justify-center w-6 h-6 rounded transition ${
                           callNotes.length > 0
-                            ? 'bg-blue-600 text-white hover:bg-blue-500'
-                            : 'bg-indigo-900 text-indigo-400 hover:bg-indigo-700 hover:text-white'
+                            ? 'bg-dss-navy-soft text-white hover:bg-dss-navy'
+                            : 'bg-violet-50 text-violet-800 hover:bg-violet-100'
                         }`}>
                         <MessageSquare className="w-3 h-3" />
                         {callNotes.length > 0 && (
@@ -1503,11 +1503,11 @@ export default function CallsTab({
                 if (isExpanded) {
                   rows.push(
                     <tr key={`${call.id}-exp`}>
-                      <td colSpan={11} className="px-3 py-2 pl-8 pr-8 bg-gray-750">
+                      <td colSpan={11} className="px-3 py-2 pl-8 pr-8 bg-dss-canvas">
                         <div className="space-y-2">
-                          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Notes ({callNotes.length})</p>
+                          <p className="text-xs font-medium text-dss-muted uppercase tracking-wider">Notes ({callNotes.length})</p>
                           {callNotes.length === 0 ? (
-                            <p className="text-sm text-gray-500 italic">No notes yet.</p>
+                            <p className="text-sm text-dss-muted italic">No notes yet.</p>
                           ) : (
                             <div className="space-y-2">
                               {callNotes.map(note => (
@@ -1529,10 +1529,10 @@ export default function CallsTab({
                               value={newNoteText[call.id] || ''}
                               onChange={e => setNewNoteText(prev => ({ ...prev, [call.id]: e.target.value }))}
                               onKeyDown={e => { if (e.key === 'Enter') handleAddNote(call.id); }}
-                              className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                               autoFocus />
                             <button onClick={() => handleAddNote(call.id)}
-                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                              className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">
                               Save
                             </button>
                           </div>
@@ -1548,19 +1548,19 @@ export default function CallsTab({
           </table>
         </div>
 
-        <div className="px-3 py-2 border-t border-gray-700 flex items-center justify-between">
-          <p className="text-xs text-gray-500">
+        <div className="px-3 py-2 border-t border-dss-border flex items-center justify-between">
+          <p className="text-xs text-dss-muted">
             Showing {Math.min((currentPage - 1) * itemsPerPage + 1, sortedCalls.length)}–{Math.min(currentPage * itemsPerPage, sortedCalls.length)} of {sortedCalls.length} calls
           </p>
           <div className="flex items-center gap-1">
             <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
-              className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
-              <ChevronLeft className="w-4 h-4 text-gray-400" />
+              className="p-1.5 rounded hover:bg-dss-canvas disabled:opacity-30 transition">
+              <ChevronLeft className="w-4 h-4 text-dss-muted" />
             </button>
-            <span className="text-xs text-gray-400 px-2">Page {currentPage} of {totalPages || 1}</span>
+            <span className="text-xs text-dss-muted px-2">Page {currentPage} of {totalPages || 1}</span>
             <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
-              className="p-1.5 rounded hover:bg-gray-700 disabled:opacity-30 transition">
-              <ChevronRightIcon className="w-4 h-4 text-gray-400" />
+              className="p-1.5 rounded hover:bg-dss-canvas disabled:opacity-30 transition">
+              <ChevronRightIcon className="w-4 h-4 text-dss-muted" />
             </button>
           </div>
         </div>
@@ -1569,17 +1569,17 @@ export default function CallsTab({
       {creditModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
           onClick={() => setCreditModal(null)}>
-          <div className="bg-gray-800 border border-gray-600 rounded-xl w-full max-w-md p-5 shadow-xl"
+          <div className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-md p-5 shadow-sm"
             onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-100 mb-1">Credit this deal</h3>
-            <p className="text-sm text-gray-400 mb-4">
-              Set status to <span className="text-green-300 font-medium">{creditModal.newStatus}</span> and choose who gets credit.
+            <h3 className="text-lg font-semibold text-dss-ink mb-1">Credit this deal</h3>
+            <p className="text-sm text-dss-muted mb-4">
+              Set status to <span className="text-dss-success font-medium">{creditModal.newStatus}</span> and choose who gets credit.
             </p>
-            <label className="block text-xs text-gray-400 uppercase tracking-wider mb-1.5">Credit to</label>
+            <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Credit to</label>
             <select
               value={creditModal.creditId}
               onChange={e => setCreditModal({ ...creditModal, creditId: e.target.value })}
-              className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 mb-5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink mb-5 focus:outline-none focus:ring-2 focus:ring-dss-accent/30"
             >
               {creditOptions.map(u => (
                 <option key={u.id} value={u.id}>{u.name}</option>
@@ -1588,13 +1588,13 @@ export default function CallsTab({
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setCreditModal(null)}
-                className="px-4 py-2 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700"
+                className="px-4 py-2 rounded-dss-sm border border-dss-border text-dss-ink/80 text-sm hover:bg-dss-canvas"
               >
                 Cancel
               </button>
               <button
                 onClick={applyCreditModal}
-                className="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-medium"
+                className="px-4 py-2 rounded-dss-sm bg-dss-success hover:bg-green-500 text-white text-sm font-medium"
               >
                 Confirm
               </button>
