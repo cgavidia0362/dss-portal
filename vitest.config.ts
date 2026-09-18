@@ -12,7 +12,11 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/income-verification/**/*.test.ts', 'api/**/*.test.ts'],
+    include: [
+      'src/income-verification/**/*.test.ts',
+      'src/lib/**/*.test.ts',
+      'api/**/*.test.ts',
+    ],
     exclude: ['**/node_modules/**', '**/._*', '**/.*/**'],
   },
 });

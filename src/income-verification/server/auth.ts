@@ -57,7 +57,7 @@ export async function requireDssUser(request: Request): Promise<User> {
   return data.user;
 }
 
-/** Require authenticated admin or manager profile for Income Verification APIs. */
+/** Require authenticated admin/manager, or a profile granted Income Verification via allowed_tabs. */
 export async function requireDssAdminOrManager(request: Request): Promise<User> {
   const token = readBearer(request);
   if (!token) {
@@ -72,7 +72,7 @@ export async function requireDssAdminOrManager(request: Request): Promise<User> 
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, allowed_tabs')
     .eq('id', data.user.id)
     .maybeSingle();
 
@@ -81,11 +81,18 @@ export async function requireDssAdminOrManager(request: Request): Promise<User> 
   }
 
   const role = typeof profile?.role === 'string' ? profile.role : '';
-  if (role !== 'admin' && role !== 'manager') {
-    throw new ForbiddenError('Income Verification is available to admin and manager roles only.');
+  if (role === 'admin' || role === 'manager') {
+    return data.user;
   }
 
-  return data.user;
+  const allowedTabs = Array.isArray(profile?.allowed_tabs) ? profile.allowed_tabs : [];
+  if (allowedTabs.includes('income-verification')) {
+    return data.user;
+  }
+
+  throw new ForbiddenError(
+    'Income Verification is available to admin, manager, or users granted access.',
+  );
 }
 
 export function json(data: unknown, status = 200): Response {

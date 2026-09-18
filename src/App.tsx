@@ -15,6 +15,7 @@ import VehicleRiskAnalyzer from './pages/VehicleRiskAnalyzer';
 import PublicDealsPage from './pages/PublicDealsPage';
 import VehicleRiskPublic from './pages/VehicleRiskPublic';
 import IncomeVerificationTab from './pages/IncomeVerificationTab';
+import { resolveVisibleTabIds } from './lib/tabAccess';
 
 interface Dealer {
   cifNumber: string;
@@ -65,6 +66,7 @@ interface User {
   role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   active: boolean;
   allowedStatuses: string[];
+  allowedTabs: string[];
   state?: string;
 }
 
@@ -146,12 +148,12 @@ function App() {
     return () => { authListener.subscription.unsubscribe(); };
   }, []);
 
-  // Reset to calls tab if current tab isn't allowed for this role
+  // Reset to calls tab if current tab isn't allowed for this role / grants
   useEffect(() => {
     if (!currentUser) return;
-    const allowed = getVisibleTabs(currentUser.role).map(t => t.id);
+    const allowed = getVisibleTabs(currentUser.role, currentUser.allowedTabs).map(t => t.id);
     if (!allowed.includes(activeTab)) setActiveTab('calls');
-  }, [currentUser?.role]);
+  }, [currentUser?.role, currentUser?.allowedTabs, activeTab]);
 
   // Load all data on login
   useEffect(() => {
@@ -207,6 +209,7 @@ function App() {
           role: profile.role as 'admin' | 'manager' | 'rep' | 'buying_assistant',
           active: profile.active,
           allowedStatuses: profile.allowed_statuses || [],
+          allowedTabs: profile.allowed_tabs || [],
           state: profile.state || undefined,
         });
         setIsAuthenticated(true);
@@ -233,6 +236,7 @@ function App() {
           role: user.role as 'admin' | 'manager' | 'rep' | 'buying_assistant',
           active: user.active,
           allowedStatuses: user.allowed_statuses || [],
+          allowedTabs: user.allowed_tabs || [],
           state: user.state || undefined,
         })));
       }
@@ -426,7 +430,7 @@ function App() {
   const handleLoginSuccess = () => { checkAuth(); };
 
   // ── TAB VISIBILITY ────────────────────────────────────────────────
-  const getVisibleTabs = (role: string) => {
+  const getVisibleTabs = (role: string, allowedTabs: string[] = []) => {
     const allTabs = [
       { id: 'calls', label: 'Calls', icon: FileText },
       { id: 'upload', label: 'Upload', icon: Upload },
@@ -439,12 +443,8 @@ function App() {
       { id: 'income-verification', label: 'Income Verification', icon: BadgeDollarSign },
       { id: 'reporting', label: 'Reporting', icon: BarChart3 },
     ];
-    if (role === 'admin') return allTabs.filter(t => t.id !== 'analytics');
-    if (role === 'manager') return allTabs.filter(t => t.id !== 'users' && t.id !== 'analytics');
-    if (role === 'buying_assistant') {
-      return allTabs.filter(t => ['calls', 'daily-deals', 'notes'].includes(t.id));
-    }
-    return allTabs.filter(t => ['calls', 'analytics', 'daily-deals', 'notes'].includes(t.id));
+    const visibleIds = new Set<string>(resolveVisibleTabIds(role, allowedTabs));
+    return allTabs.filter((t) => visibleIds.has(t.id));
   };
 
   // ── LOADING / AUTH GATES ──────────────────────────────────────────
@@ -470,7 +470,7 @@ function App() {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  const tabs = getVisibleTabs(currentUser.role);
+  const tabs = getVisibleTabs(currentUser.role, currentUser.allowedTabs);
 
   // ── RENDER ────────────────────────────────────────────────────────
   return (

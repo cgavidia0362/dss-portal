@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -121,6 +122,51 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+/**
+ * Authenticated portal users need admin/manager or vehicle-risk grant.
+ * Anonymous / public-page callers (anon JWT or no usable user) are allowed.
+ */
+async function assertVehicleRiskAccess(req: Request): Promise<Response | null> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return null;
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return jsonResponse({ error: "Server configuration error" }, 500);
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    // Anon key / public invoke — allow (VehicleRiskPublic)
+    return null;
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role, allowed_tabs")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    return jsonResponse({ error: "Unable to verify user access" }, 500);
+  }
+
+  const role = typeof profile?.role === "string" ? profile.role : "";
+  if (role === "admin" || role === "manager") return null;
+
+  const allowedTabs = Array.isArray(profile?.allowed_tabs) ? profile.allowed_tabs : [];
+  if (allowedTabs.includes("vehicle-risk")) return null;
+
+  return jsonResponse({
+    error: "Vehicle Risk is available to admin, manager, or users granted access.",
+  }, 403);
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -346,6 +392,9 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const accessDenied = await assertVehicleRiskAccess(req);
+    if (accessDenied) return accessDenied;
+
     const body: RequestBody = await req.json();
 
     if (body.action === "extract-from-image") {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Edit2, Trash2, Link, Copy, Check, ChevronDown, Download } from 'lucide-react';
+import { GRANTABLE_TABS, isTabIncludedWithRole } from '../lib/tabAccess';
 
 interface User {
   id: string;
@@ -9,12 +10,14 @@ interface User {
   role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   active: boolean;
   state?: string;
+  allowedTabs: string[];
 }
 
 interface EditForm {
   role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   active: boolean;
   state: string;
+  allowedTabs: string[];
 }
 
 interface UserManagementTabProps {
@@ -30,6 +33,11 @@ const US_STATES = [
   'TN','TX','UT','VT','VA','WA','WV','WI','WY',
 ];
 
+function sanitizeGrantableTabs(tabs: string[]): string[] {
+  const allowed = new Set<string>(GRANTABLE_TABS.map((t) => t.id));
+  return [...new Set(tabs.filter((id) => allowed.has(id)))];
+}
+
 export default function UserManagementTab({ currentUserId, currentUserRole }: UserManagementTabProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +45,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
   const [success, setSuccess] = useState('');
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({ role: 'rep', active: true, state: '' });
+  const [editForm, setEditForm] = useState<EditForm>({ role: 'rep', active: true, state: '', allowedTabs: [] });
   const [stateDropdownOpen, setStateDropdownOpen] = useState(false);
   const stateDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -46,7 +54,12 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
   const [generatingLink, setGeneratingLink] = useState(false);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: '', email: '', role: 'rep' as 'admin' | 'manager' | 'rep' | 'buying_assistant' });
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    email: '',
+    role: 'rep' as 'admin' | 'manager' | 'rep' | 'buying_assistant',
+    allowedTabs: [] as string[],
+  });
   const [creating, setCreating] = useState(false);
 
   useEffect(() => { fetchUsers(); }, []);
@@ -71,6 +84,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
         setUsers(data.map((u: any) => ({
           id: u.id, name: u.name, email: u.email,
           role: u.role, active: u.active, state: u.state || '',
+          allowedTabs: Array.isArray(u.allowed_tabs) ? u.allowed_tabs : [],
         })));
       }
     } catch (err: any) {
@@ -82,7 +96,12 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
 
   const handleEditUser = (user: User) => {
     setEditingUser(user);
-    setEditForm({ role: user.role, active: user.active, state: user.state || '' });
+    setEditForm({
+      role: user.role,
+      active: user.active,
+      state: user.state || '',
+      allowedTabs: sanitizeGrantableTabs(user.allowedTabs || []),
+    });
     setStateDropdownOpen(false);
   };
 
@@ -95,6 +114,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
           role: editForm.role,
           active: editForm.active,
           state: editForm.state || null,
+          allowed_tabs: sanitizeGrantableTabs(editForm.allowedTabs),
         }).eq('id', editingUser.id);
       if (updateError) throw updateError;
       setSuccess('User updated successfully!');
@@ -152,16 +172,39 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
         body: { name: createForm.name, email: createForm.email, role: createForm.role },
       });
       if (fnError) throw fnError;
+
+      const grantedTabs = sanitizeGrantableTabs(createForm.allowedTabs);
+      if (grantedTabs.length > 0) {
+        const { error: tabsError } = await supabase
+          .from('profiles')
+          .update({ allowed_tabs: grantedTabs })
+          .ilike('email', createForm.email.trim());
+        if (tabsError) throw tabsError;
+      }
+
       setSuccess('User created! Generate a setup link to send them.');
       setTimeout(() => setSuccess(''), 5000);
       setShowCreateModal(false);
-      setCreateForm({ name: '', email: '', role: 'rep' });
+      setCreateForm({ name: '', email: '', role: 'rep', allowedTabs: [] });
       await fetchUsers();
     } catch (err: any) {
       setError('Failed to create user: ' + err.message);
     } finally {
       setCreating(false);
     }
+  };
+
+  const toggleAllowedTab = (
+    tabId: string,
+    role: string,
+    current: string[],
+    setTabs: (next: string[]) => void,
+  ) => {
+    if (isTabIncludedWithRole(role, tabId)) return;
+    const set = new Set(current);
+    if (set.has(tabId)) set.delete(tabId);
+    else set.add(tabId);
+    setTabs(sanitizeGrantableTabs([...set]));
   };
 
   const copyLink = async (link: string) => {
@@ -414,6 +457,11 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               <button onClick={() => setEditingUser(null)} className="text-gray-400 hover:text-gray-200 text-2xl font-light">&times;</button>
             </div>
             <div className="p-6 space-y-4">
+              {error && (
+                <div className="bg-red-900 border border-red-700 text-red-200 px-3 py-2 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Role</label>
                 <select value={editForm.role}
@@ -502,6 +550,44 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                   )}
                 </div>
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+                  Extra tab access
+                </label>
+                <div className="space-y-2 rounded-lg border border-gray-600 bg-gray-700/40 px-3 py-3">
+                  {GRANTABLE_TABS.map((tab) => {
+                    const included = isTabIncludedWithRole(editForm.role, tab.id);
+                    const checked = included || editForm.allowedTabs.includes(tab.id);
+                    return (
+                      <label key={tab.id} className="flex items-start gap-2 text-sm text-gray-200">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-gray-500 bg-gray-800 text-blue-500 focus:ring-blue-500"
+                          checked={checked}
+                          disabled={included}
+                          onChange={() =>
+                            toggleAllowedTab(
+                              tab.id,
+                              editForm.role,
+                              editForm.allowedTabs,
+                              (allowedTabs) => setEditForm({ ...editForm, allowedTabs }),
+                            )
+                          }
+                        />
+                        <span>
+                          {tab.label}
+                          {included && (
+                            <span className="block text-xs text-gray-400 font-normal">
+                              Included with this role
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-3 px-6 pb-6">
@@ -575,6 +661,43 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                   <option value="manager">Manager</option>
                   <option value="admin">Admin</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+                  Extra tab access
+                </label>
+                <div className="space-y-2 rounded-lg border border-gray-600 bg-gray-700/40 px-3 py-3">
+                  {GRANTABLE_TABS.map((tab) => {
+                    const included = isTabIncludedWithRole(createForm.role, tab.id);
+                    const checked = included || createForm.allowedTabs.includes(tab.id);
+                    return (
+                      <label key={tab.id} className="flex items-start gap-2 text-sm text-gray-200">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-gray-500 bg-gray-800 text-blue-500 focus:ring-blue-500"
+                          checked={checked}
+                          disabled={included}
+                          onChange={() =>
+                            toggleAllowedTab(
+                              tab.id,
+                              createForm.role,
+                              createForm.allowedTabs,
+                              (allowedTabs) => setCreateForm({ ...createForm, allowedTabs }),
+                            )
+                          }
+                        />
+                        <span>
+                          {tab.label}
+                          {included && (
+                            <span className="block text-xs text-gray-400 font-normal">
+                              Included with this role
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             </div>
             <div className="flex gap-3 px-6 pb-6">

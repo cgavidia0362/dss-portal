@@ -31,6 +31,7 @@ interface User {
   role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
   active: boolean;
   allowedStatuses: string[];
+  allowedTabs: string[];
   state?: string;
 }
 

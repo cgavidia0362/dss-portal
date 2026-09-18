@@ -5,6 +5,7 @@ import type { DepositCategory, IncomeAnalysis } from '@income-verification/lib/a
 import { requestedPoiPathname } from '@income-verification/lib/blob/path';
 import { MAX_FILE_BYTES, MAX_FILES } from '@income-verification/lib/extract/limits';
 import { dssAuthHeaders } from '@income-verification/lib/clientAuth';
+import { canAccessTab } from '../lib/tabAccess';
 import { AppShell } from '../income-verification/components/AppShell';
 import { ProcessingPanel } from '../income-verification/components/ProcessingPanel';
 import { ResultsDashboard } from '../income-verification/components/ResultsDashboard';
@@ -15,7 +16,10 @@ type Stage = 'upload' | 'processing' | 'results';
 export default function IncomeVerificationTab({
   currentUser,
 }: {
-  currentUser: { role: 'admin' | 'manager' | 'rep' | 'buying_assistant' };
+  currentUser: {
+    role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
+    allowedTabs?: string[];
+  };
 }) {
   const [stage, setStage] = useState<Stage>('upload');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -29,14 +33,14 @@ export default function IncomeVerificationTab({
   const [copied, setCopied] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);
 
-  const isAllowed = currentUser.role === 'admin' || currentUser.role === 'manager';
+  const isAllowed = canAccessTab(currentUser.role, currentUser.allowedTabs, 'income-verification');
   if (!isAllowed) {
     return (
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-6 py-8 text-center">
           <p className="text-lg font-semibold text-red-300">Access restricted</p>
           <p className="text-sm text-red-200/80 mt-2">
-            Income Verification is available to admin and manager roles only.
+            Income Verification is available to admin, manager, or users granted access.
           </p>
         </div>
       </main>

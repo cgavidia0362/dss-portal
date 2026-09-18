@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Car, ImageUp, Loader2, Link, Check, RotateCcw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { canAccessTab } from '../lib/tabAccess';
 import VehicleRiskReport from '../components/VehicleRiskReport';
 import {
   NHTSA_EXTRACT_FIELDS,
@@ -11,6 +12,7 @@ interface User {
   id: string;
   name: string;
   role: 'admin' | 'manager' | 'rep' | 'buying_assistant';
+  allowedTabs?: string[];
 }
 
 interface VehicleRiskAnalyzerProps {
@@ -174,14 +176,14 @@ export default function VehicleRiskAnalyzer({ currentUser }: VehicleRiskAnalyzer
     }
   };
 
-  const isAllowed = currentUser.role === 'admin' || currentUser.role === 'manager';
+  const isAllowed = canAccessTab(currentUser.role, currentUser.allowedTabs, 'vehicle-risk');
 
   if (!isAllowed) {
     return (
       <div className="bg-red-900 bg-opacity-30 border border-red-800 rounded-lg px-6 py-8 text-center">
         <p className="text-lg font-semibold text-red-300">Access restricted</p>
         <p className="text-sm text-red-200/80 mt-2">
-          Vehicle Risk Analyzer is available to admin and manager roles only.
+          Vehicle Risk Analyzer is available to admin, manager, or users granted access.
         </p>
       </div>
     );
