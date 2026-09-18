@@ -8,3 +8,45 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+@media print {
+  @page {
+    margin: 0.6in;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .iv-print-root,
+  .iv-print-root * {
+    visibility: visible;
+  }
+
+  .iv-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white !important;
+    color: black !important;
+  }
+
+  .iv-no-print {
+    display: none !important;
+  }
+
+  .iv-print-root button,
+  .iv-print-root select {
+    display: none !important;
+  }
+
+  .iv-print-root {
+    break-inside: avoid;
+  }
+
+  .iv-print-root section,
+  .iv-print-root table {
+    break-inside: avoid;
+  }
+}

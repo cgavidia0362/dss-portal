@@ -22,7 +22,7 @@ export function SummaryCard({
         <button
           type="button"
           onClick={onCopy}
-          className="rounded border border-slate-400 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-100"
+          className="iv-no-print rounded border border-slate-400 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-100"
         >
           {copied ? 'Copied' : 'Copy summary'}
         </button>

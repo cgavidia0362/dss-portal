@@ -18,6 +18,7 @@ export function ResultsDashboard({
   summary,
   copied,
   sourceFilter,
+  savedApplicantName,
   onSourceFilter,
   onInclude,
   onCategory,
@@ -25,12 +26,15 @@ export function ResultsDashboard({
   onIncludeSource,
   onCopy,
   onReset,
+  onSave,
+  onPrint,
 }: {
   analysis: IncomeAnalysis;
   documents: Array<{ fileName: string; documentType: string; transactionCount: number; warningCount: number }>;
   summary: string;
   copied: boolean;
   sourceFilter: string | null;
+  savedApplicantName?: string | null;
   onSourceFilter: (source: string | null) => void;
   onInclude: (id: string, included: boolean) => void;
   onCategory: (id: string, category: DepositCategory) => void;
@@ -38,26 +42,53 @@ export function ResultsDashboard({
   onIncludeSource: (source: string, included: boolean) => void;
   onCopy: () => void;
   onReset: () => void;
+  onSave: () => void;
+  onPrint: () => void;
 }) {
   return (
-    <div className="space-y-5">
+    <div className="iv-print-root space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Analysis results</h2>
           <p className="text-sm text-slate-600">
             {documents.length} document{documents.length === 1 ? '' : 's'}
             {documents.length ? ` · ${documents.map((doc) => doc.fileName).join(', ')}` : ''}
-            {' · '}session only · not a credit decision
+            {savedApplicantName
+              ? ` · Saved view · ${savedApplicantName}`
+              : ' · session only · not a credit decision'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onReset}
-          className="rounded border border-slate-400 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
-        >
-          New analysis
-        </button>
+        <div className="iv-no-print flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onSave}
+            className="rounded border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
+          >
+            Save report
+          </button>
+          <button
+            type="button"
+            onClick={onPrint}
+            className="rounded border border-slate-400 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
+          >
+            Print
+          </button>
+          <button
+            type="button"
+            onClick={onReset}
+            className="rounded border border-slate-400 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
+          >
+            New analysis
+          </button>
+        </div>
       </div>
+
+      {savedApplicantName && (
+        <div className="iv-no-print border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Viewing saved report for <span className="font-semibold">{savedApplicantName}</span>.
+          Include/exclude changes stay on this screen until you save again.
+        </div>
+      )}
 
       {analysis.warnings.length > 0 && (
         <div className="border border-slate-300 bg-white px-4 py-3">
