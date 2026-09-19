@@ -353,7 +353,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
             {exporting ? 'Exporting…' : 'Export All Data'}
           </button>
           <button onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">
+            className="px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm text-sm font-medium transition">
             + Add User
           </button>
         </div>
@@ -528,7 +528,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                               onClick={() => toggleState(state)}
                               className={`px-2 py-1.5 text-xs rounded transition font-medium ${
                                 isSelected
-                                  ? 'bg-dss-navy text-white'
+                                  ? 'bg-dss-navy-soft text-white'
                                   : 'text-dss-ink/80 hover:bg-dss-accent-soft'
                               }`}
                             >
@@ -563,7 +563,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                       <label key={tab.id} className="flex items-start gap-2 text-sm text-dss-ink">
                         <input
                           type="checkbox"
-                          className="mt-0.5 rounded border-dss-border bg-dss-surface text-blue-500 focus:ring-dss-accent/30"
+                          className="mt-0.5 rounded border-dss-border bg-dss-surface text-dss-navy-soft focus:ring-dss-accent/30"
                           checked={checked}
                           disabled={included}
                           onChange={() =>
@@ -592,7 +592,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
 
             <div className="flex gap-3 px-6 pb-6">
               <button onClick={handleSaveEdit}
-                className="flex-1 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">
+                className="flex-1 py-2 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm text-sm font-medium transition">
                 Save Changes
               </button>
               <button onClick={() => setEditingUser(null)}
@@ -674,7 +674,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
                       <label key={tab.id} className="flex items-start gap-2 text-sm text-dss-ink">
                         <input
                           type="checkbox"
-                          className="mt-0.5 rounded border-dss-border bg-dss-surface text-blue-500 focus:ring-dss-accent/30"
+                          className="mt-0.5 rounded border-dss-border bg-dss-surface text-dss-navy-soft focus:ring-dss-accent/30"
                           checked={checked}
                           disabled={included}
                           onChange={() =>
@@ -702,7 +702,7 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
             </div>
             <div className="flex gap-3 px-6 pb-6">
               <button onClick={handleCreateUser} disabled={creating}
-                className="flex-1 py-2 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas text-white rounded-dss-sm text-sm font-medium transition">
+                className="flex-1 py-2 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas text-white rounded-dss-sm text-sm font-medium transition">
                 {creating ? 'Creating...' : 'Create User'}
               </button>
               <button onClick={() => setShowCreateModal(false)}

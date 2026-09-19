@@ -78,7 +78,7 @@ const STATUS_FILTER_OPTIONS = [
   { label: 'New Application',    onCls: 'bg-cyan-50 border-cyan-200 text-cyan-800',       offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
   { label: 'Pending Approval',   onCls: 'bg-dss-accent-soft bg-opacity-40 border-purple-600 text-dss-accent', offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
   { label: 'Reconsider',         onCls: 'bg-dss-canvas border-dss-border text-dss-ink/80',                     offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
-  { label: 'Accepted',           onCls: 'bg-dss-accent-soft bg-opacity-40 border-blue-600 text-dss-accent',       offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
+  { label: 'Accepted',           onCls: 'bg-dss-accent-soft bg-opacity-40 border-dss-navy-soft text-dss-accent',       offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
   { label: 'Denial',             onCls: 'bg-rose-50 bg-opacity-40 border-rose-200 text-dss-danger',          offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
   { label: 'Documents Received', onCls: 'bg-indigo-50 border-indigo-200 text-indigo-800', offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
   { label: 'Duplicate',          onCls: 'bg-orange-50 border-orange-200 text-orange-800', offCls: 'bg-dss-surface border-dss-border text-dss-muted' },
@@ -665,11 +665,11 @@ const handleConfirmAssign = async () => {
               onClick={() => handleStateChange('')}
               className={`flex items-center gap-2 px-4 py-2 rounded-dss-sm border text-sm font-medium transition ${
                 filterState === ''
-                  ? 'bg-dss-navy border-dss-accent text-white'
-                  : 'bg-dss-canvas border-dss-border text-dss-ink/80 hover:border-blue-600 hover:text-dss-accent'
+                  ? 'bg-dss-navy-soft border-dss-navy-soft text-white'
+                  : 'bg-dss-canvas border-dss-border text-dss-ink/80 hover:border-dss-navy-soft hover:text-dss-accent'
               }`}>
               <span>All States</span>
-              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterState === '' ? 'bg-blue-500 text-white' : 'bg-dss-canvas text-dss-muted'}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterState === '' ? 'bg-dss-navy-soft text-white' : 'bg-dss-canvas text-dss-muted'}`}>
                 {unassignedCalls.length}
               </span>
             </button>
@@ -683,11 +683,11 @@ const handleConfirmAssign = async () => {
                   onClick={() => handleStateChange(filterState === state ? '' : state)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-dss-sm border text-sm font-medium transition ${
                     filterState === state
-                      ? 'bg-dss-navy border-dss-accent text-white'
-                      : 'bg-dss-canvas border-dss-border text-dss-ink/80 hover:border-blue-600 hover:text-dss-accent'
+                      ? 'bg-dss-navy-soft border-dss-navy-soft text-white'
+                      : 'bg-dss-canvas border-dss-border text-dss-ink/80 hover:border-dss-navy-soft hover:text-dss-accent'
                   }`}>
                   <span>{state}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterState === state ? 'bg-blue-500 text-white' : 'bg-dss-canvas text-dss-muted'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${filterState === state ? 'bg-dss-navy-soft text-white' : 'bg-dss-canvas text-dss-muted'}`}>
                     {count}
                   </span>
                 </button>
@@ -732,7 +732,7 @@ const handleConfirmAssign = async () => {
                     onClick={() => handleStep2ViewChange('dealers')}
                     className={`px-3 py-1 rounded-md text-xs font-medium transition ${
                       step2View === 'dealers'
-                        ? 'bg-dss-navy text-white'
+                        ? 'bg-dss-navy-soft text-white'
                         : 'text-dss-muted hover:text-dss-ink'
                     }`}>
                     Dealers
@@ -741,7 +741,7 @@ const handleConfirmAssign = async () => {
                     onClick={() => handleStep2ViewChange('calls')}
                     className={`px-3 py-1 rounded-md text-xs font-medium transition ${
                       step2View === 'calls'
-                        ? 'bg-dss-navy text-white'
+                        ? 'bg-dss-navy-soft text-white'
                         : 'text-dss-muted hover:text-dss-ink'
                     }`}>
                     Calls
@@ -759,7 +759,7 @@ const handleConfirmAssign = async () => {
                 <button
                   onClick={handleAssign}
                   disabled={assignDisabled}
-                  className="px-4 py-1.5 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition whitespace-nowrap">
+                  className="px-4 py-1.5 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition whitespace-nowrap">
                   {assignButtonLabel()}
                 </button>
               </div>
@@ -828,7 +828,7 @@ const handleConfirmAssign = async () => {
                     checked={allDealersSelected}
                     onChange={toggleSelectAllDealers}
                     title="Select all dealers"
-                    className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                    className="w-3.5 h-3.5 accent-dss-navy-soft cursor-pointer"
                   />
                 </div>
                 <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2">Dealer</div>
@@ -857,7 +857,7 @@ const handleConfirmAssign = async () => {
                           checked={isSelected}
                           onChange={() => {}}
                           onClick={e => { e.stopPropagation(); toggleDealer(dealer.name); }}
-                          className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                          className="w-3.5 h-3.5 accent-dss-navy-soft cursor-pointer"
                         />
                       </div>
                       <div className="px-2">
@@ -874,7 +874,7 @@ const handleConfirmAssign = async () => {
                       <div className="px-2">
                         <div className="h-1.5 bg-dss-canvas rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all ${isSelected ? 'bg-blue-500' : 'bg-dss-muted'}`}
+                            className={`h-full rounded-full transition-all ${isSelected ? 'bg-dss-navy-soft' : 'bg-dss-muted'}`}
                             style={{ width: `${Math.round((dealer.callCount / maxDealerCount) * 100)}%` }}
                           />
                         </div>
@@ -902,7 +902,7 @@ const handleConfirmAssign = async () => {
                       else page = dealerPage - 2 + i;
                       return (
                         <button key={page} onClick={() => setDealerPage(page)}
-                          className={`w-7 h-7 rounded text-xs transition ${dealerPage === page ? 'bg-dss-navy text-white' : 'hover:bg-dss-canvas text-dss-muted'}`}>
+                          className={`w-7 h-7 rounded text-xs transition ${dealerPage === page ? 'bg-dss-navy-soft text-white' : 'hover:bg-dss-canvas text-dss-muted'}`}>
                           {page}
                         </button>
                       );
@@ -927,7 +927,7 @@ const handleConfirmAssign = async () => {
                     type="checkbox"
                     checked={allCallsPageSelected}
                     onChange={toggleSelectAllCallsPage}
-                    className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                    className="w-3.5 h-3.5 accent-dss-navy-soft cursor-pointer"
                   />
                 </div>
                 <div className="text-xs font-medium text-dss-muted uppercase tracking-wider px-2">App ID</div>
@@ -956,7 +956,7 @@ const handleConfirmAssign = async () => {
                           checked={isSelected}
                           onChange={() => {}}
                           onClick={e => { e.stopPropagation(); toggleCall(call.id); }}
-                          className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                          className="w-3.5 h-3.5 accent-dss-navy-soft cursor-pointer"
                         />
                       </div>
                       <div className="px-2 text-xs text-dss-accent font-medium truncate">{call.applicationId}</div>
@@ -997,7 +997,7 @@ const handleConfirmAssign = async () => {
                     else page = callsPage - 2 + i;
                     return (
                       <button key={page} onClick={() => setCallsPage(page)}
-                        className={`w-7 h-7 rounded text-xs transition ${callsPage === page ? 'bg-dss-navy text-white' : 'hover:bg-dss-canvas text-dss-muted'}`}>
+                        className={`w-7 h-7 rounded text-xs transition ${callsPage === page ? 'bg-dss-navy-soft text-white' : 'hover:bg-dss-canvas text-dss-muted'}`}>
                         {page}
                       </button>
                     );
@@ -1126,7 +1126,7 @@ const handleConfirmAssign = async () => {
               <button
                 onClick={handleConfirmAssign}
                 disabled={selectedStatuses.size === 0}
-                className="flex-1 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition">
+                className="flex-1 px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition">
                 {(() => {
                   const matching = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses)).length;
                   return `Assign ${matching} call${matching !== 1 ? 's' : ''} to ${pendingAssignRepName} →`;
@@ -1239,7 +1239,7 @@ const handleConfirmAssign = async () => {
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-dss-ink/80 w-5 flex-shrink-0">{dealer.callCount}</span>
                               <div className="flex-1 h-1.5 bg-dss-canvas rounded-full overflow-hidden">
-                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.round((dealer.callCount / dealer.maxCount) * 100)}%` }} />
+                                <div className="h-full bg-dss-navy-soft rounded-full" style={{ width: `${Math.round((dealer.callCount / dealer.maxCount) * 100)}%` }} />
                               </div>
                             </div>
                           </td>
@@ -1467,7 +1467,7 @@ const handleConfirmAssign = async () => {
             <div className="flex items-center gap-3 px-5 py-4 border-t border-dss-border">
               <button onClick={() => setGoalRep(null)} className="flex-1 px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">Cancel</button>
               <button onClick={handleSaveGoal} disabled={savingGoal}
-                className="flex-1 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas text-white rounded-dss-sm text-sm font-medium transition">
+                className="flex-1 px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas text-white rounded-dss-sm text-sm font-medium transition">
                 {savingGoal ? 'Saving…' : 'Save goal'}
               </button>
             </div>

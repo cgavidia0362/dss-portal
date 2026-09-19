@@ -96,7 +96,7 @@ export function UploadPanel({
             type="button"
             disabled={files.length === 0}
             onClick={onAnalyze}
-            className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+            className="rounded bg-dss-navy-soft px-4 py-2 text-sm font-medium text-white hover:bg-dss-navy disabled:cursor-not-allowed disabled:bg-dss-muted"
           >
             Analyze Income
           </button>

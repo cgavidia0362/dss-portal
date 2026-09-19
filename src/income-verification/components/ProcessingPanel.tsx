@@ -11,7 +11,7 @@ export function ProcessingPanel({ status }: { status: string }) {
   return (
     <section className="mx-auto max-w-xl rounded border border-slate-200 bg-white px-6 py-8">
       <div className="flex items-center gap-3">
-        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-dss-navy-soft" />
         <h2 className="text-base font-semibold">Processing</h2>
       </div>
       <p className="mt-2 text-sm text-slate-600">{status || 'Analyzing uploaded documents.'}</p>

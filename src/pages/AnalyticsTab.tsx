@@ -175,7 +175,7 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
   });
 
   const getProgressColor = (p: number) =>
-    p >= 90 ? 'bg-green-500' : p >= 70 ? 'bg-blue-500' : p >= 50 ? 'bg-yellow-500' : 'bg-red-500';
+    p >= 90 ? 'bg-green-500' : p >= 70 ? 'bg-dss-navy-soft' : p >= 50 ? 'bg-yellow-500' : 'bg-red-500';
   const getProgressTextColor = (p: number) =>
     p >= 90 ? 'text-dss-success' : p >= 70 ? 'text-dss-accent' : p >= 50 ? 'text-amber-700' : 'text-dss-danger';
 
@@ -197,7 +197,7 @@ export default function AnalyticsTab({ currentUser, calls, fundingData, todayDai
               onClick={() => setDealPeriod(p)}
               className={`px-5 py-2 text-sm font-medium transition ${
                 dealPeriod === p
-                  ? 'bg-dss-navy text-white'
+                  ? 'bg-dss-navy-soft text-white'
                   : 'bg-dss-surface text-dss-muted hover:text-dss-ink hover:bg-dss-canvas'
               }`}
             >

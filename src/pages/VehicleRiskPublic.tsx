@@ -339,7 +339,7 @@ export default function VehicleRiskPublic() {
             <button
               type="submit"
               disabled={!canAnalyze}
-              className="flex items-center gap-2 px-5 py-2.5 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-5 py-2.5 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>

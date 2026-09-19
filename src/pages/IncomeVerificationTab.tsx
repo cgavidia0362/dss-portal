@@ -374,7 +374,7 @@ export default function IncomeVerificationTab({
         <button
           type="button"
           onClick={() => setShowSavedPanel((v) => !v)}
-          className="flex items-center gap-2 rounded border border-slate-600 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700"
+          className="flex items-center gap-2 rounded border border-white/20 bg-dss-navy-soft px-3 py-1.5 text-xs text-white hover:bg-dss-navy"
         >
           <Bookmark className="h-3.5 w-3.5" />
           Saved ({savedReports.length})
@@ -419,7 +419,7 @@ export default function IncomeVerificationTab({
                   key={saved.id}
                   className={`flex items-start justify-between gap-3 rounded border px-3 py-2.5 ${
                     viewingSavedId === saved.id
-                      ? 'border-slate-800 bg-slate-50'
+                      ? 'border-dss-navy-soft bg-dss-accent-soft/40'
                       : 'border-slate-200 bg-white'
                   }`}
                 >
@@ -546,7 +546,7 @@ export default function IncomeVerificationTab({
                 type="button"
                 disabled={saveLoading || !applicantName.trim()}
                 onClick={() => void handleSaveReport()}
-                className="flex-1 rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex-1 rounded bg-dss-navy-soft px-3 py-2 text-sm font-medium text-white hover:bg-dss-navy disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saveLoading ? 'Saving…' : 'Save'}
               </button>

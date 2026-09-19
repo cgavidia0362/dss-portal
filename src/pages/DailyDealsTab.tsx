@@ -1082,7 +1082,7 @@ export default function DailyDealsTab({
                 <Target className="h-5 w-5 text-cyan-800" />
               </div>
               <div className="h-1.5 bg-dss-canvas rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all" style={{ width: `${goalPct}%` }} />
+                <div className="h-full bg-gradient-to-r from-dss-navy-soft to-dss-navy rounded-full transition-all" style={{ width: `${goalPct}%` }} />
               </div>
             </div>
             <div className="relative overflow-hidden rounded-dss border border-dss-accent/30 bg-dss-surface p-4 shadow-sm">
@@ -1092,7 +1092,7 @@ export default function DailyDealsTab({
                   <p className="mt-2 text-3xl font-bold text-dss-accent leading-none">{combinedEntries.length}</p>
                   <p className="mt-2 text-xs text-dss-muted">all sources</p>
                 </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-dss-accent/30 bg-blue-500/10 text-dss-accent">
+                <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-dss-accent/30 bg-dss-accent-soft text-dss-accent">
                   <ClipboardList className="h-5 w-5" />
                 </div>
               </div>
@@ -1125,7 +1125,7 @@ export default function DailyDealsTab({
                         onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
                         placeholder="Type App ID to search…"
                         className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30" />
-                      <button onClick={handleSearch} className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">Search</button>
+                      <button onClick={handleSearch} className="px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm text-sm font-medium transition">Search</button>
                     </div>
                     {searchResults.length > 0 && (
                       <div className="mt-2 space-y-1">
@@ -1144,7 +1144,7 @@ export default function DailyDealsTab({
                               {call.customerName && <span className="text-xs text-dss-muted italic">{call.customerName}</span>}
                             </div>
                             <button onClick={() => handleSelectCall(call)}
-                              className="text-xs px-3 py-1 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm transition flex-shrink-0">
+                              className="text-xs px-3 py-1 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm transition flex-shrink-0">
                               Use this app →
                             </button>
                           </div>
@@ -1198,7 +1198,7 @@ export default function DailyDealsTab({
                 {/* COMPACT FORM when call linked */}
                 {linkedCall ? (
                   <div className="border border-dss-accent/30 rounded-dss-sm overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 bg-dss-accent-soft bg-opacity-20 border-b border-blue-800">
+                    <div className="flex items-center justify-between px-4 py-3 bg-dss-accent-soft bg-opacity-20 border-b border-dss-navy-soft">
                       <div>
                         <span className="text-sm font-medium text-dss-accent">{linkedCall.applicationId}</span>
                         <span className="text-xs text-dss-muted ml-2">·</span>
@@ -1273,7 +1273,7 @@ export default function DailyDealsTab({
                                 {call.customerName && <span className="text-xs text-dss-muted italic">{call.customerName}</span>}
                               </div>
                               <button onClick={() => handleSelectCall(call)}
-                                className="text-xs px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-dss-sm transition flex-shrink-0">
+                                className="text-xs px-3 py-1 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm transition flex-shrink-0">
                                 Use this app →
                               </button>
                             </div>
@@ -1339,7 +1339,7 @@ export default function DailyDealsTab({
               const m = medal(idx);
               const isMe = rep.id === selectedUser;
               return (
-                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-dss-accent-soft/20 ring-1 ring-inset ring-blue-500/20' : 'hover:bg-dss-canvas'}`}>
+                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-dss-accent-soft/20 ring-1 ring-inset ring-dss-navy-soft/25' : 'hover:bg-dss-canvas'}`}>
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${idx < 3 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-dss-canvas text-dss-muted'}`}>
                     {m || <span className="text-xs text-dss-muted font-medium">{idx + 1}</span>}
                   </div>
@@ -1529,7 +1529,7 @@ export default function DailyDealsTab({
                                   className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                                   autoFocus />
                                 <button onClick={() => handleAddNote(entry.id)}
-                                  className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">Save</button>
+                                  className="px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm text-sm font-medium transition">Save</button>
                               </div>
                             </div>
                           </td>
@@ -1748,7 +1748,7 @@ export default function DailyDealsTab({
                                     className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                                     autoFocus />
                                   <button onClick={() => handlePopupAddNote(call.id)}
-                                    className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">Save</button>
+                                    className="px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm text-sm font-medium transition">Save</button>
                                 </div>
                               </div>
                             </td>
@@ -1804,7 +1804,7 @@ export default function DailyDealsTab({
                   const hasDeals = datesWithDeals.has(dateStr);
                   const isSelected = selectedDate === dateStr;
                   let cls = 'relative text-center text-sm py-2 rounded-dss-sm transition font-normal ';
-                  if (isTodayDate) cls += 'bg-dss-navy text-white font-medium';
+                  if (isTodayDate) cls += 'bg-dss-navy-soft text-white font-medium';
                   else if (isFuture) cls += 'text-dss-muted';
                   else if (isSelected) cls += 'bg-dss-accent-soft border border-dss-accent text-dss-accent cursor-pointer';
                   else if (hasDeals) cls += 'bg-emerald-50 text-dss-success hover:bg-green-800 cursor-pointer font-medium';
@@ -1819,7 +1819,7 @@ export default function DailyDealsTab({
               </div>
               <div className="flex gap-5 mb-4 pb-4 border-b border-dss-border">
                 <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-400" /><span className="text-xs text-dss-muted">Has entries</span></div>
-                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-blue-500" /><span className="text-xs text-dss-muted">Today</span></div>
+                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-dss-navy" /><span className="text-xs text-dss-muted">Today</span></div>
               </div>
               {selectedDate && (
                 <div>
@@ -1850,7 +1850,7 @@ export default function DailyDealsTab({
                             <td className="px-3 py-2.5 text-dss-accent font-medium">
                               {deal.appId}
                               {deal.id.startsWith('call-') && (
-                                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-dss-accent-soft/40 text-dss-accent border border-blue-800">Calls</span>
+                                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-dss-accent-soft/40 text-dss-accent border border-dss-navy-soft">Calls</span>
                               )}
                             </td>
                             <td className="px-3 py-2.5 text-dss-ink">{deal.dealerName}</td>

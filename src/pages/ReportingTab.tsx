@@ -1056,7 +1056,7 @@ export default function ReportingTab({
   const formatCurrency = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
-  const getProgressColor = (p: number) => p >= 90 ? 'bg-green-500' : p >= 70 ? 'bg-blue-500' : p >= 50 ? 'bg-yellow-500' : 'bg-red-500';
+  const getProgressColor = (p: number) => p >= 90 ? 'bg-green-500' : p >= 70 ? 'bg-dss-navy-soft' : p >= 50 ? 'bg-yellow-500' : 'bg-red-500';
   const getProgressTextColor = (p: number) => p >= 90 ? 'text-dss-success' : p >= 70 ? 'text-dss-accent' : p >= 50 ? 'text-amber-700' : 'text-dss-danger';
 
   const resetRangeToToday = () => {
@@ -1127,7 +1127,7 @@ export default function ReportingTab({
           {!isViewingCurrentMonth && (
             <button
               onClick={() => goToMonth(currentYear, currentMonth)}
-              className="ml-2 px-3 py-2 text-xs bg-dss-accent-soft text-dss-accent border border-dss-accent/30 rounded-dss-sm hover:bg-blue-800 transition"
+              className="ml-2 px-3 py-2 text-xs bg-dss-accent-soft text-dss-accent border border-dss-accent/30 rounded-dss-sm hover:bg-dss-navy-soft transition"
             >
               Today
             </button>
@@ -1177,7 +1177,7 @@ export default function ReportingTab({
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-dss border border-dss-accent/30 bg-blue-500/10 text-dss-accent shadow-lg shadow-blue-950/20">
+              <div className="flex h-11 w-11 items-center justify-center rounded-dss border border-dss-accent/30 bg-dss-accent-soft text-dss-accent shadow-lg shadow-dss-navy-soft/20">
                 <Target className="h-5 w-5" />
               </div>
               <div>
@@ -1192,7 +1192,7 @@ export default function ReportingTab({
             {(currentUserRole === 'admin' || currentUserRole === 'manager') && isViewingCurrentMonth && (
               <button
                 onClick={() => setShowTeamGoals(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-dss-surface hover:bg-dss-canvas border border-dss-border text-dss-ink/80 rounded-dss-sm text-sm transition shadow-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm text-sm font-medium transition shadow-sm"
               >
                 <Target className="w-4 h-4" /> Set Goals
               </button>
@@ -1240,7 +1240,7 @@ export default function ReportingTab({
               sub: `Confirmed ÷ All Deals · Avg ${formatCurrency(rangeAvgDeal)}`,
               Icon: BarChart3,
               color: 'text-dss-accent',
-              accent: 'border-dss-accent/30 bg-blue-500/10',
+              accent: 'border-dss-accent/30 bg-dss-accent-soft',
               card: '',
             },
           ].map(({ label, value, amount, sub, Icon, color, accent, card }) => (
@@ -1268,7 +1268,7 @@ export default function ReportingTab({
               sub: 'Assigned in range',
               Icon: Phone,
               color: 'text-dss-accent',
-              accent: 'border-dss-accent/30 bg-blue-500/10',
+              accent: 'border-dss-accent/30 bg-dss-accent-soft',
               card: '',
             },
             {
@@ -1328,7 +1328,7 @@ export default function ReportingTab({
                 <span className="text-sm font-bold text-cyan-800">{dealsToday} / {goals.team}</span>
               </div>
               <div className="relative w-full bg-dss-canvas rounded-full h-2.5 mb-3 overflow-hidden">
-                <div className="bg-gradient-to-r from-cyan-400 to-blue-500 h-2.5 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
+                <div className="bg-gradient-to-r from-dss-navy-soft to-dss-navy h-2.5 rounded-full transition-all" style={{ width: `${teamGoalPct}%` }} />
               </div>
               <p className="relative text-xs text-dss-muted"><span className="text-cyan-800 font-semibold">{teamGoalPct.toFixed(0)}%</span> complete today</p>
             </div>
@@ -1409,34 +1409,34 @@ export default function ReportingTab({
           </div>
           {(currentUserRole === 'admin' || currentUserRole === 'manager') && isViewingCurrentMonth && (
             <button onClick={() => setShowGoalModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm transition text-sm shadow-lg shadow-blue-950/30">
+              className="flex items-center gap-2 px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm transition text-sm shadow-lg shadow-dss-navy-soft/30">
               <Settings className="w-4 h-4" /> Set State Goals
             </button>
           )}
         </div>
 
         {hasFundingData && (
-          <div className="relative overflow-hidden bg-emerald-50 rounded-dss p-5 border border-emerald-200/60 mb-4 flex items-center justify-between flex-wrap gap-4 shadow-sm">
-            <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(34,197,94,0.18),transparent_45%)]" />
+          <div className="relative overflow-hidden bg-emerald-50 rounded-dss p-5 border border-emerald-200 mb-4 flex items-center justify-between flex-wrap gap-4 shadow-sm">
+            <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.22),transparent_50%)]" />
             <div className="relative">
-              <p className="text-dss-success text-xs font-semibold mb-2 uppercase tracking-wider">All States Combined</p>
+              <p className="text-emerald-800 text-xs font-semibold mb-2 uppercase tracking-wider">All States Combined</p>
               <div className="flex items-end gap-6">
                 <div>
-                  <p className="text-4xl font-bold text-white leading-none">{totalFundedCount}</p>
-                  <p className="text-dss-success text-xs mt-0.5">funded deals</p>
+                  <p className="text-4xl font-bold text-emerald-950 leading-none">{totalFundedCount}</p>
+                  <p className="text-emerald-700 text-xs mt-0.5">funded deals</p>
                 </div>
-                <div className="h-10 w-px bg-green-700/70" />
+                <div className="h-10 w-px bg-emerald-300" />
                 <div>
-                  <p className="text-2xl font-bold text-dss-success">{formatCurrency(totalFundedAmount)}</p>
-                  <p className="text-green-500 text-xs mt-0.5">total volume</p>
+                  <p className="text-2xl font-bold text-emerald-900">{formatCurrency(totalFundedAmount)}</p>
+                  <p className="text-emerald-700 text-xs mt-0.5">total volume</p>
                 </div>
               </div>
             </div>
-            <div className="relative flex items-center gap-3 rounded-dss border border-green-600/50 bg-green-950/40 px-4 py-3 text-right">
-              <DollarSign className="h-7 w-7 text-dss-success" />
+            <div className="relative flex items-center gap-3 rounded-dss border border-emerald-300 bg-white px-4 py-3 text-right shadow-sm">
+              <DollarSign className="h-7 w-7 text-emerald-700" />
               <div>
-                <p className="text-dss-success text-xs">Avg per deal</p>
-                <p className="text-xl font-bold text-green-100">
+                <p className="text-emerald-700 text-xs font-medium">Avg per deal</p>
+                <p className="text-xl font-bold text-emerald-950">
                 {formatCurrency(totalFundedCount > 0 ? totalFundedAmount / totalFundedCount : 0)}
                 </p>
               </div>
@@ -1529,7 +1529,7 @@ export default function ReportingTab({
         <div>
           <div className="flex items-start justify-between gap-4 mb-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-dss-accent/30 bg-blue-500/10 text-dss-accent">
+              <div className="flex h-10 w-10 items-center justify-center rounded-dss border border-dss-accent/30 bg-dss-accent-soft text-dss-accent">
                 <BarChart3 className="h-5 w-5" />
               </div>
               <div>
@@ -1716,7 +1716,7 @@ export default function ReportingTab({
                     onClick={() => goToMonth(viewYear, month)}
                     className={`px-3 py-2 rounded-dss-sm text-sm transition ${
                       isSelected
-                        ? 'bg-dss-navy text-white'
+                        ? 'bg-dss-navy-soft text-white'
                         : isFuture
                           ? 'text-dss-muted cursor-not-allowed'
                           : 'bg-dss-canvas text-dss-ink/80 hover:bg-dss-accent-soft'
@@ -2004,7 +2004,7 @@ export default function ReportingTab({
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={handleSetGoal} disabled={loading}
-                className="flex-1 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft disabled:bg-dss-canvas text-white rounded-dss-sm transition">
+                className="flex-1 px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas text-white rounded-dss-sm transition">
                 {loading ? 'Saving...' : 'Set Goal'}
               </button>
               <button onClick={() => { setShowGoalModal(false); setSelectedState(''); setGoalForm({ monthlyGoal: '', fundingDays: '' }); setError(''); }}
@@ -2032,7 +2032,7 @@ export default function ReportingTab({
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={handleSaveTeamGoals}
-                className="flex-1 px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm transition">
+                className="flex-1 px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm transition">
                 Save Goals
               </button>
               <button onClick={() => setShowTeamGoals(false)}

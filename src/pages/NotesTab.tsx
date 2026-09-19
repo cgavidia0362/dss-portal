@@ -504,7 +504,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
         </div>
         <div className="flex gap-2">
           {callsCount > 0 && (
-            <span className="text-xs px-2.5 py-1 bg-dss-accent-soft bg-opacity-40 text-dss-accent rounded-full border border-blue-800">
+            <span className="text-xs px-2.5 py-1 bg-dss-accent-soft bg-opacity-40 text-dss-accent rounded-full border border-dss-navy-soft">
               {callsCount} from Calls
             </span>
           )}
@@ -690,7 +690,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                     )}
                     <span className={`text-xs px-2 py-0.5 rounded-full border ${
                       note.source === 'calls'
-                        ? 'bg-dss-accent-soft bg-opacity-40 text-dss-accent border-blue-800'
+                        ? 'bg-dss-accent-soft bg-opacity-40 text-dss-accent border-dss-navy-soft'
                         : 'bg-emerald-50 bg-opacity-40 text-dss-success border-emerald-200'
                     }`}>
                       {note.source === 'calls' ? 'Calls' : 'Daily Deals'}

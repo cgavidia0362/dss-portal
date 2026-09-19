@@ -4,7 +4,7 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
 
   --color-dss-navy: #142849;
-  --color-dss-navy-soft: #1e3a5f;
+  --color-dss-navy-soft: #2a4f7a;
   --color-dss-ink: #162033;
   --color-dss-muted: #526174;
   --color-dss-border: #dce2ea;
@@ -40,7 +40,7 @@ body {
 }
 
 .dss-btn-primary {
-  @apply inline-flex h-9 items-center justify-center gap-2 rounded-dss-sm bg-dss-navy px-3.5 text-sm font-medium text-white hover:bg-dss-navy-soft focus:outline-none focus:ring-2 focus:ring-dss-accent/30 disabled:cursor-not-allowed disabled:opacity-50;
+  @apply inline-flex h-9 items-center justify-center gap-2 rounded-dss-sm bg-dss-navy-soft px-3.5 text-sm font-medium text-white hover:bg-dss-navy focus:outline-none focus:ring-2 focus:ring-dss-accent/30 disabled:cursor-not-allowed disabled:opacity-50;
 }
 
 .dss-btn-secondary {

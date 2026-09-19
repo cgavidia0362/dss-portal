@@ -561,7 +561,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
               <div className={`px-6 py-3 rounded-dss-sm font-medium transition ${
                 uploading || !xlsxLoaded
                   ? 'bg-dss-canvas text-dss-muted cursor-not-allowed'
-                  : 'bg-dss-navy text-white hover:bg-dss-navy-soft'
+                  : 'bg-dss-navy-soft text-white hover:bg-dss-navy'
               }`}>
                 {uploading ? 'Processing...' : !xlsxLoaded ? 'Loading...' : 'Select Calls CSV'}
               </div>
@@ -706,7 +706,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
                           onClick={() => setMatchAction(m.id, opt.key)}
                           className={`rounded-dss-sm border px-3 py-2 text-left text-xs transition ${
                             m.action === opt.key
-                              ? 'border-dss-accent bg-dss-accent-soft/40 text-blue-100'
+                              ? 'border-dss-accent bg-dss-accent-soft/40 text-white'
                               : 'border-dss-border bg-dss-canvas text-dss-ink/80 hover:border-dss-border'
                           }`}
                         >
@@ -735,7 +735,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
                   type="button"
                   onClick={confirmPendingUpload}
                   disabled={uploading}
-                  className="rounded-dss-sm bg-dss-navy px-4 py-2 text-sm font-medium text-white hover:bg-dss-navy-soft disabled:opacity-60"
+                  className="rounded-dss-sm bg-dss-navy-soft px-4 py-2 text-sm font-medium text-white hover:bg-dss-navy disabled:opacity-60"
                 >
                   {uploading ? 'Importing...' : `Confirm import (${pendingUpload.matches.length} reviewed)`}
                 </button>
@@ -835,10 +835,10 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
                 {fundingUploadResult.success && fundingUploadResult.byState && (
                   <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
                     {fundingUploadResult.byState.map(item => (
-                      <div key={item.state} className="bg-green-950 rounded-dss-sm p-3 border border-emerald-200">
-                        <p className="text-dss-success font-bold text-lg">{item.state}</p>
-                        <p className="text-green-100 font-semibold">{item.count} funded</p>
-                        <p className="text-dss-success text-sm">{formatCurrency(item.totalAmount)}</p>
+                      <div key={item.state} className="rounded-dss-sm border border-emerald-200 bg-white p-3 shadow-sm">
+                        <p className="text-emerald-900 font-bold text-lg">{item.state}</p>
+                        <p className="text-emerald-800 font-semibold">{item.count} funded</p>
+                        <p className="text-emerald-700 text-sm">{formatCurrency(item.totalAmount)}</p>
                       </div>
                     ))}
                   </div>

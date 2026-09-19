@@ -62,7 +62,7 @@ export function ResultsDashboard({
           <button
             type="button"
             onClick={onSave}
-            className="rounded border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
+            className="rounded border border-dss-navy-soft bg-dss-navy-soft px-3 py-1.5 text-sm text-white hover:bg-dss-navy"
           >
             Save report
           </button>
@@ -102,14 +102,14 @@ export function ResultsDashboard({
       )}
 
       <section className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 rounded border border-slate-900 bg-slate-900 px-5 py-5 text-white md:col-span-4">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-slate-300">
+        <div className="col-span-12 rounded border border-dss-navy bg-dss-navy px-5 py-5 text-white md:col-span-4">
+          <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
             Average monthly included income
           </p>
           <p className="mt-2 text-4xl font-semibold tabular-nums">
             {formatMoney(analysis.totals.averageMonthlyIncluded)}
           </p>
-          <p className="mt-2 text-sm text-slate-300">
+          <p className="mt-2 text-sm text-white/65">
             / month across {analysis.totals.monthsAnalyzed} coverage{' '}
             {analysis.totals.monthsAnalyzed === 1 ? 'month' : 'months'}
           </p>
@@ -138,12 +138,12 @@ export function ResultsDashboard({
               <p className="text-[11px] text-slate-500">{completenessLabel(month.completeness)}</p>
             </div>
           ))}
-          <div className="border border-slate-900 bg-slate-900 px-3 py-3 text-white">
-            <p className="text-[11px] uppercase tracking-wide text-slate-300">Avg</p>
+          <div className="border border-dss-navy bg-dss-navy px-3 py-3 text-white">
+            <p className="text-[11px] uppercase tracking-wide text-white/60">Avg</p>
             <p className="mt-1 text-lg font-semibold tabular-nums">
               {formatMoney(analysis.totals.averageMonthlyIncluded)}
             </p>
-            <p className="text-[11px] text-slate-300">Coverage period</p>
+            <p className="text-[11px] text-white/60">Coverage period</p>
           </div>
         </div>
       </section>

@@ -874,7 +874,7 @@ export default function CallsTab({
                 </div>
               </div>
               <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-dss-canvas">
-                <div className="h-full rounded-full bg-cyan-600 transition-all" style={{ width: `${teamGoalPct}%` }} />
+                <div className="h-full rounded-full bg-dss-navy-soft transition-all" style={{ width: `${teamGoalPct}%` }} />
               </div>
               <p className="relative mt-2 text-xs text-dss-muted">{teamGoalPct.toFixed(0)}% complete</p>
             </div>
@@ -1057,7 +1057,7 @@ export default function CallsTab({
               const m = medal(idx);
               const isMe = rep.id === currentUserId;
               return (
-                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-dss-accent-soft/20 ring-1 ring-inset ring-blue-500/20' : 'hover:bg-dss-canvas'}`}>
+                <div key={rep.id} className={`flex items-center gap-3 px-4 py-3 transition ${isMe ? 'bg-dss-accent-soft/20 ring-1 ring-inset ring-dss-navy-soft/25' : 'hover:bg-dss-canvas'}`}>
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${idx < 3 ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-dss-canvas text-dss-muted'}`}>
                     {m || <span className="text-xs font-semibold">{idx + 1}</span>}
                   </div>
@@ -1124,7 +1124,7 @@ export default function CallsTab({
           <Search className="w-3.5 h-3.5 text-dss-accent flex-shrink-0" />
           <span className="text-xs text-dss-accent">Searching all calls — not limited to your queue</span>
           <button onClick={() => setSearchQuery('')}
-            className="ml-auto flex items-center gap-1 text-xs text-dss-accent hover:text-dss-navy transition">
+            className="ml-auto flex items-center gap-1 text-xs text-dss-accent hover:text-dss-navy-soft transition">
             <X className="w-3.5 h-3.5" /> Clear search
           </button>
         </div>
@@ -1137,7 +1137,7 @@ export default function CallsTab({
           <span className="text-xs text-dss-ink font-medium">{selectedRepName}</span>
           <span className="text-xs text-dss-muted">— {repCallCount} calls assigned</span>
           <button onClick={() => setFilterRep('')}
-            className="ml-auto flex items-center gap-1 text-xs text-dss-accent hover:text-dss-navy transition">
+            className="ml-auto flex items-center gap-1 text-xs text-dss-accent hover:text-dss-navy-soft transition">
             <X className="w-3.5 h-3.5" /> Clear
           </button>
         </div>
@@ -1149,7 +1149,7 @@ export default function CallsTab({
           <span className="text-xs text-dss-accent uppercase tracking-wider">Filtered by dealer</span>
           <span className="text-xs text-dss-ink font-medium">{dealerFilter}</span>
           <button onClick={() => setDealerFilter('')}
-            className="ml-auto flex items-center gap-1 text-xs text-dss-accent hover:text-dss-navy transition">
+            className="ml-auto flex items-center gap-1 text-xs text-dss-accent hover:text-dss-navy-soft transition">
             <X className="w-3.5 h-3.5" /> Clear
           </button>
         </div>
@@ -1227,7 +1227,7 @@ export default function CallsTab({
       {/* MY QUEUE INFO BAR — reps only */}
       {isRep && !isGlobalSearch && (
         <div className="flex items-center gap-3 px-1 flex-wrap">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-dss-accent-soft bg-opacity-20 border border-blue-800 rounded-dss-sm">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-dss-accent-soft bg-opacity-20 border border-dss-navy-soft rounded-dss-sm">
             <span className="text-xs text-dss-accent font-medium">My Queue</span>
             <span className="text-xs text-dss-muted">{unworkedCalls.length} unworked</span>
             {filteredInCalls.length > 0 && (
@@ -1339,7 +1339,7 @@ export default function CallsTab({
                   : isNew
                     ? 'cursor-pointer transition-colors bg-amber-50 border-l-2 border-l-amber-500 hover:bg-amber-100'
                     : isQueueView && !isWorked
-                      ? 'cursor-pointer transition-colors hover:bg-dss-canvas border-l-2 border-l-blue-700'
+                      ? 'cursor-pointer transition-colors hover:bg-dss-canvas border-l-2 border-l-dss-navy-soft'
                       : 'cursor-pointer transition-colors hover:bg-dss-canvas';
 
                 const rows = [];
@@ -1532,7 +1532,7 @@ export default function CallsTab({
                               className="flex-1 px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink placeholder-dss-muted/70 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
                               autoFocus />
                             <button onClick={() => handleAddNote(call.id)}
-                              className="px-4 py-2 bg-dss-navy hover:bg-dss-navy-soft text-white rounded-dss-sm text-sm font-medium transition">
+                              className="px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy text-white rounded-dss-sm text-sm font-medium transition">
                               Save
                             </button>
                           </div>
