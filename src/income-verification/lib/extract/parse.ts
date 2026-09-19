@@ -220,17 +220,41 @@ export function contextYearFromPeriod(period: StatementPeriod | null): number | 
 
 export function extractDepositControlTotal(
   text: string
-): { count: number; total: number } | null {
+): { count: number | null; total: number } | null {
   const compact = text.replace(/\s+/g, ' ');
-  const match =
+
+  // PNC-style: "There were 5 Deposits and Other Additions totaling $455.00"
+  const pnc =
     /there were\s+(\d+)\s+deposits(?:\s+and\s+other\s+additions)?\s+totaling\s+\$?([\d,]+\.\d{2})/i.exec(
       compact
     );
-  if (!match) return null;
-  const count = Number(match[1]);
-  const total = parseAmount(match[2]);
-  if (!Number.isFinite(count) || total == null) return null;
-  return { count, total };
+  if (pnc) {
+    const count = Number(pnc[1]);
+    const total = parseAmount(pnc[2]);
+    if (Number.isFinite(count) && total != null) return { count, total };
+  }
+
+  // Bank of America detail footer: "Total deposits and other additions $3,026.00"
+  const boaFooter =
+    /total deposits and other additions\s+\$?([\d,]+\.\d{2})/i.exec(compact);
+  if (boaFooter) {
+    const total = parseAmount(boaFooter[1]);
+    if (total != null) return { count: null, total };
+  }
+
+  // Bank of America account summary (only when detail footer is absent).
+  const boaSummary =
+    /(?:^|[.!\n])\s*deposits and other additions\s+\$?([\d,]+\.\d{2})\b/i.exec(
+      text.replace(/\r/g, '')
+    ) ||
+    /\bdeposits and other additions\s+\$?([\d,]+\.\d{2})\b/i.exec(compact);
+  if (boaSummary) {
+    // Prefer the summary amount only when it is not the detail-section title alone.
+    const total = parseAmount(boaSummary[1]);
+    if (total != null) return { count: null, total };
+  }
+
+  return null;
 }
 
 export function isFullCalendarMonth(startDate: string, endDate: string): boolean {

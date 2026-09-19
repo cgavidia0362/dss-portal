@@ -20,24 +20,31 @@ import { extractHomeState } from '../analysis/location';
 import type { ExtractedDocument } from './types';
 
 const SKIP_LINE =
-  /opening balance|closing balance|beginning balance|ending balance|statement period|for the period|page \d|average balance|days in period|date amount description|primary account number|account number:/i;
+  /opening balance|closing balance|beginning balance|ending balance|statement period|for the period|page \d|average balance|days in period|date amount description|date description amount|date transaction description|primary account number|account number:/i;
 
 const OUTGOING_HINT =
-  /\b(withdrawal|withdrwl|debit|checkcard|bill pay|payment to|fee|charge|atm with|transfer to|zelle payment to|pmnt sent)\b/i;
+  /\b(withdrawal|withdrwl|debit|checkcard|bill pay|payment to|fee|charge|atm with|transfer to|zelle payment to|zel(?:le)?\s+to|pmnt sent|mobile purchase)\b/i;
 
 const INCOMING_HINT =
-  /\b(deposit|credit|payroll|direct dep|zelle payment from|zelle from|zel from|incoming|wire in|ach|mobile deposit|atm deposit|refund|reversal|reverse ach|instpmntin)\b/i;
+  /\b(deposit|credit|payroll|direct dep|dayforce|zelle payment from|zelle from|zel from|incoming|wire in|ach|mobile deposit|atm deposit|refund|reversal|reverse ach|instpmntin)\b/i;
 
+/** Detail-section headers (not account-summary totals). */
 const DEPOSIT_SECTION_START =
   /deposits and other additions|\bdeposits?\s+and\s+credits\b|^\s*deposits\s*$/i;
 
 const DEPOSIT_SECTION_END =
-  /banking\s*\/?\s*debit card withdrawals|withdrawals and purchases|checks and other deductions|other deductions|online and electronic banking deductions|electronic (?:banking )?withdrawals|fees?\s+and\s+charges|daily balance summary|^\s*checks\s*$/i;
+  /total deposits and other additions|withdrawals and other subtractions|atm and debit card subtractions|other subtractions|service fees|banking\s*\/?\s*debit card withdrawals|withdrawals and purchases|checks and other deductions|other deductions|online and electronic banking deductions|electronic (?:banking )?withdrawals|fees?\s+and\s+charges|daily balance summary|^\s*checks\s*$/i;
 
 const SECTION_CONTINUE_ONLY = /^\s*-\s*continued\s*$/i;
 
 const PNC_STYLE_ROW =
   /^(\d{1,2}\/\d{1,2})\s+(\$?\d{1,3}(?:,\d{3})*\.\d{2}|\$?\d+\.\d{2})\s+(.+)$/i;
+
+/** BoA detail rows: MM/DD/YY description, amount often on the same or following line. */
+const BOA_ROW_START =
+  /^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(.+)$/i;
+
+const AMOUNT_ONLY_LINE = /^\$?-?[\d,]+\.\d{2}$/;
 
 function directionFromDescription(
   description: string,
@@ -64,8 +71,33 @@ function stripDateAndAmounts(line: string): string {
     .trim();
 }
 
+/**
+ * True for deposit *detail* headers. Account-summary lines like
+ * "Deposits and other additions 3,026.00" must not open the detail section.
+ */
+function isDepositSectionHeader(line: string): boolean {
+  if (!DEPOSIT_SECTION_START.test(line)) return false;
+  const remainder = line
+    .replace(/deposits and other additions/i, ' ')
+    .replace(/\bdeposits?\s+and\s+credits\b/i, ' ')
+    .replace(/^\s*deposits\s*$/i, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!remainder) return true;
+  // PNC prose header: "Deposits and Other Additions There were 5..."
+  if (/there were/i.test(remainder)) return true;
+  // Pure money leftover => account summary total, not the detail section.
+  if (AMOUNT_ONLY_LINE.test(remainder)) return false;
+  return true;
+}
+
+function isDepositSectionEnd(line: string): boolean {
+  if (DEPOSIT_SECTION_START.test(line) && isDepositSectionHeader(line)) return false;
+  return DEPOSIT_SECTION_END.test(line);
+}
+
 function hasDepositSection(text: string): boolean {
-  return DEPOSIT_SECTION_START.test(text);
+  return text.split(/\r?\n/).some((line) => isDepositSectionHeader(line.trim()));
 }
 
 function pushTransaction(
@@ -112,7 +144,7 @@ function parseLegacyLines(
   lines.forEach((line, index) => {
     const trimmed = line.trim();
     if (!trimmed || SKIP_LINE.test(trimmed) || trimmed.length < 8) return;
-    if (/continued on next page/i.test(trimmed)) return;
+    if (/continued on next page|continued on the next page/i.test(trimmed)) return;
 
     const dates = extractDates(trimmed, year, period);
     const amounts = extractAmounts(trimmed);
@@ -141,6 +173,46 @@ function parseLegacyLines(
   return transactions;
 }
 
+type PendingBoaRow = {
+  date: string;
+  descriptionParts: string[];
+  rawParts: string[];
+  index: number;
+};
+
+function finalizeDepositRow(
+  transactions: NormalizedTransaction[],
+  params: {
+    fileName: string;
+    date: string;
+    amount: number;
+    description: string;
+    rawDescription: string;
+    accountLast4: string | null;
+    runningBalance: number | null;
+    index: number;
+  }
+) {
+  // Deposit sections are credit-only. Never coerce signed withdrawals into deposits.
+  if (params.amount <= 0) return;
+  const description = params.description.replace(/\s+/g, ' ').trim();
+  if (!description) return;
+  if (OUTGOING_HINT.test(description) && !INCOMING_HINT.test(description)) return;
+  if (/\bpurchase\b/i.test(description) && !/\brefund\b/i.test(description)) return;
+
+  pushTransaction(transactions, {
+    fileName: params.fileName,
+    date: params.date,
+    amount: roundMoney(params.amount),
+    description,
+    rawDescription: params.rawDescription,
+    direction: 'in',
+    accountLast4: params.accountLast4,
+    runningBalance: params.runningBalance,
+    index: params.index,
+  });
+}
+
 function parseDepositSections(
   lines: string[],
   fileName: string,
@@ -150,17 +222,42 @@ function parseDepositSections(
   const year = contextYearFromPeriod(period);
   const transactions: NormalizedTransaction[] = [];
   let inDepositSection = false;
+  let pending: PendingBoaRow | null = null;
+
+  const flushPendingAmount = (amountLine: string, index: number) => {
+    if (!pending) return;
+    const amount = parseAmount(amountLine);
+    if (amount == null) return;
+    finalizeDepositRow(transactions, {
+      fileName,
+      date: pending.date,
+      amount,
+      description: pending.descriptionParts.join(' '),
+      rawDescription: [...pending.rawParts, amountLine].join('\n'),
+      accountLast4,
+      runningBalance: null,
+      index: pending.index,
+    });
+    pending = null;
+    void index;
+  };
+
+  const abandonPending = () => {
+    pending = null;
+  };
 
   lines.forEach((line, index) => {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    if (DEPOSIT_SECTION_END.test(trimmed) && !DEPOSIT_SECTION_START.test(trimmed)) {
+    if (isDepositSectionEnd(trimmed)) {
+      abandonPending();
       inDepositSection = false;
       return;
     }
 
-    if (DEPOSIT_SECTION_START.test(trimmed)) {
+    if (isDepositSectionHeader(trimmed)) {
+      abandonPending();
       inDepositSection = true;
       return;
     }
@@ -170,26 +267,72 @@ function parseDepositSections(
     if (SECTION_CONTINUE_ONLY.test(trimmed)) return;
 
     if (!inDepositSection) return;
-    if (SKIP_LINE.test(trimmed) || /continued on next page/i.test(trimmed)) return;
+    if (SKIP_LINE.test(trimmed) || /continued on (the )?next page/i.test(trimmed)) return;
     if (/^effective\b/i.test(trimmed)) return;
+
+    // Complete a multiline BoA row when the next line is amount-only.
+    if (pending && AMOUNT_ONLY_LINE.test(trimmed)) {
+      flushPendingAmount(trimmed, index);
+      return;
+    }
 
     const pnc = PNC_STYLE_ROW.exec(trimmed);
     if (pnc) {
+      abandonPending();
       const date = extractDates(pnc[1], year, period)[0];
       const amount = parseAmount(pnc[2]);
       const description = pnc[3].replace(/\s+/g, ' ').trim();
       if (!date || amount == null) return;
-      pushTransaction(transactions, {
+      finalizeDepositRow(transactions, {
         fileName,
         date,
-        amount: roundMoney(Math.abs(amount)),
+        amount,
         description,
         rawDescription: trimmed,
-        direction: 'in',
         accountLast4,
         runningBalance: null,
         index,
       });
+      return;
+    }
+
+    const boa = BOA_ROW_START.exec(trimmed);
+    if (boa) {
+      abandonPending();
+      const date = extractDates(boa[1], year, period)[0];
+      if (!date) return;
+      const rest = boa[2].replace(/\s+/g, ' ').trim();
+      const amounts = extractAmounts(rest);
+      if (amounts.length) {
+        // Prefer the rightmost amount on BoA deposit rows (no running balance column).
+        const amount = amounts[amounts.length - 1];
+        const description = stripAmountTokens(rest).replace(/\s+/g, ' ').trim();
+        finalizeDepositRow(transactions, {
+          fileName,
+          date,
+          amount,
+          description,
+          rawDescription: trimmed,
+          accountLast4,
+          runningBalance: null,
+          index,
+        });
+        return;
+      }
+
+      pending = {
+        date,
+        descriptionParts: [rest],
+        rawParts: [trimmed],
+        index,
+      };
+      return;
+    }
+
+    // Continuation lines for an open multiline BoA deposit (e.g. ACH ID rows).
+    if (pending) {
+      pending.descriptionParts.push(trimmed);
+      pending.rawParts.push(trimmed);
       return;
     }
 
@@ -200,13 +343,12 @@ function parseDepositSections(
     const description = stripDateAndAmounts(trimmed);
     if (!description || DEPOSIT_SECTION_START.test(description)) return;
     const signedAmount = amounts[0];
-    pushTransaction(transactions, {
+    finalizeDepositRow(transactions, {
       fileName,
       date: dates[0],
-      amount: roundMoney(Math.abs(signedAmount)),
+      amount: signedAmount,
       description,
       rawDescription: trimmed,
-      direction: 'in',
       accountLast4,
       runningBalance: amounts.length >= 2 ? amounts[amounts.length - 1] : null,
       index,
@@ -244,10 +386,17 @@ export function parseBankStatementText(
     const extractedTotal = roundMoney(
       depositTxs.reduce((sum, tx) => sum + tx.amount, 0)
     );
-    if (depositTxs.length !== control.count || !amountsEqual(extractedTotal, control.total)) {
+    const countMismatch =
+      control.count != null && depositTxs.length !== control.count;
+    const totalMismatch = !amountsEqual(extractedTotal, control.total);
+    if (countMismatch || totalMismatch) {
+      const reported =
+        control.count != null
+          ? `${control.count} deposits totaling $${control.total.toFixed(2)}`
+          : `deposits totaling $${control.total.toFixed(2)}`;
       warnings.push({
         code: 'deposit_control_mismatch',
-        message: `Deposit control total mismatch in ${fileName}: statement reports ${control.count} deposits totaling $${control.total.toFixed(2)}, but extracted ${depositTxs.length} deposits totaling $${extractedTotal.toFixed(2)}.`,
+        message: `Deposit control total mismatch in ${fileName}: statement reports ${reported}, but extracted ${depositTxs.length} deposits totaling $${extractedTotal.toFixed(2)}.`,
         documentName: fileName,
       });
     }

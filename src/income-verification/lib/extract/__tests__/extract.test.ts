@@ -399,3 +399,155 @@ describe('PNC-style bank statement extraction', () => {
     expect(analysis.transactions.some((tx) => tx.normalizedSource === 'Blake Sample')).toBe(true);
   });
 });
+
+/** Fully synthetic Bank of America fixture — no real customer PII. */
+const BOA_SECTION_TEXT = `
+Customer service information
+bankofamerica.com
+Bank of America, N.A.
+JANE Q EXAMPLE
+1000 Example Ave
+Example City, AZ 85000
+Your Adv SafeBalance Banking
+for July 22, 2026 to August 19, 2026 Account number: 4570 0000 1234
+Account summary
+Beginning balance on July 22, 2026 $246.49
+Deposits and other additions 3,026.00
+ATM and debit card subtractions -2,624.24
+Other subtractions -390.00
+Service fees -4.95
+Ending balance on August 19, 2026 $253.30
+Page 3 of 6
+Deposits and other additions
+Date Description Amount
+07/23/26 DAYFORCE DES:TRANSFER ID:EXAMPLE EMPLOYER INDN:Jane Example CO
+ID:7000000001 WEB
+750.00
+07/24/26 Zelle payment from AVERY EXAMPLE Conf# aaa111 54.00
+07/27/26 Zelle payment from AVERY EXAMPLE Conf# bbb222 66.00
+07/29/26 Zelle payment from AVERY EXAMPLE Conf# ccc333 66.00
+07/31/26 Zelle payment from BLAKE SAMPLE Conf# ddd444 100.00
+08/03/26 Zelle payment from CONTOSO CLEANERS LLC Conf# eee555 120.00
+08/05/26 Zelle payment from BLAKE SAMPLE Conf# fff666 100.00
+08/05/26 Zelle payment from CASEY DEMO Conf# ggg777 50.00
+08/06/26 DAYFORCE DES:TRANSFER ID:EXAMPLE EMPLOYER INDN:Jane Example CO
+ID:7000000001 WEB
+700.00
+08/17/26 Zelle payment from CONTOSO CLEANERS LLC Conf# hhh888 220.00
+08/19/26 Zelle payment from CONTOSO CLEANERS LLC Conf# iii999 800.00
+Total deposits and other additions $3,026.00
+Withdrawals and other subtractions
+ATM and debit card subtractions
+Date Description Amount
+07/22/26 PURCHASE 0721 APPLE.COM/BILL 866-000-0000 CA -27.28
+07/23/26 THE HOME DEPOT 07/23 #000000451 MOBILE PURCHASE 1000 W EXAMPLE AVE -331.87
+07/24/26 PURCHASE 0723 TEMU.COM 888-000-0000 MA -18.62
+08/03/26 BKOFAMERICA ATM 08/01 #000005424 WITHDRWL EXAMPLE CROSSING -100.00
+08/19/26 Circlek #27055 08/19 #000272367 MOBILE PURCHASE EXAMPLE AZ -49.12
+Total ATM and debit card subtractions -$2,624.24
+Other subtractions
+Date Description Amount
+08/05/26 Zelle payment to RILEY OUTGOING Conf# out111 -50.00
+08/06/26 Zelle payment to RILEY OUTGOING Conf# out222 -250.00
+08/12/26 Zelle payment to MORGAN OUTGOING Conf# out333 -90.00
+Total other subtractions -$390.00
+Service fees
+Date Transaction description Amount
+07/22/26 Monthly Maintenance Fee -4.95
+Total service fees -$4.95
+`;
+
+const BOA_CONTROL_MISMATCH_TEXT = BOA_SECTION_TEXT.replace(
+  'Total deposits and other additions $3,026.00',
+  'Total deposits and other additions $9,999.00'
+);
+
+describe('Bank of America section extraction', () => {
+  it('extracts only the Deposits and other additions section with multiline rows', () => {
+    const extracted = parseBankStatementText(BOA_SECTION_TEXT, 'boa-synthetic.pdf');
+    const deposits = extracted.transactions.filter((tx) => tx.direction === 'in');
+    const total = Math.round(deposits.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+
+    expect(extracted.period.startDate).toBe('2026-07-22');
+    expect(extracted.period.endDate).toBe('2026-08-19');
+    expect(deposits).toHaveLength(11);
+    expect(total).toBe(3026);
+    expect(extractDepositControlTotal(BOA_SECTION_TEXT)).toEqual({ count: null, total: 3026 });
+    expect(extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')).toBe(
+      false
+    );
+  });
+
+  it('stops at Total deposits / Withdrawals and ignores purchases, ATM, fees, and Zelle TO', () => {
+    const extracted = parseBankStatementText(BOA_SECTION_TEXT, 'boa-boundary.pdf');
+    const joined = extracted.transactions.map((tx) => tx.description).join('\n');
+
+    expect(joined).not.toMatch(/HOME DEPOT|APPLE\.COM|TEMU|WITHDRWL|Maintenance Fee|payment to/i);
+    expect(extracted.transactions.every((tx) => tx.direction === 'in')).toBe(true);
+    expect(extracted.transactions.some((tx) => /Zelle payment from/i.test(tx.description))).toBe(
+      true
+    );
+    expect(extracted.transactions.some((tx) => /DAYFORCE/i.test(tx.description))).toBe(true);
+  });
+
+  it('keeps Zelle FROM as deposits and excludes Zelle TO', () => {
+    const extracted = parseBankStatementText(BOA_SECTION_TEXT, 'boa-zelle.pdf');
+    const zelleFrom = extracted.transactions.filter((tx) =>
+      /Zelle payment from/i.test(tx.description)
+    );
+    const zelleTo = extracted.transactions.filter((tx) => /Zelle payment to/i.test(tx.description));
+    const zelleTotal = Math.round(zelleFrom.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+
+    expect(zelleFrom).toHaveLength(9);
+    expect(zelleTotal).toBe(1576);
+    expect(zelleTo).toHaveLength(0);
+  });
+
+  it('reconciles Dayforce payroll deposits separately from P2P', () => {
+    const extracted = parseBankStatementText(BOA_SECTION_TEXT, 'boa-dayforce.pdf');
+    const dayforce = extracted.transactions.filter((tx) => /DAYFORCE/i.test(tx.description));
+    const dayforceTotal = Math.round(dayforce.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+
+    expect(dayforce).toHaveLength(2);
+    expect(dayforceTotal).toBe(1450);
+
+    const analysis = analyzeIncome(extracted.transactions, {
+      documentPeriods: [extracted.period],
+    });
+    expect(analysis.totals.totalDeposits).toBe(3026);
+    expect(analysis.totals.includedDeposits).toBe(3026);
+  });
+
+  it('does not open the deposit section from the account-summary total line', () => {
+    const summaryOnly = `
+Bank of America statement
+for January 1, 2026 to January 31, 2026 Account number: 1111 2222 3333
+Account summary
+Beginning balance on January 1, 2026 $100.00
+Deposits and other additions 500.00
+ATM and debit card subtractions -50.00
+Ending balance on January 31, 2026 $550.00
+Withdrawals and other subtractions
+ATM and debit card subtractions
+01/05/26 PURCHASE 0104 EXAMPLE STORE -25.00
+`;
+    const extracted = parseBankStatementText(summaryOnly, 'boa-summary-only.pdf');
+    // No detail deposit section header => legacy or empty section path must not
+    // promote the summary amount / purchases into deposits.
+    expect(extracted.transactions.some((tx) => /PURCHASE/i.test(tx.description) && tx.direction === 'in')).toBe(
+      false
+    );
+  });
+
+  it('warns when BoA deposit control totals do not match extracted rows', () => {
+    const extracted = parseBankStatementText(BOA_CONTROL_MISMATCH_TEXT, 'boa-mismatch.pdf');
+    expect(extractDepositControlTotal(BOA_CONTROL_MISMATCH_TEXT)).toEqual({
+      count: null,
+      total: 9999,
+    });
+    expect(extracted.transactions).toHaveLength(11);
+    const warning = extracted.warnings.find((item) => item.code === 'deposit_control_mismatch');
+    expect(warning?.message).toMatch(/deposits totaling \$9999\.00/i);
+    expect(warning?.message).toMatch(/extracted 11 deposits totaling \$3026\.00/i);
+  });
+});
