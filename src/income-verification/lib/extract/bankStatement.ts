@@ -18,15 +18,16 @@ import {
 } from './parse';
 import { extractHomeState } from '../analysis/location';
 import type { ExtractedDocument } from './types';
+import { isNavyFederalStatement, parseNavyFederalLedger } from './navyFederal';
 
 const SKIP_LINE =
   /opening balance|closing balance|beginning balance|ending balance|statement period|for the period|page \d|average balance|days in period|date amount description|date description amount|date transaction description|primary account number|account number:/i;
 
 const OUTGOING_HINT =
-  /\b(withdrawal|withdrwl|debit|checkcard|bill pay|payment to|fee|charge|atm with|transfer to|zelle payment to|zel(?:le)?\s+to|pmnt sent|mobile purchase)\b/i;
+  /\b(withdrawal|withdrwl|debit|checkcard|bill pay|payment to|fee|charge|atm with|atm withdrawal|\batmo\b|transfer to|zelle payment to|zel(?:le)?\s+to|zelle\s+db|pos\s+debit|pmnt sent|mobile purchase|paid to)\b/i;
 
 const INCOMING_HINT =
-  /\b(deposit|credit|payroll|direct dep|dayforce|zelle payment from|zelle from|zel from|incoming|wire in|ach|mobile deposit|atm deposit|refund|reversal|reverse ach|instpmntin)\b/i;
+  /\b(deposit|credit|payroll|direct dep|dayforce|zelle payment from|zelle from|zel from|zelle\s+cr|pos\s+credit|incoming|wire in|ach|mobile deposit|atm deposit|refund|reversal|reverse ach|instpmntin|paid from)\b/i;
 
 /** Detail-section headers (not account-summary totals). */
 const DEPOSIT_SECTION_START =
@@ -369,9 +370,11 @@ export function parseBankStatementText(
   const control = extractDepositControlTotal(text);
 
   const sectionMode = hasDepositSection(text);
-  const transactions = sectionMode
-    ? parseDepositSections(lines, fileName, headerPeriod, accountLast4)
-    : parseLegacyLines(lines, fileName, headerPeriod, accountLast4);
+  const transactions = isNavyFederalStatement(text)
+    ? parseNavyFederalLedger(text, fileName, headerPeriod, accountLast4)
+    : sectionMode
+      ? parseDepositSections(lines, fileName, headerPeriod, accountLast4)
+      : parseLegacyLines(lines, fileName, headerPeriod, accountLast4);
 
   if (!transactions.length) {
     warnings.push({

@@ -400,6 +400,175 @@ describe('PNC-style bank statement extraction', () => {
   });
 });
 
+/** Fully synthetic Navy Federal mixed-ledger fixture — no real customer PII. */
+const NFCU_LEDGER_TEXT = `
+Navy Federal Credit Union
+Statement of Account
+Statement Period
+07/17/26 - 08/16/26
+Access No. 10000001
+Previous Deposits/ Withdrawals/ Ending YTD
+Balance Credits Debits Balance Dividends
+Totals $800.00 $8,122.16 $8,285.54 $650.00 $0.00
+EveryDay Checking
+Page 2 of 4
+07-17 Beginning Balance
+07-17 Zelle CR Avery Example
+07-17 Zelle CR Avery Example
+07-17 POS Debit- Debit Card 1111 07-16-26 Example Market Chicago IL
+07-20 Zelle CR Blake Sample
+07-20 ATM Fee - Withdrawal 07-17-26 P100 Chicago IL
+07-20 ATM Withdrawal 07-17-26 Example FCU Chicago IL
+07-21 POS Credit Adjustment 1111 Transaction 07-20-26 Example Credit New York
+07-21 Zelle CR Casey Demo
+07-22 POS Debit - Debit Card 1111 Transaction 07-21-26 Example Cafe Chicago IL
+For JANE Q EXAMPLE
+Date Transaction Detail Amount($) Balance($)
+EveryDay Checking - 7218000001
+Checking
+Joint Owner(s): NONE
+800.00
+40.00 840.00
+132.00 972.00
+35.33 936.67-
+35.00 971.67
+1.00 970.67-
+700.00 270.67-
+9.50 280.17
+20.00 300.17
+41.59 258.58-
+Page 3 of 4
+07-23 Deposit 07-22-26 Example FCU Chicago IL
+07-23 Deposit - ACH Paid From 100001 Example Payroll Co
+07-23 Zelle CR Riley Outgoing
+07-23 Zelle DB Morgan Debit
+07-23 POS Debit- Debit Card 1111 07-22-26 Example Store CA
+08-03 Zelle CR Contoso Cleaners LLC
+08-03 POS Debit- Debit Card 1111 08-01-26 Example Merchant NY
+For JANE Q EXAMPLE
+Date Transaction Detail Amount($) Balance($)
+EveryDay Checking - 7218000001 (Continued from previous page)
+Joint Owner(s): NONE
+120.00 378.58
+175.44 554.02
+290.00 844.02
+2.00 842.02-
+12.12 829.90-
+650.00 1,479.90
+57.11 1,422.79-
+08-16 Ending Balance
+1,422.79
+Items Paid
+Date Item Amount($) Date Item Amount($)
+07-20 ATMO 700.00
+07-20 ATMO 43.00
+08-10 POS 44.57
+08-10 POS 41.92
+08-14 ACH 157.86
+Disclosure Information
+`;
+
+const NFCU_MISMATCH_TEXT = NFCU_LEDGER_TEXT.replace(
+  'Totals $800.00 $8,122.16 $8,285.54 $650.00 $0.00',
+  'Totals $800.00 $9,999.00 $8,285.54 $650.00 $0.00'
+);
+
+describe('Navy Federal mixed-ledger extraction', () => {
+  it('pairs split description/amount columns and keeps only credits', () => {
+    const extracted = parseBankStatementText(NFCU_LEDGER_TEXT, 'nfcu-synthetic.pdf');
+    const credits = extracted.transactions.filter((tx) => tx.direction === 'in');
+    const debits = extracted.transactions.filter((tx) => tx.direction === 'out');
+    const creditTotal =
+      Math.round(credits.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+
+    expect(extracted.period.startDate).toBe('2026-07-17');
+    expect(extracted.period.endDate).toBe('2026-08-16');
+    expect(extractDepositControlTotal(NFCU_LEDGER_TEXT)).toEqual({
+      count: null,
+      total: 8122.16,
+    });
+    expect(credits.some((tx) => /Zelle CR Avery Example/i.test(tx.description))).toBe(true);
+    expect(credits.some((tx) => /POS Credit Adjustment/i.test(tx.description))).toBe(true);
+    expect(credits.some((tx) => /Deposit - ACH Paid From/i.test(tx.description))).toBe(true);
+    expect(debits.some((tx) => /Zelle DB/i.test(tx.description))).toBe(true);
+    expect(debits.some((tx) => /POS Debit/i.test(tx.description))).toBe(true);
+    expect(debits.some((tx) => /ATM Withdrawal/i.test(tx.description))).toBe(true);
+    expect(creditTotal).toBe(1471.94);
+    expect(
+      extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')
+    ).toBe(true);
+  });
+
+  it('never treats Items Paid POS/ATMO/ACH summaries as deposits', () => {
+    const extracted = parseBankStatementText(NFCU_LEDGER_TEXT, 'nfcu-items-paid.pdf');
+    const itemsPaidOnly = extracted.transactions.filter((tx) =>
+      /^(POS|ACH|ATMO)(?:\s|$)/i.test(tx.description) &&
+      !/pos\s+debit|pos\s+credit/i.test(tx.description)
+    );
+    expect(itemsPaidOnly).toHaveLength(0);
+    expect(extracted.transactions.some((tx) => /\bATMO\b/i.test(tx.description))).toBe(false);
+    expect(
+      extracted.transactions.filter((tx) => tx.direction === 'in').every((tx) => tx.amount > 0)
+    ).toBe(true);
+  });
+
+  it('distinguishes Zelle CR from Zelle DB using descriptors and trailing-minus amounts', () => {
+    const extracted = parseBankStatementText(NFCU_LEDGER_TEXT, 'nfcu-zelle.pdf');
+    const zelleCr = extracted.transactions.filter(
+      (tx) => tx.direction === 'in' && /Zelle CR/i.test(tx.description)
+    );
+    const zelleDb = extracted.transactions.filter(
+      (tx) => tx.direction === 'out' && /Zelle DB/i.test(tx.description)
+    );
+    expect(zelleCr.length).toBeGreaterThan(0);
+    expect(zelleDb.length).toBeGreaterThan(0);
+    expect(zelleCr.every((tx) => tx.direction === 'in')).toBe(true);
+    expect(zelleDb.every((tx) => tx.direction === 'out')).toBe(true);
+  });
+
+  it('warns when Navy Federal Deposits/Credits control totals do not match', () => {
+    const extracted = parseBankStatementText(NFCU_MISMATCH_TEXT, 'nfcu-mismatch.pdf');
+    expect(extractDepositControlTotal(NFCU_MISMATCH_TEXT)).toEqual({
+      count: null,
+      total: 9999,
+    });
+    const warning = extracted.warnings.find((item) => item.code === 'deposit_control_mismatch');
+    expect(warning?.message).toMatch(/deposits totaling \$9999\.00/i);
+  });
+
+  it('merges wrap-line merchant fragments before pairing with amount columns', () => {
+    const wrapped = NFCU_LEDGER_TEXT.replace(
+      '07-17 POS Debit- Debit Card 1111 07-16-26 Example Market Chicago IL',
+      '07-17 POS Debit- Debit Card 1111 07-16-26 Example Market Chicago\nIL'
+    );
+    const extracted = parseBankStatementText(wrapped, 'nfcu-wrap.pdf');
+    const debit = extracted.transactions.find((tx) =>
+      /Example Market Chicago IL/i.test(tx.description)
+    );
+    expect(debit?.direction).toBe('out');
+    expect(debit?.amount).toBe(35.33);
+  });
+
+  it('reconciles when statement Deposits/Credits control matches extracted credits', () => {
+    // Control total set to the synthetic fixture's known credit sum ($1,471.94).
+    const reconciled = NFCU_LEDGER_TEXT.replace(
+      'Totals $800.00 $8,122.16 $8,285.54 $650.00 $0.00',
+      'Totals $800.00 $1,471.94 $8,285.54 $650.00 $0.00'
+    );
+    const extracted = parseBankStatementText(reconciled, 'nfcu-reconciled.pdf');
+    const creditTotal =
+      Math.round(
+        extracted.transactions
+          .filter((tx) => tx.direction === 'in')
+          .reduce((sum, tx) => sum + tx.amount, 0) * 100
+      ) / 100;
+    expect(creditTotal).toBe(1471.94);
+    expect(
+      extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')
+    ).toBe(false);
+  });
+});
+
 /** Fully synthetic Bank of America fixture — no real customer PII. */
 const BOA_SECTION_TEXT = `
 Customer service information

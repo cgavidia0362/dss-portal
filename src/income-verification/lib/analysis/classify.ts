@@ -52,9 +52,9 @@ const REFUND_MARKERS = [
   'REVERSAL',
   'CHARGEBACK',
   'TEMPORARY CREDIT ADJUSTMENT',
+  'CREDIT ADJUSTMENT',
   'RETURNED',
 ];
-
 function makeClassification(
   category: DepositCategory,
   subcategory: string | null,

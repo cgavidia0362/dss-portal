@@ -242,6 +242,31 @@ export function extractDepositControlTotal(
     if (total != null) return { count: null, total };
   }
 
+  // Navy Federal account summary:
+  // Previous Balance | Deposits/Credits | Withdrawals/Debits | Ending Balance
+  // Totals $818.21 $8,122.16 $8,285.54 $654.83 ...
+  const nfcuTotals =
+    /totals\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})/i.exec(
+      compact
+    );
+  if (nfcuTotals && /deposits\s*\/\s*credits|navy federal|nfcu|everyday checking/i.test(text)) {
+    const total = parseAmount(nfcuTotals[2]);
+    if (total != null) return { count: null, total };
+  }
+
+  // Navy Federal per-account row near summary: account $prev $credits $debits $ending
+  const nfcuRow =
+    /\b\d{6,}\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})/i.exec(
+      compact
+    );
+  if (
+    nfcuRow &&
+    /navy federal|nfcu|everyday checking|deposits\s*\/\s*credits/i.test(text.slice(0, 6000))
+  ) {
+    const total = parseAmount(nfcuRow[2]);
+    if (total != null) return { count: null, total };
+  }
+
   // Bank of America account summary (only when detail footer is absent).
   const boaSummary =
     /(?:^|[.!\n])\s*deposits and other additions\s+\$?([\d,]+\.\d{2})\b/i.exec(
@@ -249,7 +274,6 @@ export function extractDepositControlTotal(
     ) ||
     /\bdeposits and other additions\s+\$?([\d,]+\.\d{2})\b/i.exec(compact);
   if (boaSummary) {
-    // Prefer the summary amount only when it is not the detail-section title alone.
     const total = parseAmount(boaSummary[1]);
     if (total != null) return { count: null, total };
   }
