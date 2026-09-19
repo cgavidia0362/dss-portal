@@ -4,11 +4,13 @@ import { parseBankStatementText } from '../bankStatement';
 import { parseCsvText } from '../csv';
 import { detectDocumentType } from '../detect';
 import {
+  extractChaseAccountDepositControls,
   extractDepositControlTotal,
   parseFlexibleDate,
   parseStatementPeriod,
   resolveMonthDayDate,
 } from '../parse';
+import { classifyTransaction } from '../../analysis/classify';
 import { parseTurboPassText } from '../turbopass';
 
 /** Fully synthetic PNC-style fixture — no real customer data. */
@@ -307,6 +309,18 @@ describe('statement period parsing', () => {
       startDate: '2026-07-21',
       endDate: '2026-08-20',
     });
+  });
+
+  it('reads Spanish month named ranges including accented OCR variants', () => {
+    expect(parseStatementPeriod('Julio 16, 2026 a Agosto 17, 2026')).toEqual({
+      startDate: '2026-07-16',
+      endDate: '2026-08-17',
+    });
+    expect(parseStatementPeriod('Enero 1, 2026 a Febrero 28, 2026')).toEqual({
+      startDate: '2026-01-01',
+      endDate: '2026-02-28',
+    });
+    expect(parseFlexibleDate('Septiembre 5, 2026')).toBe('2026-09-05');
   });
 });
 
@@ -718,5 +732,136 @@ ATM and debit card subtractions
     const warning = extracted.warnings.find((item) => item.code === 'deposit_control_mismatch');
     expect(warning?.message).toMatch(/deposits totaling \$9999\.00/i);
     expect(warning?.message).toMatch(/extracted 11 deposits totaling \$3026\.00/i);
+  });
+});
+
+/** Fully synthetic Chase Spanish mixed-ledger fixture — no real customer PII. */
+const CHASE_ES_TEXT = `
+JPMorgan Chase Bank, N.A.
+Julio 16, 2026 a Agosto 17, 2026
+Chase.com
+Cuentas de cheques y de ahorro
+Chase Total Checking 000000711309999 -$4.21 $100.00
+Chase Savings 000005070665888 30.00 80.00
+Depósitos y Adiciones 8,776.00
+Retiros de cajeros automáticos y
+compras con tarjeta de débito -100.00
+Retiros Electrónicos -50.00
+Otros retiros -25.00
+Cargos -15.00
+CHASE TOTAL CHECKING
+RESUMEN DE CUENTA DE CHEQUES
+000000711309999
+2 de 4 Página
+FECHA DESCRIPCIÓN CANTIDAD SALDO
+Julio 16, 2026 a Agosto 17, 2026
+Cuenta Principal:
+Saldo inicial -$4.21
+10.00
+1,350.00
+500.00
+75.00
+07/16 DepÓsito preautorizado. Online transfer from sav ...5888 Transaction#:
+30027542922 5.79
+07/16 Compra con tarjeta con pin. Card purchase with pin 07/16 example store
+IL card 1870 -4.33 1.46
+07/20 DepÓsito quickpay por internet. Zelle payment from example roofing corp.
+30075819083 1,351.46
+07/20 Retiro quickpay por internet. Zelle payment to example payee 30077664751 -143.00 1,208.46
+07/20 Retiro en cajero automÁtico que no sea de chase. ATM withdrawal
+07/19 1000 example st chicago IL card 1870 -60.00 1,148.46
+07/27 DepÓsito en efectivo en cajero automÁtico. ATM cash deposit 07/27
+1000 example st chicago IL card 1870 1,648.46
+07/27 DepÓsito quickpay por internet. Zelle payment from blake sample
+30162192404 1,723.46
+07/28 Transferencia a cuenta de ahorro. Online transfer to sav ...5888
+Transaction#: 30173722729 -25.00 1,698.46
+08/17 Pago enviado. Payment sent 08/17 rmtly* example remitly.Com
+WA card 1870 -24.04 1,674.42
+08/17 Cargo mensual por servicio. Monthly service fee -15.00 1,659.42
+DETALLE DE TRANSACCIONES (continuación)
+000005070665888
+000000711309999
+FECHA DESCRIPCIÓN CANTIDAD SALDO
+Julio 16, 2026 a Agosto 17, 2026
+Saldo inicial $30.00
+25.00
+25.00
+Saldo final $80.00
+Depósitos y Adiciones 175.00
+Retiros Electrónicos -75.00
+07/16 07/16 pago preautorizado. Online transfer to chk ...9999 Transaction#:
+30027542922 -10.00 20.00
+07/20 DepÓsito preautorizado. Online transfer from chk ...9999 Transaction#:
+30075885158 45.00
+07/21 Transferencia desde cuenta de cheques. Online transfer from chk ...9999
+Transaction#: 30089569349 70.00
+CHASE SAVINGS
+RESUMEN DE CUENTA DE AHORROS
+`;
+
+const CHASE_ES_MISMATCH_TEXT = CHASE_ES_TEXT.replace(
+  'Depósitos y Adiciones 8,776.00',
+  'Depósitos y Adiciones 9,999.00'
+);
+
+describe('Chase Spanish statement extraction', () => {
+  it('parses Spanish headings, split amount columns, and per-account controls', () => {
+    const extracted = parseBankStatementText(CHASE_ES_TEXT, 'chase-es-synthetic.pdf');
+    const credits = extracted.transactions.filter((tx) => tx.direction === 'in');
+    const outs = extracted.transactions.filter((tx) => tx.direction === 'out');
+    const checking = credits.filter((tx) => tx.sourceAccount === '9999');
+    const savings = credits.filter((tx) => tx.sourceAccount === '5888');
+    const checkingTotal =
+      Math.round(checking.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+    const savingsTotal =
+      Math.round(savings.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+
+    expect(extracted.period.startDate).toBe('2026-07-16');
+    expect(extracted.period.endDate).toBe('2026-08-17');
+    expect(extractChaseAccountDepositControls(CHASE_ES_TEXT)).toEqual([
+      { accountLast4: '9999', accountLabel: 'Chase Total Checking', total: 8776 },
+      { accountLast4: '5888', accountLabel: 'Chase Savings', total: 175 },
+    ]);
+    expect(checkingTotal).toBe(1935);
+    expect(savingsTotal).toBe(50);
+    expect(credits.some((tx) => /Zelle payment from/i.test(tx.description))).toBe(true);
+    expect(credits.some((tx) => /ATM cash deposit/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /Zelle payment to/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /Card purchase|Compra con tarjeta/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /ATM withdrawal/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /Payment sent|Pago enviado/i.test(tx.description))).toBe(true);
+    expect(credits.some((tx) => /Zelle payment to/i.test(tx.description))).toBe(false);
+    expect(
+      extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')
+    ).toBe(true);
+  });
+
+  it('recognizes accent-folded Spanish deposit section labels', () => {
+    const extracted = parseBankStatementText(
+      CHASE_ES_TEXT.replace(/Depósitos y Adiciones/g, 'DEPOSITOS Y ADICIONES'),
+      'chase-es-ocr.pdf'
+    );
+    expect(extracted.transactions.some((tx) => tx.direction === 'in')).toBe(true);
+  });
+
+  it('categorizes savings transfers from checking as account transfers', () => {
+    const extracted = parseBankStatementText(CHASE_ES_TEXT, 'chase-es-xfer.pdf');
+    const savingsCredits = extracted.transactions.filter(
+      (tx) => tx.direction === 'in' && tx.sourceAccount === '5888'
+    );
+    expect(savingsCredits.length).toBeGreaterThan(0);
+    expect(
+      savingsCredits.every(
+        (tx) => classifyTransaction(tx).category === 'account_transfer'
+      )
+    ).toBe(true);
+  });
+
+  it('warns when Chase per-account Depósitos y Adiciones totals do not match', () => {
+    const extracted = parseBankStatementText(CHASE_ES_MISMATCH_TEXT, 'chase-es-mismatch.pdf');
+    const warning = extracted.warnings.find((item) => item.code === 'deposit_control_mismatch');
+    expect(warning?.message).toMatch(/Chase Total Checking/i);
+    expect(warning?.message).toMatch(/\$9999\.00/i);
   });
 });

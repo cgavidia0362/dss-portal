@@ -11,6 +11,8 @@ import {
   extractAmounts,
   extractDates,
   extractDepositControlTotal,
+  extractChaseAccountDepositControls,
+  foldBankText,
   parseAmount,
   parseStatementPeriod,
   stripAmountTokens,
@@ -19,22 +21,23 @@ import {
 import { extractHomeState } from '../analysis/location';
 import type { ExtractedDocument } from './types';
 import { isNavyFederalStatement, parseNavyFederalLedger } from './navyFederal';
+import { isChaseStatement, parseChaseLedger } from './chase';
 
 const SKIP_LINE =
   /opening balance|closing balance|beginning balance|ending balance|statement period|for the period|page \d|average balance|days in period|date amount description|date description amount|date transaction description|primary account number|account number:/i;
 
 const OUTGOING_HINT =
-  /\b(withdrawal|withdrwl|debit|checkcard|bill pay|payment to|fee|charge|atm with|atm withdrawal|\batmo\b|transfer to|zelle payment to|zel(?:le)?\s+to|zelle\s+db|pos\s+debit|pmnt sent|mobile purchase|paid to)\b/i;
+  /\b(withdrawal|withdrwl|debit|checkcard|bill pay|payment to|fee|charge|atm with|atm withdrawal|\batmo\b|transfer to|zelle payment to|zel(?:le)?\s+to|zelle\s+db|pos\s+debit|pmnt sent|mobile purchase|paid to|retiro|compra con tarjeta|pago enviado)\b/i;
 
 const INCOMING_HINT =
-  /\b(deposit|credit|payroll|direct dep|dayforce|zelle payment from|zelle from|zel from|zelle\s+cr|pos\s+credit|incoming|wire in|ach|mobile deposit|atm deposit|refund|reversal|reverse ach|instpmntin|paid from)\b/i;
+  /\b(deposit|credit|payroll|direct dep|dayforce|zelle payment from|zelle from|zel from|zelle\s+cr|pos\s+credit|incoming|wire in|ach|mobile deposit|atm deposit|refund|reversal|reverse ach|instpmntin|paid from|deposito)\b/i;
 
 /** Detail-section headers (not account-summary totals). */
 const DEPOSIT_SECTION_START =
-  /deposits and other additions|\bdeposits?\s+and\s+credits\b|^\s*deposits\s*$/i;
+  /deposits and other additions|\bdeposits?\s+and\s+credits\b|^\s*deposits\s*$|depositos y adiciones/i;
 
 const DEPOSIT_SECTION_END =
-  /total deposits and other additions|withdrawals and other subtractions|atm and debit card subtractions|other subtractions|service fees|banking\s*\/?\s*debit card withdrawals|withdrawals and purchases|checks and other deductions|other deductions|online and electronic banking deductions|electronic (?:banking )?withdrawals|fees?\s+and\s+charges|daily balance summary|^\s*checks\s*$/i;
+  /total deposits and other additions|withdrawals and other subtractions|atm and debit card subtractions|other subtractions|service fees|banking\s*\/?\s*debit card withdrawals|withdrawals and purchases|checks and other deductions|other deductions|online and electronic banking deductions|electronic (?:banking )?withdrawals|fees?\s+and\s+charges|daily balance summary|^\s*checks\s*$|retiros de cajeros automaticos|retiros electronicos|otros retiros|^\s*cargos\s*$/i;
 
 const SECTION_CONTINUE_ONLY = /^\s*-\s*continued\s*$/i;
 
@@ -77,10 +80,14 @@ function stripDateAndAmounts(line: string): string {
  * "Deposits and other additions 3,026.00" must not open the detail section.
  */
 function isDepositSectionHeader(line: string): boolean {
-  if (!DEPOSIT_SECTION_START.test(line)) return false;
-  const remainder = line
+  const folded = foldBankText(line);
+  if (!DEPOSIT_SECTION_START.test(folded) && !DEPOSIT_SECTION_START.test(line)) {
+    return false;
+  }
+  const remainder = foldBankText(line)
     .replace(/deposits and other additions/i, ' ')
     .replace(/\bdeposits?\s+and\s+credits\b/i, ' ')
+    .replace(/depositos y adiciones/i, ' ')
     .replace(/^\s*deposits\s*$/i, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -93,8 +100,9 @@ function isDepositSectionHeader(line: string): boolean {
 }
 
 function isDepositSectionEnd(line: string): boolean {
-  if (DEPOSIT_SECTION_START.test(line) && isDepositSectionHeader(line)) return false;
-  return DEPOSIT_SECTION_END.test(line);
+  if (isDepositSectionHeader(line)) return false;
+  const folded = foldBankText(line);
+  return DEPOSIT_SECTION_END.test(folded) || DEPOSIT_SECTION_END.test(line);
 }
 
 function hasDepositSection(text: string): boolean {
@@ -370,11 +378,14 @@ export function parseBankStatementText(
   const control = extractDepositControlTotal(text);
 
   const sectionMode = hasDepositSection(text);
-  const transactions = isNavyFederalStatement(text)
-    ? parseNavyFederalLedger(text, fileName, headerPeriod, accountLast4)
-    : sectionMode
-      ? parseDepositSections(lines, fileName, headerPeriod, accountLast4)
-      : parseLegacyLines(lines, fileName, headerPeriod, accountLast4);
+  const chaseMode = isChaseStatement(text);
+  const transactions = chaseMode
+    ? parseChaseLedger(text, fileName, headerPeriod, accountLast4)
+    : isNavyFederalStatement(text)
+      ? parseNavyFederalLedger(text, fileName, headerPeriod, accountLast4)
+      : sectionMode
+        ? parseDepositSections(lines, fileName, headerPeriod, accountLast4)
+        : parseLegacyLines(lines, fileName, headerPeriod, accountLast4);
 
   if (!transactions.length) {
     warnings.push({
@@ -384,7 +395,27 @@ export function parseBankStatementText(
     });
   }
 
-  if (control) {
+  const chaseControls = chaseMode ? extractChaseAccountDepositControls(text) : [];
+  if (chaseControls.length) {
+    for (const accountControl of chaseControls) {
+      const depositTxs = transactions.filter(
+        (tx) =>
+          tx.direction === 'in' &&
+          (accountControl.accountLast4 == null ||
+            tx.sourceAccount === accountControl.accountLast4)
+      );
+      const extractedTotal = roundMoney(
+        depositTxs.reduce((sum, tx) => sum + tx.amount, 0)
+      );
+      if (!amountsEqual(extractedTotal, accountControl.total)) {
+        warnings.push({
+          code: 'deposit_control_mismatch',
+          message: `Deposit control total mismatch in ${fileName} (${accountControl.accountLabel}): statement reports deposits totaling $${accountControl.total.toFixed(2)}, but extracted ${depositTxs.length} deposits totaling $${extractedTotal.toFixed(2)}.`,
+          documentName: fileName,
+        });
+      }
+    }
+  } else if (control) {
     const depositTxs = transactions.filter((tx) => tx.direction === 'in');
     const extractedTotal = roundMoney(
       depositTxs.reduce((sum, tx) => sum + tx.amount, 0)

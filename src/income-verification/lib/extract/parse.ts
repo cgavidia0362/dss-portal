@@ -30,7 +30,37 @@ const MONTH_NAMES: Record<string, number> = {
   oct: 10,
   nov: 11,
   dec: 12,
+  // Spanish (accented forms normalize via foldBankText)
+  enero: 1,
+  febrero: 2,
+  marzo: 3,
+  abril: 4,
+  mayo: 5,
+  junio: 6,
+  julio: 7,
+  agosto: 8,
+  septiembre: 9,
+  setiembre: 9,
+  octubre: 10,
+  noviembre: 11,
+  diciembre: 12,
 };
+
+const ENGLISH_MONTH_ALT =
+  'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
+
+const SPANISH_MONTH_ALT =
+  'Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Setiembre|Octubre|Noviembre|Diciembre';
+
+const NAMED_MONTH_ALT = `${ENGLISH_MONTH_ALT}|${SPANISH_MONTH_ALT}`;
+
+/** Fold accents/case for bank OCR text (DepÓsito → deposito). */
+export function foldBankText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase();
+}
 
 export function parseAmount(raw: string): number | null {
   const trimmed = raw.trim();
@@ -48,7 +78,9 @@ function amountTokenPattern(): RegExp {
 }
 
 export function extractAmounts(line: string): number[] {
-  const matches = line.match(amountTokenPattern()) ?? [];
+  // OCR sometimes inserts a space after a leading minus: "- 1,000.00"
+  const normalized = line.replace(/-\s+(\$?\d)/g, '-$1');
+  const matches = normalized.match(amountTokenPattern()) ?? [];
   return matches
     .map((match) => parseAmount(match))
     .filter((amount): amount is number => amount !== null && amount !== 0);
@@ -135,12 +167,13 @@ export function parseFlexibleDate(
     return resolveMonthDayDate(month, day, period, contextYear);
   }
 
-  const named =
-    /^(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})$/i.exec(
-      value
-    );
+  const named = new RegExp(
+    `^(${NAMED_MONTH_ALT})\\s+(\\d{1,2}),?\\s+(\\d{4})$`,
+    'i'
+  ).exec(value);
   if (named) {
-    const month = MONTH_NAMES[named[1].toLowerCase()];
+    const month = MONTH_NAMES[foldBankText(named[1])];
+    if (!month) return null;
     try {
       return toIsoDate(Number(named[3]), month, Number(named[2]));
     } catch {
@@ -160,7 +193,7 @@ export function extractDates(
   const patterns = [
     /\b\d{4}-\d{2}-\d{2}\b/g,
     /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/g,
-    /\b(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}\b/gi,
+    new RegExp(`\\b(?:${NAMED_MONTH_ALT})\\s+\\d{1,2},?\\s+\\d{4}\\b`, 'gi'),
     // MM/DD without year (must not consume the MM/DD prefix of MM/DD/YYYY)
     /\b\d{1,2}\/\d{1,2}(?!\/\d)/g,
     /\b\d{1,2}-\d{1,2}(?!-\d)/g,
@@ -178,24 +211,31 @@ export function extractDates(
 
 export function parseStatementPeriod(text: string): StatementPeriod | null {
   const normalized = text.replace(/\u2013|\u2014/g, '-');
+  const namedRange = new RegExp(
+    `(${NAMED_MONTH_ALT})\\s+(\\d{1,2}),?\\s+(\\d{4})\\s*(?:-|–|—|a|al|to|through)\\s*(${NAMED_MONTH_ALT})\\s+(\\d{1,2}),?\\s+(\\d{4})`,
+    'i'
+  );
+  const namedMatch = namedRange.exec(normalized);
+  if (namedMatch) {
+    const start = parseFlexibleDate(
+      `${namedMatch[1]} ${namedMatch[2]}, ${namedMatch[3]}`
+    );
+    const end = parseFlexibleDate(
+      `${namedMatch[4]} ${namedMatch[5]}, ${namedMatch[6]}`
+    );
+    if (start && end && start <= end) return { startDate: start, endDate: end };
+  }
+
   const patterns = [
     /statement\s+period[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:-|to|through)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
     /for\s+the\s+period\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:-|to|through)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
     /period[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:-|to|through)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
     /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:-|to|through)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/,
-    /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\s*(?:-|to|through)\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i,
   ];
 
   for (const pattern of patterns) {
     const match = pattern.exec(normalized);
     if (!match) continue;
-
-    if (match[1] && match[2] && MONTH_NAMES[match[1].toLowerCase()]) {
-      const start = parseFlexibleDate(match[0].split(/-|to|through/i)[0].trim());
-      const end = parseFlexibleDate(match[0].split(/-|to|through/i).pop()!.trim());
-      if (start && end && start <= end) return { startDate: start, endDate: end };
-      continue;
-    }
 
     const start = parseFlexibleDate(match[1]);
     const end = parseFlexibleDate(match[2]);
@@ -278,7 +318,86 @@ export function extractDepositControlTotal(
     if (total != null) return { count: null, total };
   }
 
+  // Chase Spanish / bilingual summary (single-account fallback).
+  const chaseEs =
+    /depositos y adiciones\s+\$?([\d,]+\.\d{2})/i.exec(foldBankText(compact));
+  if (chaseEs) {
+    const total = parseAmount(chaseEs[1]);
+    if (total != null) return { count: null, total };
+  }
+
   return null;
+}
+
+export type ChaseAccountDepositControl = {
+  accountLast4: string | null;
+  accountLabel: string;
+  total: number;
+};
+
+/**
+ * Per-account Chase "Depósitos y Adiciones" / "Deposits and other additions"
+ * control totals. Checking and savings are kept separate.
+ */
+export function extractChaseAccountDepositControls(
+  text: string
+): ChaseAccountDepositControl[] {
+  const lines = text.split(/\r?\n/);
+  const controls: ChaseAccountDepositControl[] = [];
+
+  const checkingMatch = /chase total checking\s+(\d+)/i.exec(text);
+  const savingsMatch = /chase savings\s+(\d+)/i.exec(text);
+  const checkingLast4 = checkingMatch?.[1].slice(-4) ?? null;
+  const savingsLast4 = savingsMatch?.[1].slice(-4) ?? null;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const trimmed = lines[i]?.trim() ?? '';
+    const folded = foldBankText(trimmed);
+    const depositTotal =
+      /depositos y adiciones\s+\$?([\d,]+\.\d{2})/i.exec(folded) ||
+      /deposits and other additions\s+\$?([\d,]+\.\d{2})/i.exec(trimmed);
+    if (!depositTotal) continue;
+    const total = parseAmount(depositTotal[1]);
+    if (total == null) continue;
+
+    const window = lines
+      .slice(i, i + 40)
+      .map((line) => foldBankText(line))
+      .join('\n');
+
+    let accountLabel = 'Chase Total Checking';
+    let accountLast4 = checkingLast4;
+    if (
+      /resumen de cuenta de ahorros/.test(window) ||
+      (/chase savings/.test(window) && !/resumen de cuenta de cheques/.test(window))
+    ) {
+      accountLabel = 'Chase Savings';
+      accountLast4 = savingsLast4;
+    } else if (/resumen de cuenta de cheques|chase total checking/.test(window)) {
+      accountLabel = 'Chase Total Checking';
+      accountLast4 = checkingLast4;
+    } else if (controls.some((c) => c.accountLabel === 'Chase Total Checking')) {
+      accountLabel = 'Chase Savings';
+      accountLast4 = savingsLast4;
+    }
+
+    // Avoid double-counting identical account controls.
+    if (
+      controls.some(
+        (c) => c.accountLabel === accountLabel && amountsEqualish(c.total, total)
+      )
+    ) {
+      continue;
+    }
+
+    controls.push({ accountLast4, accountLabel, total });
+  }
+
+  return controls;
+}
+
+function amountsEqualish(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.005;
 }
 
 export function isFullCalendarMonth(startDate: string, endDate: string): boolean {
