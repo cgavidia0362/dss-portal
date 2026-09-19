@@ -17,7 +17,7 @@ export function AppShell({
 }) {
   return (
     <div className="min-h-[calc(100vh-3.5rem)] bg-[#f4f6f8] text-slate-900">
-      <header className="iv-no-print border-b border-slate-800 bg-slate-900 text-white">
+      <header className="iv-no-print border-b border-white/10 bg-dss-navy text-white">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-6 py-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
