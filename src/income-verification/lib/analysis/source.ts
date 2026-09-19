@@ -102,7 +102,15 @@ export function stripSourceNoise(value: string): string {
   text = text.replace(/\bxxxxx?\d+\b/gi, ' ');
   text = text.replace(/\bconf(?:irmation)?(?:\s*(?:#|no\.?|num(?:ber)?)?)?\s*[a-z0-9]+\b/gi, ' ');
   text = text.replace(/\bconf#\s*\S+/gi, ' ');
-  text = text.replace(/\b(?:txn|trans(?:action)?)\s*(?:id|#|:)\s*[a-z0-9-]+\b/gi, ' ');
+  // Chase / bank refs: "Transaction#: 30027542922", "Txn ID 123", bare 8+ digit IDs
+  text = text.replace(
+    /\btrans(?:action)?\s*#?\s*:?\s*[a-z0-9-]+\b/gi,
+    ' '
+  );
+  text = text.replace(/\b(?:txn|ref(?:erence)?)\s*(?:id|#|:)?\s*[a-z0-9-]+\b/gi, ' ');
+  text = text.replace(/\b\d{8,}\b/g, ' ');
+  // Processor / QuickPay style tokens (e.g. jpm99cqor9JC, bacqoiqyb2ja)
+  text = text.replace(/\b(?:jpm|bac|wfct|bacq)[a-z0-9]{6,}\b/gi, ' ');
   text = text.replace(/\bco\s*id:\s*\S+/gi, ' ');
   text = text.replace(/\bid:\s*\S+/gi, ' ');
   text = text.replace(/\bindn:\s*[^\s]+(?:\s+[^\s]+)?/gi, ' ');
@@ -113,8 +121,15 @@ export function stripSourceNoise(value: string): string {
 }
 
 function nameFromCapture(raw: string): string | null {
-  const cut = raw.split(/\b(?:for|conf(?:irmation)?|note|memo|ref(?:erence)?)\b/i)[0] ?? raw;
-  const cleaned = stripSuffixes(stripSourceNoise(cut));
+  const cut =
+    raw.split(
+      /\b(?:for|conf(?:irmation)?|note|memo|ref(?:erence)?|transaction|txn)\b/i
+    )[0] ?? raw;
+  // Keep Inc/LLC/Corp on business senders; only drop ACH/payroll markers.
+  let cleaned = stripSourceNoise(cut).replace(/\.+$/g, '').trim();
+  for (const suffix of ['PAYROLL', 'DIRECT DEP', 'DIRECT DEPOSIT', 'PPD', 'CCD']) {
+    cleaned = cleaned.replace(new RegExp(`\\s+${suffix}$`, 'i'), '').trim();
+  }
   return cleaned || null;
 }
 
@@ -210,11 +225,31 @@ function parseProcessorPayroll(text: string): ParsedIncomeSource | null {
   return { source: match[1].toUpperCase(), confidence: 0.7 };
 }
 
+function normalizeTransferOrigin(raw: string): string {
+  let origin = stripSuffixes(stripSourceNoise(raw));
+  origin = origin
+    .replace(/\bsav(?:ings)?\b/gi, 'Savings')
+    .replace(/\bchk(?:ing)?\b/gi, 'Checking')
+    .replace(/\bcuenta de ahorro\b/gi, 'Savings')
+    .replace(/\bcuenta de cheques\b/gi, 'Checking');
+  // Preserve masked account tails like "...5296"
+  origin = collapse(origin);
+  return origin;
+}
+
 function parseTransfer(text: string): ParsedIncomeSource | null {
   const from = /(?:online\s+)?transfer\s+from\s+(.+)/i.exec(text);
   if (from) {
-    const origin = stripSuffixes(stripSourceNoise(from[1]));
+    const origin = normalizeTransferOrigin(from[1]);
     if (origin) return { source: `Transfer from ${titleCaseSource(origin)}`, confidence: 0.9 };
+    return { source: 'Account Transfer', confidence: 0.6 };
+  }
+  const fundsFrom =
+    /funds transfer frm(?:\s+dep)?\s+(.+)/i.exec(text) ||
+    /funds transfer from(?:\s+dep)?\s+(.+)/i.exec(text);
+  if (fundsFrom) {
+    const origin = normalizeTransferOrigin(fundsFrom[1]);
+    if (origin) return { source: `Transfer from ${titleCaseSource(origin)}`, confidence: 0.88 };
     return { source: 'Account Transfer', confidence: 0.6 };
   }
   const internal = /\binternal transfers?\b/i.test(text);

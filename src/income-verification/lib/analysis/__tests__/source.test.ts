@@ -186,4 +186,114 @@ describe('source grouping', () => {
     expect(analysis.sources[0]?.count).toBe(2);
     expect(analysis.totals.includedDeposits).toBe(2650.2);
   });
+
+  it('groups Chase Zelle senders across different transaction IDs without merging deposits', () => {
+    const analysis = analyzeIncome([
+      tx({
+        id: 'c1',
+        date: '2026-07-20',
+        amount: 1350,
+        description:
+          'Depósito quickpay por internet. Zelle payment from jed roofing corp. 30075819083',
+        rawDescription:
+          '07/20 Depósito quickpay por internet. Zelle payment from jed roofing corp. | 30075819083 1,371.46',
+      }),
+      tx({
+        id: 'c2',
+        date: '2026-07-27',
+        amount: 1250,
+        description:
+          'Depósito quickpay por internet. Zelle payment from jed roofing corp. 30162192404',
+      }),
+      tx({
+        id: 'c3',
+        date: '2026-08-03',
+        amount: 750,
+        description:
+          'Depósito quickpay por internet. Zelle payment from jed roofing corp. 30254388093',
+      }),
+      tx({
+        id: 'c4',
+        date: '2026-07-20',
+        amount: 75,
+        description:
+          'Depósito quickpay por internet. Zelle payment from fernando coraizaca 30066842205',
+      }),
+      tx({
+        id: 'c5',
+        date: '2026-08-03',
+        amount: 40,
+        description:
+          'Depósito quickpay por internet. Zelle payment from fernando coraizaca 30245794820',
+      }),
+    ]);
+
+    expect(analysis.transactions).toHaveLength(5);
+    expect(analysis.totals.includedDeposits).toBe(3465);
+    const jed = analysis.sources.find((source) => /Jed Roofing/i.test(source.source));
+    const fernando = analysis.sources.find((source) => /Fernando Coraizaca/i.test(source.source));
+    expect(jed?.count).toBe(3);
+    expect(jed?.totalDeposits).toBe(3350);
+    expect(fernando?.count).toBe(2);
+    expect(fernando?.totalDeposits).toBe(115);
+    expect(jed?.source).not.toMatch(/\d{8,}/);
+    expect(fernando?.source).not.toMatch(/\d{8,}/);
+    // Transaction IDs remain in raw/description metadata, not the source key.
+    expect(analysis.transactions[0]?.rawDescription).toMatch(/30075819083/);
+    expect(analysis.transactions[0]?.description).toMatch(/30075819083/);
+    expect(analysis.transactions.map((item) => item.id).sort()).toEqual([
+      'c1',
+      'c2',
+      'c3',
+      'c4',
+      'c5',
+    ]);
+  });
+
+  it('groups Chase savings/checking transfer origins without transaction numbers', () => {
+    const analysis = analyzeIncome([
+      tx({
+        id: 't1',
+        date: '2026-07-16',
+        amount: 10,
+        description:
+          'Depósito preautorizado. Online transfer from sav ...5296 Transaction#: 30027542922',
+      }),
+      tx({
+        id: 't2',
+        date: '2026-07-17',
+        amount: 20,
+        description:
+          'Depósito preautorizado. Online transfer from sav ...5296 Transaction#: 30042619291',
+      }),
+      tx({
+        id: 't3',
+        date: '2026-07-21',
+        amount: 25,
+        description:
+          'Transferencia desde cuenta de cheques. Online transfer from chk ...9727 Transaction#: 30089569349',
+      }),
+      tx({
+        id: 't4',
+        date: '2026-07-28',
+        amount: 25,
+        description:
+          'Transferencia desde cuenta de cheques. Online transfer from chk ...9727 Transaction#: 30173722729',
+      }),
+    ]);
+
+    expect(analysis.transactions).toHaveLength(4);
+    expect(analysis.totals.includedDeposits).toBe(80);
+    const savings = analysis.sources.find((source) => /Savings/i.test(source.source));
+    const checking = analysis.sources.find((source) => /Checking/i.test(source.source));
+    expect(savings?.count).toBe(2);
+    expect(savings?.totalDeposits).toBe(30);
+    expect(checking?.count).toBe(2);
+    expect(checking?.totalDeposits).toBe(50);
+    expect(savings?.source).toMatch(/Transfer from Savings/i);
+    expect(savings?.source).toMatch(/\.\.\.5296/);
+    expect(savings?.source).not.toMatch(/Transaction|30027542922/i);
+    expect(checking?.source).not.toMatch(/Transaction|30089569349/i);
+    expect(analysis.transactions[0]?.description).toMatch(/30027542922/);
+  });
 });
