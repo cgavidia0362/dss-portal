@@ -865,3 +865,194 @@ describe('Chase Spanish statement extraction', () => {
     expect(warning?.message).toMatch(/\$9999\.00/i);
   });
 });
+
+/** Fully synthetic Wells Fargo fixture — no real customer PII. */
+const WELLS_FARGO_TEXT = `
+Wells Fargo Clear Access Banking SM
+June 30, 2026 Page 1 of 3
+wellsfargo.com
+Statement period activity summary
+Beginning balance on 5/30 $100.00
+Deposits/Additions 1,500.00
+Withdrawals/Subtractions - 200.00
+Ending balance on 6/30 $1,400.00
+Account number: 1234567890 (primary account)
+Transaction history
+Date Check Number Description Deposits/ Additions Withdrawals/ Subtractions Ending daily balance
+6/1 Mobile Deposit : Ref Number :111111111111 500.00
+6/1 ATM Cash Deposit on 05/30 100 Example Rd Example AZ
+0001111 ATM ID 1111E Card 1111
+400.00
+6/1 Zelle From Avery Example on 05/31 Ref # Abc123
+100.00
+6/1 Purchase authorized on 05/29 Example Store
+Example AZ S111 Card 1111
+50.00
+6/1 ATM Withdrawal authorized on 05/30 100 Example St
+Example AZ 0002222 ATM ID 2222H Card 1111
+100.00
+6/1 Zelle to Blake Sample on 05/30 Ref # Wfct999 50.00
+6/5 Example Corp Payroll 260605 999 Example Person
+500.00 1,300.00
+6/10 United Security Prem & Pmt 260610 123 Example Person
+25.00
+Totals $1,500.00 $200.00
+Fee period: 05/01/2026 - 05/29/2026 Standard monthly service fee $5.00
+`;
+
+const WELLS_FARGO_MISMATCH_TEXT = WELLS_FARGO_TEXT.replace(
+  'Deposits/Additions 1,500.00',
+  'Deposits/Additions 9,999.00'
+).replace('Totals $1,500.00 $200.00', 'Totals $9,999.00 $200.00');
+
+describe('Wells Fargo statement extraction', () => {
+  it('pairs split description/amount columns and keeps deposit direction', () => {
+    const extracted = parseBankStatementText(WELLS_FARGO_TEXT, 'wf-synthetic.pdf');
+    const credits = extracted.transactions.filter((tx) => tx.direction === 'in');
+    const outs = extracted.transactions.filter((tx) => tx.direction === 'out');
+    const creditTotal =
+      Math.round(credits.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+
+    expect(extracted.period.startDate).toBe('2026-05-30');
+    expect(extracted.period.endDate).toBe('2026-06-30');
+    expect(extractDepositControlTotal(WELLS_FARGO_TEXT)).toEqual({
+      count: null,
+      total: 1500,
+    });
+    expect(creditTotal).toBe(1500);
+    expect(credits).toHaveLength(4);
+    expect(credits.some((tx) => /Mobile Deposit/i.test(tx.description))).toBe(true);
+    expect(credits.some((tx) => /ATM Cash Deposit/i.test(tx.description))).toBe(true);
+    expect(credits.some((tx) => /Zelle From/i.test(tx.description))).toBe(true);
+    expect(credits.some((tx) => /Payroll/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /Zelle to/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /Purchase authorized/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /ATM Withdrawal/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /Prem & Pmt/i.test(tx.description))).toBe(true);
+    expect(credits.some((tx) => /Zelle to|Purchase authorized|ATM Withdrawal/i.test(tx.description))).toBe(
+      false
+    );
+    expect(
+      extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')
+    ).toBe(false);
+  });
+
+  it('categorizes payroll, Zelle From, ATM cash, and mobile deposits', () => {
+    const extracted = parseBankStatementText(WELLS_FARGO_TEXT, 'wf-cats.pdf');
+    const credits = extracted.transactions.filter((tx) => tx.direction === 'in');
+    const byCat = Object.fromEntries(
+      credits.map((tx) => [tx.description.slice(0, 20), classifyTransaction(tx).category])
+    );
+    expect(
+      classifyTransaction(credits.find((tx) => /Payroll/i.test(tx.description))!).category
+    ).toBe('payroll');
+    expect(
+      classifyTransaction(credits.find((tx) => /Zelle From/i.test(tx.description))!).category
+    ).toBe('p2p_transfer');
+    expect(
+      classifyTransaction(credits.find((tx) => /ATM Cash Deposit/i.test(tx.description))!)
+        .category
+    ).toBe('cash_deposit');
+    expect(
+      classifyTransaction(credits.find((tx) => /Mobile Deposit/i.test(tx.description))!).category
+    ).toBe('check');
+    void byCat;
+  });
+
+  it('warns when Wells Fargo Deposits/Additions control totals do not match', () => {
+    const extracted = parseBankStatementText(WELLS_FARGO_MISMATCH_TEXT, 'wf-mismatch.pdf');
+    const warning = extracted.warnings.find((item) => item.code === 'deposit_control_mismatch');
+    expect(warning?.message).toMatch(/\$9999\.00/i);
+  });
+});
+
+/** Fully synthetic Lake Forest / community-bank fixture — no real customer PII. */
+const LAKE_FOREST_TEXT = `
+Last Statement: May 8, 2026
+Statement Ending: June 10, 2026
+D:\\LakeForestBankTrust_REG\\Work\\Outputs
+TOTAL ACCESS CHECKING Account Number: XXXXXX9999
+Balance Summary
+Beginning Balance as of 05/09/26 $100.00
++ Deposits and Credits (4) $1,200.00
+- Withdrawals and Debits (3) $150.00
+Ending Balance as of 06/10/26 $1,150.00
+Date Description Deposits Withdrawals
+May 09 Beginning Balance $100.00
+May 11 POS PURCHASE
+POS PURCHASE TERMINAL 111 EXAMPLE STORE IL 05-09-26
+XXXXXXXXXXXX1111
+-$50.00
+May 13 PREAUTHORIZED CREDIT
+EXAMPLE EMPLOYER US PAYROLL 260515
+$200.00
+May 18 INTERNET/PHONE TRSFR
+REF 111 FUNDS TRANSFER FRM DEP
+XXXXXXX2222 FROM XFR#AAA
+$300.00
+May 18 INTERNET/PHONE TRSFR
+REF 222 FUNDS TRANSFER TO DEP
+XXXXXXX2222 FROM XFR#BBB
+-$100.00
+Jun 01 INTERNET/PHONE TRSFR
+REF 333 FUNDS TRANSFER FRM DEP
+XXXXXXX2222 FROM XFR#CCC
+$500.00
+Jun 03 PREAUTHORIZED CREDIT
+EXAMPLE WING PAYROLL 260605
+$200.00
+Jun 10 Ending Balance $1,150.00
+`;
+
+const LAKE_FOREST_MISMATCH_TEXT = LAKE_FOREST_TEXT.replace(
+  '+ Deposits and Credits (4) $1,200.00',
+  '+ Deposits and Credits (4) $9,999.00'
+);
+
+describe('Lake Forest style statement extraction', () => {
+  it('parses signed multi-line rows and statement coverage dates', () => {
+    const extracted = parseBankStatementText(LAKE_FOREST_TEXT, 'lf-synthetic.pdf');
+    const credits = extracted.transactions.filter((tx) => tx.direction === 'in');
+    const outs = extracted.transactions.filter((tx) => tx.direction === 'out');
+    const creditTotal =
+      Math.round(credits.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+
+    expect(extracted.period.startDate).toBe('2026-05-09');
+    expect(extracted.period.endDate).toBe('2026-06-10');
+    expect(extractDepositControlTotal(LAKE_FOREST_TEXT)).toEqual({
+      count: 4,
+      total: 1200,
+    });
+    expect(credits).toHaveLength(4);
+    expect(creditTotal).toBe(1200);
+    expect(outs).toHaveLength(2);
+    expect(credits.map((tx) => tx.amount).sort((a, b) => a - b)).toEqual([
+      200, 200, 300, 500,
+    ]);
+    expect(outs.some((tx) => /FUNDS TRANSFER TO DEP/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /POS PURCHASE/i.test(tx.description))).toBe(true);
+    expect(credits.some((tx) => /FUNDS TRANSFER TO DEP|POS PURCHASE/i.test(tx.description))).toBe(
+      false
+    );
+  });
+
+  it('categorizes payroll credits and funds-transfer-from as account transfers', () => {
+    const extracted = parseBankStatementText(LAKE_FOREST_TEXT, 'lf-cats.pdf');
+    const payroll = extracted.transactions.filter(
+      (tx) => tx.direction === 'in' && /PAYROLL/i.test(tx.description)
+    );
+    const transfers = extracted.transactions.filter(
+      (tx) => tx.direction === 'in' && /FUNDS TRANSFER FRM DEP/i.test(tx.description)
+    );
+    expect(payroll.every((tx) => classifyTransaction(tx).category === 'payroll')).toBe(true);
+    expect(
+      transfers.every((tx) => classifyTransaction(tx).category === 'account_transfer')
+    ).toBe(true);
+  });
+
+  it('warns when Deposits and Credits control totals do not match', () => {
+    const extracted = parseBankStatementText(LAKE_FOREST_MISMATCH_TEXT, 'lf-mismatch.pdf');
+    const warning = extracted.warnings.find((item) => item.code === 'deposit_control_mismatch');
+    expect(warning?.message).toMatch(/4 deposits totaling \$9999\.00/i);
+  });
+});

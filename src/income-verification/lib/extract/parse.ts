@@ -181,6 +181,16 @@ export function parseFlexibleDate(
     }
   }
 
+  // "May 09" / "Jun 01" without year (community-bank ledgers).
+  const namedDay = new RegExp(`^(${NAMED_MONTH_ALT})\\s+(\\d{1,2})$`, 'i').exec(
+    value
+  );
+  if (namedDay) {
+    const month = MONTH_NAMES[foldBankText(namedDay[1])];
+    if (!month) return null;
+    return resolveMonthDayDate(month, Number(namedDay[2]), period, contextYear);
+  }
+
   return null;
 }
 
@@ -211,6 +221,46 @@ export function extractDates(
 
 export function parseStatementPeriod(text: string): StatementPeriod | null {
   const normalized = text.replace(/\u2013|\u2014/g, '-');
+
+  // Wells Fargo activity window: Beginning balance on M/D ... Ending balance on M/D
+  // Prefer this over incidental "Fee period" date ranges later in the statement.
+  const wfBalances =
+    /beginning balance on\s+(\d{1,2}\/\d{1,2})\b[\s\S]{0,400}?ending balance on\s+(\d{1,2}\/\d{1,2})\b/i.exec(
+      normalized
+    );
+  if (wfBalances) {
+    const yearMatch =
+      /\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+(\d{4})\b/i.exec(
+        text.slice(0, 2500)
+      ) || /\b(20\d{2})\b/.exec(text.slice(0, 2500));
+    const year = yearMatch ? Number(yearMatch[1]) : undefined;
+    const start = parseFlexibleDate(wfBalances[1], year);
+    const end = parseFlexibleDate(wfBalances[2], year);
+    if (start && end && start <= end) return { startDate: start, endDate: end };
+  }
+
+  // Beginning / Ending Balance as of MM/DD/YY (community banks)
+  const asOf =
+    /beginning balance as of\s+(\d{1,2}\/\d{1,2}\/\d{2,4})[\s\S]{0,300}?ending balance as of\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i.exec(
+      normalized
+    );
+  if (asOf) {
+    const start = parseFlexibleDate(asOf[1]);
+    const end = parseFlexibleDate(asOf[2]);
+    if (start && end && start <= end) return { startDate: start, endDate: end };
+  }
+
+  // Lake Forest / community bank: Last Statement + Statement Ending
+  const lastEnding =
+    /last statement:\s*((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4})\s*statement ending:\s*((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4})/i.exec(
+      normalized
+    );
+  if (lastEnding) {
+    const start = parseFlexibleDate(lastEnding[1]);
+    const end = parseFlexibleDate(lastEnding[2]);
+    if (start && end && start <= end) return { startDate: start, endDate: end };
+  }
+
   const namedRange = new RegExp(
     `(${NAMED_MONTH_ALT})\\s+(\\d{1,2}),?\\s+(\\d{4})\\s*(?:-|–|—|a|al|to|through)\\s*(${NAMED_MONTH_ALT})\\s+(\\d{1,2}),?\\s+(\\d{4})`,
     'i'
@@ -236,6 +286,12 @@ export function parseStatementPeriod(text: string): StatementPeriod | null {
   for (const pattern of patterns) {
     const match = pattern.exec(normalized);
     if (!match) continue;
+    // Ignore fee-period ranges that are not the statement coverage window.
+    const around = normalized.slice(
+      Math.max(0, (match.index ?? 0) - 20),
+      (match.index ?? 0) + match[0].length + 5
+    );
+    if (/fee\s+period/i.test(around)) continue;
 
     const start = parseFlexibleDate(match[1]);
     const end = parseFlexibleDate(match[2]);
@@ -248,6 +304,7 @@ export function parseStatementPeriod(text: string): StatementPeriod | null {
 export function extractAccountLast4(text: string): string | null {
   const match =
     /account(?:\s+number|\s+no\.?)?[:\s#]*[xX*\-]*(\d{4})\b/i.exec(text) ||
+    /account number:\s*\d+(\d{4})\b/i.exec(text) ||
     /\*{4,}(\d{4})\b/.exec(text) ||
     /\b(?:xxxx|XXXX|ending in)\s*(\d{4})\b/i.exec(text);
   return match?.[1] ?? null;
@@ -316,6 +373,24 @@ export function extractDepositControlTotal(
   if (boaSummary) {
     const total = parseAmount(boaSummary[1]);
     if (total != null) return { count: null, total };
+  }
+
+  // Wells Fargo summary: Deposits/Additions 15,934.78
+  const wf =
+    /deposits\s*\/\s*additions\s+\$?([\d,]+\.\d{2})/i.exec(compact) ||
+    /totals\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})/i.exec(compact);
+  if (wf && /wells fargo|deposits\s*\/\s*additions/i.test(text.slice(0, 8000))) {
+    const total = parseAmount(wf[1]);
+    if (total != null) return { count: null, total };
+  }
+
+  // Lake Forest / community: + Deposits and Credits (6) $2,078.51
+  const lf =
+    /\+?\s*deposits and credits\s*\((\d+)\)\s+\$?([\d,]+\.\d{2})/i.exec(compact);
+  if (lf) {
+    const count = Number(lf[1]);
+    const total = parseAmount(lf[2]);
+    if (Number.isFinite(count) && total != null) return { count, total };
   }
 
   // Chase Spanish / bilingual summary (single-account fallback).

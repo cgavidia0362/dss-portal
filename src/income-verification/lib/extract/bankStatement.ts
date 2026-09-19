@@ -22,6 +22,11 @@ import { extractHomeState } from '../analysis/location';
 import type { ExtractedDocument } from './types';
 import { isNavyFederalStatement, parseNavyFederalLedger } from './navyFederal';
 import { isChaseStatement, parseChaseLedger } from './chase';
+import { isWellsFargoStatement, parseWellsFargoLedger } from './wellsFargo';
+import {
+  isLakeForestStyleStatement,
+  parseLakeForestStyleLedger,
+} from './lakeForest';
 
 const SKIP_LINE =
   /opening balance|closing balance|beginning balance|ending balance|statement period|for the period|page \d|average balance|days in period|date amount description|date description amount|date transaction description|primary account number|account number:/i;
@@ -379,13 +384,19 @@ export function parseBankStatementText(
 
   const sectionMode = hasDepositSection(text);
   const chaseMode = isChaseStatement(text);
+  const wellsMode = isWellsFargoStatement(text);
+  const lakeForestMode = isLakeForestStyleStatement(text);
   const transactions = chaseMode
     ? parseChaseLedger(text, fileName, headerPeriod, accountLast4)
-    : isNavyFederalStatement(text)
-      ? parseNavyFederalLedger(text, fileName, headerPeriod, accountLast4)
-      : sectionMode
-        ? parseDepositSections(lines, fileName, headerPeriod, accountLast4)
-        : parseLegacyLines(lines, fileName, headerPeriod, accountLast4);
+    : wellsMode
+      ? parseWellsFargoLedger(text, fileName, headerPeriod, accountLast4)
+      : lakeForestMode
+        ? parseLakeForestStyleLedger(text, fileName, headerPeriod, accountLast4)
+        : isNavyFederalStatement(text)
+          ? parseNavyFederalLedger(text, fileName, headerPeriod, accountLast4)
+          : sectionMode
+            ? parseDepositSections(lines, fileName, headerPeriod, accountLast4)
+            : parseLegacyLines(lines, fileName, headerPeriod, accountLast4);
 
   if (!transactions.length) {
     warnings.push({
