@@ -866,6 +866,153 @@ describe('Chase Spanish statement extraction', () => {
   });
 });
 
+/**
+ * Synthetic Chase English fixture: first-page deposit-amount column emitted
+ * before Date/Description rows, with reversal / fee-reversal / earned-wage /
+ * ATM / Zelle FROM credits and Deposits and Additions control total.
+ * No real customer PII.
+ */
+const CHASE_EN_FIRST_PAGE_TEXT = `
+JPMorgan Chase Bank, N.A.
+July 16, 2026 through August 17, 2026
+Chase.com
+Chase Total Checking 000002907827999
+CUSTOMER SERVICE INFORMATION
+DATE DESCRIPTION AMOUNT BALANCE
+00029166 DRE 111 082 23026 NNNNNNNNNNN 1 000000000 11 0099 AT 00
+JPMorgan Chase Bank, N.A.
+P O Box 44959
+Indianapolis, IN 46244 - 4959
+Beginning Balance -$144.37
+Ending Balance $144.70
+200.00
+132.00
+34.00
+34.00
+55.60
+30.00
+30.00
+25.00
+50.00
+Web site:
+Service Center:
+HOLD - RETURN MAIL
+EXAMPLE RESIDENT
+1000 EXAMPLE ST APT 1
+EXAMPLE CITY IL 60477
+Chase Total Checking
+Deposits and Additions 590.60
+ATM & Debit Card Withdrawals -100.00
+Electronic Withdrawals -50.00
+07/17 Reversal: Tmobile*Postpaid Tel 800-937-8997 WA 06/13 Claimid:
+3951956
+16450001 0
+6/15/2026
+-200.00 -344.37
+07/17 Reversal: Tmobile*Postpaid Tel 800-937-8997 WA 06/13 Claimid:
+3951956
+16450001 0
+6/15/2026
+-132.00 -476.37
+07/20 Reversal: Tmobile*Postpaid Tel 800-937-8997 WA 06/13 Claimid:
+7252115
+46770001 0
+6/15/2026
+-276.37
+07/20 Reversal: Tmobile*Postpaid Tel 800-937-8997 WA 06/13 Claimid:
+7252115
+46770001 0
+6/15/2026
+-144.37
+07/20 06/30/2026 Reversal: Overdraft Fee For A $100.00 Payment -110.37
+07/20 07/01/2026 Reversal: Overdraft Fee For A $18.31 Card Purc -76.37
+07/24 Dailypay Hotel Equi PPD ID: 1475035714 -20.77
+07/27 ATM Cash Deposit 07/26 1000 Example St Example City IL Card 6915 9.23
+07/27 ATM Cash Deposit 07/26 1000 Example St Example City IL Card 6915 39.23
+07/27 Zelle Payment From Example Sender One 30161522395 64.23
+07/27 Card Purchase 07/26 Example Grocery Example City IL Card 6915 - 5.10 59.13
+07/27 Zelle Payment To Example Payee 30159713973 -25.00 34.13
+07/28 Card Purchase 07/27 Example Grocery Example City IL Card 6915 -29.82 4.31
+07/29 Zelle Payment From Example Sender One 30193036182 54.31
+CHECKING SUMMARY
+TRANSACTION DETAIL
+`;
+
+const CHASE_EN_CONTROL_MISMATCH_TEXT = CHASE_EN_FIRST_PAGE_TEXT.replace(
+  'Deposits and Additions 590.60',
+  'Deposits and Additions 999.99'
+);
+
+describe('Chase English first-page split-column extraction', () => {
+  it('pairs first-page deposit amounts with later credit descriptions and reconciles', () => {
+    const extracted = parseBankStatementText(
+      CHASE_EN_FIRST_PAGE_TEXT,
+      'chase-en-first-page.pdf'
+    );
+    const credits = extracted.transactions.filter((tx) => tx.direction === 'in');
+    const outs = extracted.transactions.filter((tx) => tx.direction === 'out');
+    const total =
+      Math.round(credits.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+
+    expect(extractDepositControlTotal(CHASE_EN_FIRST_PAGE_TEXT)).toEqual({
+      count: null,
+      total: 590.6,
+    });
+    expect(extractChaseAccountDepositControls(CHASE_EN_FIRST_PAGE_TEXT)).toEqual([
+      { accountLast4: '7999', accountLabel: 'Chase Total Checking', total: 590.6 },
+    ]);
+    expect(credits).toHaveLength(9);
+    expect(total).toBe(590.6);
+    expect(credits.some((tx) => /Reversal: Tmobile/i.test(tx.description) && tx.amount === 200)).toBe(
+      true
+    );
+    expect(credits.some((tx) => /Reversal: Tmobile/i.test(tx.description) && tx.amount === 132)).toBe(
+      true
+    );
+    expect(
+      credits.filter((tx) => /Overdraft Fee/i.test(tx.description) && tx.amount === 34)
+    ).toHaveLength(2);
+    expect(credits.some((tx) => /Dailypay/i.test(tx.description) && tx.amount === 55.6)).toBe(true);
+    expect(
+      credits.filter((tx) => /ATM Cash Deposit/i.test(tx.description) && tx.amount === 30)
+    ).toHaveLength(2);
+    expect(
+      credits.filter((tx) => /Zelle Payment From/i.test(tx.description)).map((tx) => tx.amount).sort()
+    ).toEqual([25, 50]);
+    expect(outs.some((tx) => /Zelle Payment To/i.test(tx.description))).toBe(true);
+    expect(outs.some((tx) => /Card Purchase/i.test(tx.description))).toBe(true);
+    expect(
+      outs.filter((tx) => /Reversal: Tmobile/i.test(tx.description) && tx.amount === 200)
+    ).toHaveLength(1);
+    expect(
+      extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')
+    ).toBe(false);
+
+    expect(classifyTransaction(credits.find((tx) => /Dailypay/i.test(tx.description))!).category).toBe(
+      'payroll'
+    );
+    expect(
+      classifyTransaction(credits.find((tx) => /ATM Cash Deposit/i.test(tx.description))!).category
+    ).toBe('cash_deposit');
+    expect(
+      classifyTransaction(credits.find((tx) => /Zelle Payment From/i.test(tx.description))!).category
+    ).toBe('p2p_transfer');
+    expect(
+      classifyTransaction(credits.find((tx) => /Overdraft Fee/i.test(tx.description))!).category
+    ).toBe('miscellaneous');
+  });
+
+  it('emits deposit_control_mismatch when Deposits and Additions disagrees', () => {
+    const extracted = parseBankStatementText(
+      CHASE_EN_CONTROL_MISMATCH_TEXT,
+      'chase-en-mismatch.pdf'
+    );
+    const warning = extracted.warnings.find((item) => item.code === 'deposit_control_mismatch');
+    expect(warning?.message).toMatch(/Deposits totaling \$999\.99/i);
+    expect(warning?.message).toMatch(/\$590\.60/);
+  });
+});
+
 /** Fully synthetic Wells Fargo fixture — no real customer PII. */
 const WELLS_FARGO_TEXT = `
 Wells Fargo Clear Access Banking SM

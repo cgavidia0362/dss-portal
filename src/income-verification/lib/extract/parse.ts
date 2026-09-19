@@ -401,6 +401,14 @@ export function extractDepositControlTotal(
     if (total != null) return { count: null, total };
   }
 
+  // Chase English checking summary: Deposits and Additions 3,633.09
+  const chaseEn =
+    /\bdeposits and additions\s+\$?([\d,]+\.\d{2})/i.exec(compact);
+  if (chaseEn && /chase|jpmorgan/i.test(text.slice(0, 8000))) {
+    const total = parseAmount(chaseEn[1]);
+    if (total != null) return { count: null, total };
+  }
+
   return null;
 }
 
@@ -430,7 +438,8 @@ export function extractChaseAccountDepositControls(
     const folded = foldBankText(trimmed);
     const depositTotal =
       /depositos y adiciones\s+\$?([\d,]+\.\d{2})/i.exec(folded) ||
-      /deposits and other additions\s+\$?([\d,]+\.\d{2})/i.exec(trimmed);
+      /deposits and other additions\s+\$?([\d,]+\.\d{2})/i.exec(trimmed) ||
+      /\bdeposits and additions\s+\$?([\d,]+\.\d{2})/i.exec(trimmed);
     if (!depositTotal) continue;
     const total = parseAmount(depositTotal[1]);
     if (total == null) continue;
