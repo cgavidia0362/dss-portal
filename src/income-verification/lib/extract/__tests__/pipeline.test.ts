@@ -417,6 +417,36 @@ Page 3 of 4
     expect(result.warnings.some((warning) => warning.code === 'extraction_unverified')).toBe(false);
     expect(result.transactions.filter((tx) => tx.direction === 'in').length).toBeGreaterThan(0);
   });
+
+  it('does not call Terra or Sol when credits already verify and only debits mismatch', async () => {
+    const calls: string[] = [];
+    const vision: VisionClient = async (request) => {
+      calls.push(request.role);
+      throw new Error('vision should not be called when credits verify');
+    };
+    const result = await extractFromTextPages({
+      fileName: 'pnc-debit-mismatch.pdf',
+      pages: [`${PNC_VERIFIED}\nWithdrawals / Subtractions $999.00\n`],
+      deps: { vision },
+    });
+    expect(calls).toEqual([]);
+    expect(result.telemetry?.terraPagesProcessed).toBe(0);
+    expect(result.telemetry?.solPagesProcessed).toBe(0);
+    expect(result.segments?.[0]?.provenance).toBe('deterministic');
+    expect(result.segments?.[0]?.trustState).toBe('verified');
+    expect(result.segments?.[0]?.reconciliation.creditStatus).toBe('verified');
+    expect(result.segments?.[0]?.reconciliation.debitStatus).toBe('mismatch');
+    expect(result.segments?.[0]?.creditReconciliation?.status).toBe('verified');
+    expect(result.segments?.[0]?.debitReconciliation?.status).toBe('mismatch');
+    expect(result.warnings.some((warning) => warning.code === 'debit_reconciliation_incomplete')).toBe(
+      true
+    );
+    expect(
+      result.warnings.some((warning) =>
+        /Deposit extraction verified\. Debit transaction reconciliation incomplete/.test(warning.message)
+      )
+    ).toBe(true);
+  });
 });
 
 async function makePdf(pageCount: number): Promise<Uint8Array> {

@@ -51,6 +51,24 @@ describe('reconciliation engine', () => {
       }),
     ]);
     expect(combined.status).toBe('mismatch');
+    expect(combined.creditStatus).toBe('mismatch');
+  });
+
+  it('keeps income trust verified when only debit totals mismatch', () => {
+    const result = reconcileTransactions({
+      transactions: [
+        { direction: 'in', amount: 100 },
+        { direction: 'out', amount: 10 },
+      ],
+      expectedCreditTotal: 100,
+      expectedDebitTotal: 50,
+    });
+    expect(result.creditStatus).toBe('verified');
+    expect(result.debitStatus).toBe('mismatch');
+    expect(result.status).toBe('verified');
+    expect(result.creditReconciliation.status).toBe('verified');
+    expect(result.debitReconciliation.status).toBe('mismatch');
+    expect(result.debitDifference).toBe(-40);
   });
 
   it('detects implausibly few extracted rows', () => {

@@ -41,10 +41,18 @@ export interface DocumentPage {
   duplicateOfPage?: number | null;
 }
 
+export interface StatementDebitControls {
+  atmAndDebitCard: number | null;
+  electronic: number | null;
+  other: number | null;
+  fees: number | null;
+}
+
 export interface StatementControlTotals {
   creditTotal: number | null;
   creditCount: number | null;
   debitTotal: number | null;
+  debitControls?: StatementDebitControls;
   beginningBalance: number | null;
   endingBalance: number | null;
   accountLast4: string | null;
@@ -112,6 +120,8 @@ export interface SegmentExtraction {
   provenance: ExtractionProvenance;
   trustState: ExtractionTrustState;
   reconciliation: import('./reconcile').ReconciliationResult;
+  creditReconciliation?: import('./reconcile').DirectionReconciliation;
+  debitReconciliation?: import('./reconcile').DirectionReconciliation;
   fallbackReason?: FallbackReason;
   processingNote: string;
   deterministicExtractedCreditTotal?: number;

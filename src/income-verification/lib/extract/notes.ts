@@ -1,4 +1,4 @@
-import type { ExtractionProvenance, ExtractionTrustState } from '../analysis/types';
+import type { AnalysisWarning, ExtractionProvenance, ExtractionTrustState } from '../analysis/types';
 import { formatMoney } from '../analysis/format';
 import { detectInstitution, parserLabel } from './detect';
 import type { FallbackReason, InstitutionId, StatementSegment } from './documentModel';
@@ -94,4 +94,21 @@ export function buyerReviewWarning(reconciliation: ReconciliationResult): string
       ? formatMoney(Math.abs(reconciliation.creditDifference))
       : 'unknown';
   return `Extraction could not be verified. Buyer review required. Expected deposits ${expected}; extracted ${extracted}; difference ${difference}.`;
+}
+
+export function debitReconciliationWarning(
+  reconciliation: ReconciliationResult,
+  fileName: string
+): AnalysisWarning | null {
+  if (reconciliation.debitStatus !== 'mismatch') return null;
+  if (reconciliation.creditStatus !== 'verified') return null;
+  const message =
+    reconciliation.creditStatus === 'verified'
+      ? 'Deposit extraction verified. Debit transaction reconciliation incomplete.'
+      : 'Debit transaction reconciliation incomplete.';
+  return {
+    code: 'debit_reconciliation_incomplete',
+    message,
+    documentName: fileName,
+  };
 }

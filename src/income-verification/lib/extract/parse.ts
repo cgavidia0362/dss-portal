@@ -444,23 +444,25 @@ export function extractChaseAccountDepositControls(
     const total = parseAmount(depositTotal[1]);
     if (total == null) continue;
 
-    const window = lines
-      .slice(i, i + 40)
-      .map((line) => foldBankText(line))
-      .join('\n');
-
     let accountLabel = 'Chase Total Checking';
     let accountLast4 = checkingLast4;
-    if (
-      /resumen de cuenta de ahorros/.test(window) ||
-      (/chase savings/.test(window) && !/resumen de cuenta de cheques/.test(window))
-    ) {
-      accountLabel = 'Chase Savings';
-      accountLast4 = savingsLast4;
-    } else if (/resumen de cuenta de cheques|chase total checking/.test(window)) {
-      accountLabel = 'Chase Total Checking';
-      accountLast4 = checkingLast4;
-    } else if (controls.some((c) => c.accountLabel === 'Chase Total Checking')) {
+    let foundHeading = false;
+    for (let j = i; j < Math.min(lines.length, i + 40); j += 1) {
+      const folded = foldBankText(lines[j] ?? '');
+      if (/resumen de cuenta de cheques/.test(folded) || /^chase total checking$/.test(folded)) {
+        accountLabel = 'Chase Total Checking';
+        accountLast4 = checkingLast4;
+        foundHeading = true;
+        break;
+      }
+      if (/resumen de cuenta de ahorros/.test(folded) || /^chase savings$/.test(folded)) {
+        accountLabel = 'Chase Savings';
+        accountLast4 = savingsLast4;
+        foundHeading = true;
+        break;
+      }
+    }
+    if (!foundHeading && controls.some((control) => control.accountLabel === 'Chase Total Checking')) {
       accountLabel = 'Chase Savings';
       accountLast4 = savingsLast4;
     }
@@ -546,6 +548,58 @@ function extractChaseStackedSummaryControls(text: string): ChaseAccountDepositCo
 
 function amountsEqualish(a: number, b: number): boolean {
   return Math.abs(a - b) < 0.005;
+}
+
+export function extractChaseStackedBlockForDeposit(
+  text: string,
+  depositTotal: number
+): {
+  beginningBalance: number | null;
+  endingBalance: number | null;
+  debitTotal: number | null;
+} | null {
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  let i = 0;
+  while (i < lines.length) {
+    const start = i;
+    const amounts: number[] = [];
+    while (i < lines.length) {
+      const line = lines[i] ?? '';
+      if (!line) {
+        if (amounts.length) break;
+        i += 1;
+        continue;
+      }
+      const match = SOLO_AMOUNT_LINE.exec(line);
+      if (!match) break;
+      const amount = parseAmount(match[1]);
+      if (amount == null) break;
+      amounts.push(amount);
+      i += 1;
+    }
+
+    if (amounts.length >= 4 && amounts.length <= 7) {
+      const firstNegative = amounts.findIndex((value) => value < 0);
+      const beginning = amounts[0] ?? 0;
+      const ending = amounts[amounts.length - 1] ?? 0;
+      if (beginning > 0 && ending >= 0 && firstNegative > 1) {
+        const deposit = amounts[firstNegative - 1];
+        if (deposit != null && amountsEqualish(deposit, depositTotal)) {
+          const debitTotal = roundMoney(
+            amounts.filter((value) => value < 0).reduce((sum, value) => sum + Math.abs(value), 0)
+          );
+          return {
+            beginningBalance: beginning,
+            endingBalance: ending,
+            debitTotal: debitTotal > 0 ? debitTotal : null,
+          };
+        }
+      }
+    }
+
+    if (i === start) i += 1;
+  }
+  return null;
 }
 
 export function isFullCalendarMonth(startDate: string, endDate: string): boolean {

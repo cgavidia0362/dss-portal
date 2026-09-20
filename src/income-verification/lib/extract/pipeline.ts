@@ -26,7 +26,7 @@ import type {
   StatementSegment,
 } from './documentModel';
 import { bytesToText, detectMime, validateUpload, type UploadedFile } from './files';
-import { buyerReviewWarning, buildProcessingNote } from './notes';
+import { buyerReviewWarning, buildProcessingNote, debitReconciliationWarning } from './notes';
 import { hasMissingPrintedPages } from './pageSequence';
 import { extractPdfPages, textLooksEmpty } from './pdf';
 import { buildPreflight } from './preflight';
@@ -63,9 +63,32 @@ function emptyTelemetry(): ExtractionTelemetry {
 }
 
 function trustFromReconciliation(result: ReconciliationResult): ExtractionTrustState {
-  if (result.status === 'verified') return 'verified';
-  if (result.status === 'mismatch') return 'mismatch';
+  if (result.creditStatus === 'verified') return 'verified';
+  if (result.creditStatus === 'mismatch') return 'mismatch';
   return 'partial';
+}
+
+function mergeDebitWarning(
+  warnings: AnalysisWarning[],
+  reconciliation: ReconciliationResult,
+  fileName: string
+): AnalysisWarning[] {
+  const warning = debitReconciliationWarning(reconciliation, fileName);
+  if (!warning) return warnings;
+  if (warnings.some((item) => item.code === warning.code)) return warnings;
+  return [...warnings, warning];
+}
+
+function finishSegment(
+  result: SegmentExtraction,
+  fileName: string
+): SegmentExtraction {
+  return {
+    ...result,
+    creditReconciliation: result.reconciliation.creditReconciliation,
+    debitReconciliation: result.reconciliation.debitReconciliation,
+    warnings: mergeDebitWarning(result.warnings, result.reconciliation, fileName),
+  };
 }
 
 function applySourceTrust(
@@ -262,7 +285,7 @@ function shouldEscalateToVision(params: {
   if (params.segment.imageOnly) return 'image_only';
   if (!params.segment.text.trim()) return 'insufficient_text';
   if (!params.transactions.length) return 'zero_transactions';
-  if (params.reconciliation.status === 'mismatch') {
+  if (params.reconciliation.creditStatus === 'mismatch') {
     if (
       isImplausiblyFew(
         params.reconciliation.extractedTransactionCount,
@@ -328,74 +351,83 @@ async function extractSegment(params: {
     const annotated = annotateTransactions(deterministicTxs, { extractionTrustState: trustState });
     if (!fallbackReason) {
       const fused = fuseTransactionCandidates({ deterministic: annotated });
-      return {
-        segment,
-        transactions: annotated,
-        warnings: deterministicWarnings,
-        provenance: 'deterministic',
-        trustState,
-        reconciliation,
-        processingNote: buildProcessingNote({
+      return finishSegment(
+        {
           segment,
-          segmentCount: params.segmentCount,
+          transactions: annotated,
+          warnings: deterministicWarnings,
           provenance: 'deterministic',
           trustState,
           reconciliation,
-        }),
-        deterministicExtractedCreditTotal: sumDirection(annotated, 'in'),
-        fusionStats: fused.stats,
-        aiFallbackPages: { terra: [], sol: [] },
-      };
+          processingNote: buildProcessingNote({
+            segment,
+            segmentCount: params.segmentCount,
+            provenance: 'deterministic',
+            trustState,
+            reconciliation,
+          }),
+          deterministicExtractedCreditTotal: sumDirection(annotated, 'in'),
+          fusionStats: fused.stats,
+          aiFallbackPages: { terra: [], sol: [] },
+        },
+        fileName
+      );
     }
     telemetry.fallbackReasons.push(fallbackReason);
     if (!visionConfigured(deps) || (!params.pdfBytes && !deps.vision && !deps.renderPages)) {
       const offlineTrust = applySourceTrust(trustFromReconciliation(reconciliation), segment);
       const offlineReason: FallbackReason | undefined =
         offlineTrust === 'incomplete_source' ? 'incomplete_source' : fallbackReason;
-      return {
-        segment,
-        transactions: annotateTransactions(deterministicTxs, {
-          extractionTrustState: offlineTrust,
-        }),
-        warnings: parsed.warnings,
-        provenance: 'deterministic',
-        trustState: offlineTrust,
-        reconciliation,
-        fallbackReason: offlineReason,
-        processingNote: buildProcessingNote({
+      return finishSegment(
+        {
           segment,
-          segmentCount: params.segmentCount,
+          transactions: annotateTransactions(deterministicTxs, {
+            extractionTrustState: offlineTrust,
+          }),
+          warnings: parsed.warnings,
           provenance: 'deterministic',
           trustState: offlineTrust,
           reconciliation,
           fallbackReason: offlineReason,
-        }),
-        deterministicExtractedCreditTotal: sumDirection(deterministicTxs, 'in'),
-        fusionStats: fuseTransactionCandidates({ deterministic: deterministicTxs }).stats,
-        aiFallbackPages: { terra: [], sol: [] },
-      };
+          processingNote: buildProcessingNote({
+            segment,
+            segmentCount: params.segmentCount,
+            provenance: 'deterministic',
+            trustState: offlineTrust,
+            reconciliation,
+            fallbackReason: offlineReason,
+          }),
+          deterministicExtractedCreditTotal: sumDirection(deterministicTxs, 'in'),
+          fusionStats: fuseTransactionCandidates({ deterministic: deterministicTxs }).stats,
+          aiFallbackPages: { terra: [], sol: [] },
+        },
+        fileName
+      );
     }
   } else {
     fallbackReason = 'image_only';
     telemetry.fallbackReasons.push('image_only');
     if (!visionConfigured(deps) || (!params.pdfBytes && !deps.vision && !deps.renderPages)) {
-      return {
-        segment,
-        transactions: [],
-        warnings: [
-          {
-            code: 'scanned_pdf',
-            message: `Unable to identify transactions on ${fileName}. The PDF appears to have little or no extractable text.`,
-            documentName: fileName,
-          },
-        ],
-        provenance: 'deterministic',
-        trustState: 'mismatch',
-        reconciliation: reconcileAgainstControls([], segment.controls),
-        fallbackReason: 'image_only',
-        processingNote: 'Image-only document — vision extraction is not configured.',
-        aiFallbackPages: { terra: [], sol: [] },
-      };
+      return finishSegment(
+        {
+          segment,
+          transactions: [],
+          warnings: [
+            {
+              code: 'scanned_pdf',
+              message: `Unable to identify transactions on ${fileName}. The PDF appears to have little or no extractable text.`,
+              documentName: fileName,
+            },
+          ],
+          provenance: 'deterministic',
+          trustState: 'mismatch',
+          reconciliation: reconcileAgainstControls([], segment.controls),
+          fallbackReason: 'image_only',
+          processingNote: 'Image-only document — vision extraction is not configured.',
+          aiFallbackPages: { terra: [], sol: [] },
+        },
+        fileName
+      );
     }
   }
 
@@ -505,47 +537,50 @@ async function extractSegment(params: {
   });
   const annotated = annotateTransactions(fused.transactions, { extractionTrustState: trustState });
 
-  return {
-    segment,
-    transactions: annotated,
-    warnings:
-      trustState === 'incomplete_source'
-        ? [
-            ...deterministicWarnings,
-            {
-              code: 'incomplete_source',
-              message: processingNote,
-              documentName: fileName,
-            },
-          ]
-        : trustState === 'mismatch'
-        ? [
-            ...deterministicWarnings,
-            {
-              code: 'extraction_unverified',
-              message: buyerReviewWarning(reconciliation),
-              documentName: fileName,
-            },
-          ]
-        : deterministicWarnings,
-    provenance,
-    trustState,
-    reconciliation,
-    fallbackReason:
-      fallbackReason ??
-      (trustState === 'incomplete_source'
-        ? 'incomplete_source'
-        : trustState === 'mismatch'
-          ? 'control_mismatch'
-          : undefined),
-    processingNote,
-    deterministicExtractedCreditTotal: sumDirection(deterministicTxs, 'in'),
-    terraExtractedCreditTotal: sumDirection(terraCall.transactions, 'in'),
-    solExtractedCreditTotal: solTxs.length ? sumDirection(solTxs, 'in') : null,
-    usedPdfInput,
-    fusionStats: fused.stats,
-    aiFallbackPages: { terra: terraPages, sol: solPages },
-  };
+  return finishSegment(
+    {
+      segment,
+      transactions: annotated,
+      warnings:
+        trustState === 'incomplete_source'
+          ? [
+              ...deterministicWarnings,
+              {
+                code: 'incomplete_source',
+                message: processingNote,
+                documentName: fileName,
+              },
+            ]
+          : trustState === 'mismatch'
+          ? [
+              ...deterministicWarnings,
+              {
+                code: 'extraction_unverified',
+                message: buyerReviewWarning(reconciliation),
+                documentName: fileName,
+              },
+            ]
+          : deterministicWarnings,
+      provenance,
+      trustState,
+      reconciliation,
+      fallbackReason:
+        fallbackReason ??
+        (trustState === 'incomplete_source'
+          ? 'incomplete_source'
+          : trustState === 'mismatch'
+            ? 'control_mismatch'
+            : undefined),
+      processingNote,
+      deterministicExtractedCreditTotal: sumDirection(deterministicTxs, 'in'),
+      terraExtractedCreditTotal: sumDirection(terraCall.transactions, 'in'),
+      solExtractedCreditTotal: solTxs.length ? sumDirection(solTxs, 'in') : null,
+      usedPdfInput,
+      fusionStats: fused.stats,
+      aiFallbackPages: { terra: terraPages, sol: solPages },
+    },
+    fileName
+  );
 }
 
 function periodFromSegment(fileName: string, extraction: SegmentExtraction): DocumentPeriod {

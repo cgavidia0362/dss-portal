@@ -111,6 +111,15 @@ export function ResultsDashboard({
         </div>
       )}
 
+      {analysis.warnings.some((warning) => warning.code === 'debit_reconciliation_incomplete') && (
+        <div className="border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+          <p className="font-semibold">Debit reconciliation incomplete</p>
+          <p className="mt-1">
+            Deposit extraction verified. Debit transaction reconciliation incomplete.
+          </p>
+        </div>
+      )}
+
       {analysis.warnings.length > 0 && (
         <div className="border border-slate-300 bg-white px-4 py-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Processing notes</p>

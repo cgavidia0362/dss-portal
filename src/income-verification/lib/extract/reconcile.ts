@@ -4,6 +4,13 @@ import type { StatementControlTotals } from './documentModel';
 
 export type ReconciliationStatus = 'verified' | 'partial' | 'mismatch' | 'unavailable';
 
+export interface DirectionReconciliation {
+  expectedTotal: number | null;
+  extractedTotal: number;
+  difference: number | null;
+  status: ReconciliationStatus;
+}
+
 export interface ReconciliationResult {
   expectedCreditTotal: number | null;
   extractedCreditTotal: number;
@@ -13,7 +20,12 @@ export interface ReconciliationResult {
   debitDifference: number | null;
   expectedTransactionCount: number | null;
   extractedTransactionCount: number;
+  /** Income/deposit trust uses credit status only. */
   status: ReconciliationStatus;
+  creditStatus: ReconciliationStatus;
+  debitStatus: ReconciliationStatus;
+  creditReconciliation: DirectionReconciliation;
+  debitReconciliation: DirectionReconciliation;
   accountLast4: string | null;
   accountLabel: string | null;
 }
@@ -41,6 +53,43 @@ export function sumDirection(transactions: ReconTransaction[], direction: MoneyD
   );
 }
 
+function statusFromExpected(
+  expectedCents: number | null,
+  extractedCents: number,
+  extraMismatch = false
+): ReconciliationStatus {
+  if (expectedCents == null) return 'unavailable';
+  if (extraMismatch || expectedCents !== extractedCents) return 'mismatch';
+  return 'verified';
+}
+
+function directionView(
+  expectedTotal: number | null,
+  extractedTotal: number,
+  difference: number | null,
+  status: ReconciliationStatus
+): DirectionReconciliation {
+  return { expectedTotal, extractedTotal, difference, status };
+}
+
+function withDirectionViews(result: Omit<ReconciliationResult, 'creditReconciliation' | 'debitReconciliation'>): ReconciliationResult {
+  return {
+    ...result,
+    creditReconciliation: directionView(
+      result.expectedCreditTotal,
+      result.extractedCreditTotal,
+      result.creditDifference,
+      result.creditStatus
+    ),
+    debitReconciliation: directionView(
+      result.expectedDebitTotal,
+      result.extractedDebitTotal,
+      result.debitDifference,
+      result.debitStatus
+    ),
+  };
+}
+
 export function reconcileTransactions(params: {
   transactions: ReconTransaction[];
   expectedCreditTotal?: number | null;
@@ -65,25 +114,10 @@ export function reconcileTransactions(params: {
 
   const countMismatch =
     params.expectedCreditCount != null && extractedCreditCount !== params.expectedCreditCount;
-  const creditMismatch =
-    expectedCreditCents != null && extractedCreditCents !== expectedCreditCents;
-  const debitMismatch = expectedDebitCents != null && extractedDebitCents !== expectedDebitCents;
+  const creditStatus = statusFromExpected(expectedCreditCents, extractedCreditCents, countMismatch);
+  const debitStatus = statusFromExpected(expectedDebitCents, extractedDebitCents);
 
-  const hasAnyExpected =
-    expectedCreditCents != null ||
-    expectedDebitCents != null ||
-    params.expectedCreditCount != null;
-
-  let status: ReconciliationStatus;
-  if (!hasAnyExpected) {
-    status = 'unavailable';
-  } else if (creditMismatch || debitMismatch || countMismatch) {
-    status = 'mismatch';
-  } else {
-    status = 'verified';
-  }
-
-  return {
+  return withDirectionViews({
     expectedCreditTotal: moneyFromCents(expectedCreditCents),
     extractedCreditTotal,
     creditDifference,
@@ -92,10 +126,12 @@ export function reconcileTransactions(params: {
     debitDifference,
     expectedTransactionCount: params.expectedCreditCount ?? null,
     extractedTransactionCount: extractedCreditCount,
-    status,
+    status: creditStatus,
+    creditStatus,
+    debitStatus,
     accountLast4: params.accountLast4 ?? null,
     accountLabel: params.accountLabel ?? null,
-  };
+  });
 }
 
 export function reconcileAgainstControls(
@@ -126,6 +162,16 @@ export function reconcileAgainstControls(
   return combineReconciliations(results);
 }
 
+function combineStatuses(statuses: ReconciliationStatus[]): ReconciliationStatus {
+  const unique = new Set(statuses);
+  if (unique.has('mismatch')) return 'mismatch';
+  if (unique.has('partial')) return 'partial';
+  if (unique.size === 1 && unique.has('verified')) return 'verified';
+  if (unique.size === 1 && unique.has('unavailable')) return 'unavailable';
+  if (unique.has('verified') && unique.has('unavailable')) return 'partial';
+  return 'partial';
+}
+
 export function combineReconciliations(results: ReconciliationResult[]): ReconciliationResult {
   if (!results.length) {
     return reconcileTransactions({ transactions: [] });
@@ -138,17 +184,10 @@ export function combineReconciliations(results: ReconciliationResult[]): Reconci
   const extractedDebitCents = results.reduce((sum, r) => sum + toCents(r.extractedDebitTotal), 0);
   const expectedCount = sumNullableInts(results.map((r) => r.expectedTransactionCount));
   const extractedCount = results.reduce((sum, r) => sum + r.extractedTransactionCount, 0);
+  const creditStatus = combineStatuses(results.map((r) => r.creditStatus));
+  const debitStatus = combineStatuses(results.map((r) => r.debitStatus));
 
-  const statuses = new Set(results.map((r) => r.status));
-  let status: ReconciliationStatus;
-  if (statuses.has('mismatch')) status = 'mismatch';
-  else if (statuses.has('partial')) status = 'partial';
-  else if (statuses.size === 1 && statuses.has('verified')) status = 'verified';
-  else if (statuses.size === 1 && statuses.has('unavailable')) status = 'unavailable';
-  else if (statuses.has('verified') && statuses.has('unavailable')) status = 'partial';
-  else status = 'partial';
-
-  return {
+  return withDirectionViews({
     expectedCreditTotal: expectedCreditCents == null ? null : fromCents(expectedCreditCents),
     extractedCreditTotal: fromCents(extractedCreditCents),
     creditDifference:
@@ -159,10 +198,12 @@ export function combineReconciliations(results: ReconciliationResult[]): Reconci
       expectedDebitCents == null ? null : fromCents(extractedDebitCents - expectedDebitCents),
     expectedTransactionCount: expectedCount,
     extractedTransactionCount: extractedCount,
-    status,
+    status: creditStatus,
+    creditStatus,
+    debitStatus,
     accountLast4: null,
     accountLabel: results.length > 1 ? 'combined' : results[0]?.accountLabel ?? null,
-  };
+  });
 }
 
 function sumNullableCents(values: Array<number | null>): number | null {
