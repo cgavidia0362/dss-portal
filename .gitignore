@@ -30,3 +30,9 @@ dist-ssr
 
 # Supabase CLI local temp
 supabase/.temp/
+
+# Income Verification local artifacts — never commit customer documents or debug dumps
+*.pdf
+scripts/_tmp*
+**/_tmp-iv*
+attachments/

@@ -1,5 +1,7 @@
-import { roundMoney } from '../analysis/money';
+import { amountsEqual, roundMoney } from '../analysis/money';
 import type { MoneyDirection, NormalizedTransaction } from '../analysis/types';
+import { reconstructBalanceDeltas, type LedgerDraft } from './balanceDelta';
+import { extractReferenceId } from './candidates';
 import {
   contextYearFromPeriod,
   extractAmounts,
@@ -13,7 +15,9 @@ const CHASE_MARKERS =
   /jpmorgan chase|chase total checking|chase savings|\bchase\.com\b/i;
 
 const DESC_START = /^(\d{1,2}\/\d{1,2})\s+(.+)$/;
+const DATE_ONLY = /^(\d{1,2}\/\d{1,2})$/;
 const SOLO_AMOUNT = /^\$?([\d,]+\.\d{2})$/;
+const SOLO_SIGNED_AMOUNT = /^\$?-?[\d,]+\.\d{2}$/;
 
 const TXN_HEADER =
   /fecha\s+descripcion\s+cantidad\s+saldo|date\s+description\s+amount\s+balance/i;
@@ -106,6 +110,34 @@ function stripTrailingAmounts(text: string): string {
     .trim();
 }
 
+function takeQueuedAmount(
+  depositAmounts: number[],
+  previousBalance: number | null,
+  runningBalance: number | null
+): number | null {
+  if (!depositAmounts.length) return null;
+  if (previousBalance != null && runningBalance != null) {
+    const delta = roundMoney(runningBalance - previousBalance);
+    if (delta > 0) {
+      const index = depositAmounts.findIndex((amount) => amountsEqual(amount, delta));
+      if (index >= 0) return depositAmounts.splice(index, 1)[0] ?? null;
+    }
+  }
+  return depositAmounts.shift() ?? null;
+}
+
+function openingBalanceFromText(text: string): number | null {
+  const match =
+    /(?:beginning balance|saldo inicial)\s*:?\s*(\(?\$?-?[\d,]+\.\d{2}\)?)/i.exec(text);
+  if (!match?.[1]) return null;
+  return parseAmount(match[1]);
+}
+
+export interface ChaseLedgerPage {
+  pageNumber: number;
+  text: string;
+}
+
 /**
  * Chase PDFs often emit a column of deposit amounts before Date/Description rows
  * on each page. Pair those amounts with subsequent credit descriptions that lack
@@ -116,225 +148,282 @@ export function parseChaseLedger(
   text: string,
   fileName: string,
   period: StatementPeriod | null,
-  fallbackAccountLast4: string | null
+  fallbackAccountLast4: string | null,
+  pages?: ChaseLedgerPage[]
 ): NormalizedTransaction[] {
   const year = contextYearFromPeriod(period);
-  const lines = text.split(/\r?\n/);
   const accounts = discoverAccounts(text);
   const checking = accounts.find((a) => /checking/i.test(a.label)) ?? null;
   const savings = accounts.find((a) => /savings|ahorro/i.test(a.label)) ?? null;
+  const chunks: Array<{ pageNumber: number | null; text: string; continuityBreak: boolean }> =
+    pages?.length
+      ? pages.map((page, index) => ({
+          pageNumber: page.pageNumber,
+          text: page.text,
+          continuityBreak: index > 0,
+        }))
+      : [{ pageNumber: null, text, continuityBreak: false }];
 
   let currentLast4 =
     checking?.last4 ?? fallbackAccountLast4 ?? accounts[0]?.last4 ?? null;
-  let depositAmounts: number[] = [];
-  let collectingDepositAmounts = false;
+  const drafts: LedgerDraft[] = [];
+  let lastSeenBalance = openingBalanceFromText(text);
+  const initialBalance = lastSeenBalance;
+
+  for (const chunk of chunks) {
+    const lines = chunk.text.split(/\r?\n/);
+    let depositAmounts: number[] = [];
+    let collectingDepositAmounts = false;
+    if (chunk.continuityBreak) lastSeenBalance = null;
+    const pageStartCount = drafts.length;
+
+    let i = 0;
+    while (i < lines.length) {
+      const raw = lines[i]?.trim() ?? '';
+      const folded = foldBankText(raw);
+
+      if (LEDGER_STOP.test(folded)) break;
+
+      const switched = matchKnownAccount(raw, accounts);
+      if (switched) {
+        if (
+          savings &&
+          checking &&
+          currentLast4 === savings.last4 &&
+          switched.last4 === checking.last4
+        ) {
+          i += 1;
+          continue;
+        }
+        currentLast4 = switched.last4;
+        i += 1;
+        continue;
+      }
+      if (/resumen de cuenta de ahorros|^\s*chase savings\s*$/i.test(folded) && savings) {
+        currentLast4 = savings.last4;
+      }
+      if (
+        /resumen de cuenta de cheques|^\s*chase total checking\s*$/i.test(folded) &&
+        checking
+      ) {
+        currentLast4 = checking.last4;
+      }
+
+      if (TXN_HEADER.test(folded)) {
+        collectingDepositAmounts = true;
+        depositAmounts = [];
+        i += 1;
+        continue;
+      }
+
+      if (collectingDepositAmounts) {
+        if (!raw) {
+          i += 1;
+          continue;
+        }
+        if (
+          PAGE_META.test(folded) ||
+          /enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|january|february|march|april|june|july|august|september|october|november|december/i.test(
+            folded
+          )
+        ) {
+          i += 1;
+          continue;
+        }
+        if (
+          /deposits and additions|depositos y adiciones|atm & debit|electronic withdrawals|retiros/i.test(
+            folded
+          )
+        ) {
+          i += 1;
+          continue;
+        }
+        const solo = SOLO_AMOUNT.exec(raw);
+        if (solo) {
+          const amount = parseAmount(solo[1]);
+          if (amount != null && amount > 0) depositAmounts.push(amount);
+          i += 1;
+          continue;
+        }
+        if (DESC_START.test(raw) || DATE_ONLY.test(raw)) {
+          collectingDepositAmounts = false;
+        } else {
+          i += 1;
+          continue;
+        }
+      }
+
+      const descStart = DESC_START.exec(raw);
+      const dateOnly = descStart ? null : DATE_ONLY.exec(raw);
+      if (!descStart && !dateOnly) {
+        i += 1;
+        continue;
+      }
+
+      const dateRaw = descStart?.[1] ?? dateOnly?.[1] ?? '';
+      let description = (descStart?.[2] ?? '').trim();
+      const rawParts: string[] = [raw];
+      const amountsOnRow = extractAmounts(description);
+      let signedAmount: number | null = null;
+      let balance: number | null = null;
+      let explicitAmountBalancePair = false;
+      if (amountsOnRow.length >= 2) {
+        signedAmount = amountsOnRow[amountsOnRow.length - 2];
+        balance = amountsOnRow[amountsOnRow.length - 1];
+        explicitAmountBalancePair = true;
+        description = stripTrailingAmounts(description);
+      } else if (amountsOnRow.length === 1 && /-\s*\$?[\d,]+\.\d{2}\s*$/.test(description)) {
+        signedAmount = amountsOnRow[0];
+        description = stripTrailingAmounts(description);
+      }
+      const startIndex = drafts.length * 1000 + i;
+      i += 1;
+
+      while (i < lines.length) {
+        const next = lines[i]?.trim() ?? '';
+        if (!next) {
+          i += 1;
+          continue;
+        }
+        if (TXN_HEADER.test(foldBankText(next))) break;
+        if (LEDGER_STOP.test(foldBankText(next))) break;
+        if (matchKnownAccount(next, accounts)) break;
+        if (
+          /detalle de transacciones|transaction detail|depositos y adiciones|deposits and additions|retiros electronicos|resumen de cuenta|checking summary/i.test(
+            foldBankText(next)
+          )
+        ) {
+          break;
+        }
+
+        const nextIsDateRow = DESC_START.test(next) || DATE_ONLY.test(next);
+        const atmContinuation =
+          nextIsDateRow &&
+          signedAmount == null &&
+          /atm withdrawal|retiro en cajero/i.test(foldBankText(description)) &&
+          extractAmounts(next).length >= 1;
+        if (nextIsDateRow && !atmContinuation) break;
+
+        const nextAmounts = extractAmounts(next);
+        if (nextAmounts.length >= 2) {
+          signedAmount = nextAmounts[nextAmounts.length - 2];
+          balance = nextAmounts[nextAmounts.length - 1];
+          explicitAmountBalancePair = true;
+          const leftover = stripTrailingAmounts(
+            nextIsDateRow ? next.replace(/^\d{1,2}\/\d{1,2}\s+/, '') : next
+          );
+          if (leftover) description = `${description} ${leftover}`;
+          rawParts.push(next);
+          i += 1;
+          break;
+        }
+        if (nextAmounts.length === 1) {
+          const soloLine = SOLO_SIGNED_AMOUNT.test(next);
+          if (soloLine && signedAmount == null) {
+            rawParts.push(next);
+            i += 1;
+            const peek = lines[i]?.trim() ?? '';
+            if (SOLO_SIGNED_AMOUNT.test(peek)) {
+              signedAmount = nextAmounts[0];
+              balance = extractAmounts(peek)[0] ?? null;
+              explicitAmountBalancePair = true;
+              rawParts.push(peek);
+              i += 1;
+            } else if (depositAmounts.length === 0 && lastSeenBalance != null) {
+              balance = nextAmounts[0];
+            } else if (depositAmounts.length === 0) {
+              signedAmount = nextAmounts[0];
+            } else {
+              balance = nextAmounts[0];
+            }
+            break;
+          }
+          balance = nextAmounts[0];
+          if (signedAmount == null && /-\s*\$?[\d,]+\.\d{2}\s*$/.test(next)) {
+            signedAmount = nextAmounts[0];
+          }
+          const leftover = stripTrailingAmounts(
+            nextIsDateRow ? next.replace(/^\d{1,2}\/\d{1,2}\s+/, '') : next
+          );
+          if (leftover) description = `${description} ${leftover}`;
+          rawParts.push(next);
+          i += 1;
+          break;
+        }
+
+        description = `${description} ${next}`;
+        rawParts.push(next);
+        i += 1;
+      }
+
+      description = description.replace(/\s+/g, ' ').trim();
+      if (!description) continue;
+
+      const incoming = isIncomingDesc(description);
+      const explicitDebitPair =
+        explicitAmountBalancePair && signedAmount != null && signedAmount < 0;
+
+      if (!explicitDebitPair && incoming && depositAmounts.length > 0) {
+        const queued = takeQueuedAmount(depositAmounts, lastSeenBalance, balance);
+        if (queued != null) {
+          signedAmount = queued;
+        }
+      }
+
+      const date = parseFlexibleDate(dateRaw, year, period);
+      if (!date) continue;
+
+      if (balance != null) lastSeenBalance = balance;
+
+      drafts.push({
+        date,
+        dateRaw,
+        description,
+        rawDescription: rawParts.join(' | '),
+        signedAmount,
+        runningBalance: balance,
+        accountLast4: currentLast4,
+        page: chunk.pageNumber,
+        lineIndex: startIndex,
+        continuityBreak: Boolean(chunk.continuityBreak && drafts.length === pageStartCount),
+        referenceId: extractReferenceId(`${description} ${rawParts.join(' ')}`),
+        forceOutgoing: explicitDebitPair,
+      });
+    }
+  }
+
+  const reconstructed = reconstructBalanceDeltas(drafts, pages?.length ? null : initialBalance);
   const transactions: NormalizedTransaction[] = [];
 
-  let i = 0;
-  while (i < lines.length) {
-    const raw = lines[i]?.trim() ?? '';
-    const folded = foldBankText(raw);
-
-    if (LEDGER_STOP.test(folded)) break;
-
-    const switched = matchKnownAccount(raw, accounts);
-    if (switched) {
-      // Savings pages still print the primary checking account number; once on
-      // savings, do not bounce back from that bare checking number.
-      if (
-        savings &&
-        checking &&
-        currentLast4 === savings.last4 &&
-        switched.last4 === checking.last4
-      ) {
-        i += 1;
-        continue;
-      }
-      currentLast4 = switched.last4;
-      i += 1;
-      continue;
-    }
-    if (/resumen de cuenta de ahorros|^\s*chase savings\s*$/i.test(folded) && savings) {
-      currentLast4 = savings.last4;
-    }
-    if (
-      /resumen de cuenta de cheques|^\s*chase total checking\s*$/i.test(folded) &&
-      checking
-    ) {
-      currentLast4 = checking.last4;
-    }
-
-    if (TXN_HEADER.test(folded)) {
-      collectingDepositAmounts = true;
-      depositAmounts = [];
-      i += 1;
-      continue;
-    }
-
-    if (collectingDepositAmounts) {
-      if (!raw) {
-        i += 1;
-        continue;
-      }
-      if (PAGE_META.test(folded) || /enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|january|february|march|april|june|july|august|september|october|november|december/i.test(folded)) {
-        i += 1;
-        continue;
-      }
-      // Summary totals on the same page as the amount column — keep collecting.
-      if (/deposits and additions|depositos y adiciones|atm & debit|electronic withdrawals|retiros/i.test(folded)) {
-        i += 1;
-        continue;
-      }
-      const solo = SOLO_AMOUNT.exec(raw);
-      if (solo) {
-        const amount = parseAmount(solo[1]);
-        if (amount != null && amount > 0) depositAmounts.push(amount);
-        i += 1;
-        continue;
-      }
-      if (DESC_START.test(raw)) {
-        collectingDepositAmounts = false;
-        // Fall through and parse this description row.
-      } else {
-        // Noise / address / mail-hold lines between the header and amount column
-        // must NOT abort collection — that was dropping the first-page credits.
-        i += 1;
-        continue;
-      }
-    }
-
-    const start = DESC_START.exec(raw);
-    if (!start) {
-      i += 1;
-      continue;
-    }
-
-    const dateRaw = start[1];
-    let description = start[2].trim();
-    const rawParts: string[] = [raw];
-    let amountsOnRow = extractAmounts(description);
-    let signedAmount: number | null = null;
-    let balance: number | null = null;
-    /** True when Chase printed Amount + Balance (debit rows / re-posts). */
-    let explicitAmountBalancePair = false;
-    if (amountsOnRow.length >= 2) {
-      signedAmount = amountsOnRow[amountsOnRow.length - 2];
-      balance = amountsOnRow[amountsOnRow.length - 1];
-      explicitAmountBalancePair = true;
-      description = stripTrailingAmounts(description);
-    } else if (amountsOnRow.length === 1 && /-\s*\$?[\d,]+\.\d{2}\s*$/.test(description)) {
-      // Single trailing signed token may still be only the running balance.
-      signedAmount = amountsOnRow[0];
-      description = stripTrailingAmounts(description);
-    }
-    const startIndex = i;
-    i += 1;
-
-    while (i < lines.length) {
-      const next = lines[i]?.trim() ?? '';
-      if (!next) {
-        i += 1;
-        break;
-      }
-      if (TXN_HEADER.test(foldBankText(next))) break;
-      if (LEDGER_STOP.test(foldBankText(next))) break;
-      if (matchKnownAccount(next, accounts)) break;
-      if (
-        /detalle de transacciones|transaction detail|depositos y adiciones|deposits and additions|retiros electronicos|resumen de cuenta|checking summary/i.test(
-          foldBankText(next)
-        )
-      ) {
-        break;
-      }
-
-      // ATM withdrawal rows often continue as "MM/DD address ... -amount balance".
-      const nextIsDateRow = DESC_START.test(next);
-      const atmContinuation =
-        nextIsDateRow &&
-        signedAmount == null &&
-        /atm withdrawal|retiro en cajero/i.test(foldBankText(description)) &&
-        extractAmounts(next).length >= 1;
-      if (nextIsDateRow && !atmContinuation) break;
-
-      const nextAmounts = extractAmounts(next);
-      if (nextAmounts.length >= 2) {
-        signedAmount = nextAmounts[nextAmounts.length - 2];
-        balance = nextAmounts[nextAmounts.length - 1];
-        explicitAmountBalancePair = true;
-        const leftover = stripTrailingAmounts(
-          nextIsDateRow ? next.replace(/^\d{1,2}\/\d{1,2}\s+/, '') : next
-        );
-        if (leftover) description = `${description} ${leftover}`;
-        rawParts.push(next);
-        i += 1;
-        break;
-      }
-      if (nextAmounts.length === 1) {
-        // Single trailing money token is usually the running balance for credits
-        // whose amount came from the split deposit column.
-        balance = nextAmounts[0];
-        if (signedAmount == null && /-\s*\$?[\d,]+\.\d{2}\s*$/.test(next)) {
-          signedAmount = nextAmounts[0];
-        }
-        const leftover = stripTrailingAmounts(
-          nextIsDateRow ? next.replace(/^\d{1,2}\/\d{1,2}\s+/, '') : next
-        );
-        if (leftover) description = `${description} ${leftover}`;
-        rawParts.push(next);
-        i += 1;
-        break;
-      }
-
-      description = `${description} ${next}`;
-      rawParts.push(next);
-      i += 1;
-    }
-
-    description = description.replace(/\s+/g, ' ').trim();
-    if (!description) continue;
-
-    const incoming = isIncomingDesc(description);
-    let direction = directionForChase(description, signedAmount);
-    let amountAbs =
-      signedAmount != null ? roundMoney(Math.abs(signedAmount)) : null;
-
-    // Explicit negative Amount+Balance is a debit/re-post even when the memo
-    // says "Reversal". Do not consume the deposit-amount queue for those rows.
-    const explicitDebitPair =
-      explicitAmountBalancePair && signedAmount != null && signedAmount < 0;
-
-    if (explicitDebitPair) {
+  for (const row of reconstructed.rows) {
+    if (row.signedAmount == null || row.signedAmount === 0) continue;
+    let direction = directionForChase(row.description, row.signedAmount);
+    if (row.forceOutgoing) {
       direction = 'out';
-    } else if (incoming && depositAmounts.length > 0) {
-      // Prefer the split deposit-amount column for credits. Balance-only trails
-      // and description-embedded dollars (e.g. "Fee For A $100.00") must not
-      // block pairing with the queued credit amounts.
-      const queued = depositAmounts.shift()!;
-      amountAbs = queued;
-      direction = 'in';
-      signedAmount = queued;
+    } else if (row.signedAmount < 0 && !/\breversal\b/i.test(foldBankText(row.description))) {
+      direction = 'out';
     }
-
-    if (amountAbs == null || amountAbs === 0) continue;
-    if (!incoming && signedAmount != null && signedAmount < 0) direction = 'out';
-
-    const date = parseFlexibleDate(dateRaw, year, period);
-    if (!date) continue;
-
+    if (row.amountSource === 'balance_delta_reconstructed') {
+      direction = row.signedAmount < 0 ? 'out' : 'in';
+    }
+    const amountAbs = roundMoney(Math.abs(row.signedAmount));
     transactions.push({
-      id: `${fileName}:${date}:${amountAbs}:${startIndex}`,
-      date,
-      description,
-      rawDescription: rawParts.join(' | '),
+      id: `${fileName}:${row.date}:${amountAbs}:${row.lineIndex}`,
+      date: row.date,
+      description: row.description,
+      rawDescription: row.rawDescription,
       amount: amountAbs,
       direction,
       sourceDocument: fileName,
       sourceDocumentType: 'bank_statement',
-      sourceAccount: currentLast4,
+      sourceAccount: row.accountLast4,
       detectedIncomeSource: null,
       turbopassCategory: null,
-      runningBalance: balance,
-      page: null,
+      runningBalance: row.runningBalance,
+      page: row.page,
+      amountSource: row.amountSource,
+      extractionConflict: row.conflict || undefined,
+      referenceId: row.referenceId,
     });
   }
 

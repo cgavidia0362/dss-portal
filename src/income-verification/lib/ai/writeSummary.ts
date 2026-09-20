@@ -1,6 +1,6 @@
 import { buildSummaryFacts } from '../analysis/summary';
 import type { IncomeAnalysis } from '../analysis/types';
-import { getOpenAIApiKey, getOpenAIModel } from './openai';
+import { getOpenAIApiKey, getOpenAIModel } from './models';
 
 export async function polishUnderwriterSummary(
   analysis: IncomeAnalysis,
@@ -19,7 +19,7 @@ export async function polishUnderwriterSummary(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: getOpenAIModel(),
+      model: getOpenAIModel('classification'),
       temperature: 0.2,
       messages: [
         {

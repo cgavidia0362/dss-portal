@@ -4,7 +4,7 @@ import {
   classificationFromModel,
   isValidDepositCategory,
 } from './schema';
-import { getOpenAIApiKey, getOpenAIModel, isOpenAIConfigured } from './openai';
+import { getOpenAIApiKey, getOpenAIModel, isOpenAIConfigured } from './models';
 
 const BATCH_SIZE = 25;
 
@@ -35,7 +35,7 @@ async function requestBatch(batch: Transaction[]): Promise<ModelRow[]> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: getOpenAIModel(),
+      model: getOpenAIModel('classification'),
       temperature: 0,
       response_format: {
         type: 'json_schema',

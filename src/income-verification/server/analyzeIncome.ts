@@ -72,6 +72,15 @@ async function runAnalysis(uploaded: UploadedFile[]) {
     transactions: analysis.transactions.length,
     warnings: analysis.warnings.map((warning) => warning.code),
     monthsAnalyzed: analysis.totals.monthsAnalyzed,
+    extractionTelemetry: extracted.telemetry
+      ? {
+          deterministicPagesProcessed: extracted.telemetry.deterministicPagesProcessed,
+          terraPagesProcessed: extracted.telemetry.terraPagesProcessed,
+          solPagesProcessed: extracted.telemetry.solPagesProcessed,
+          fallbackReasons: extracted.telemetry.fallbackReasons,
+          modelsUsed: extracted.telemetry.modelsUsed,
+        }
+      : undefined,
   });
 
   return {

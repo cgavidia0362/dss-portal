@@ -13,6 +13,9 @@ export default defineConfig(({ mode }) => {
   for (const key of [
     'OPENAI_API_KEY',
     'OPENAI_MODEL',
+    'OPENAI_CLASSIFICATION_MODEL',
+    'OPENAI_VISION_MODEL',
+    'OPENAI_ESCALATION_MODEL',
     'BLOB_READ_WRITE_TOKEN',
     'SUPABASE_URL',
     'SUPABASE_ANON_KEY',

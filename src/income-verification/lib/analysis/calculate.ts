@@ -8,6 +8,7 @@ import type {
   CategoryBreakdown,
   DepositCategory,
   DepositClassification,
+  ExtractionTrustState,
   IncomeAnalysis,
   IncomeSourceBreakdown,
   MonthlyIncome,
@@ -75,6 +76,8 @@ function emptyMonth(month: string): MonthlyIncome {
     periodStartDate: null,
     periodEndDate: null,
     sourceDocuments: [],
+    extractionTrust: undefined,
+    reviewRequired: false,
   };
 }
 
@@ -148,6 +151,8 @@ export function calculateIncome(
     a.month.localeCompare(b.month)
   );
 
+  applyMonthTrust(resolved, months);
+
   const sourceMap = new Map<string, IncomeSourceBreakdown>();
   const sourceCategoryTotals = new Map<string, Partial<Record<DepositCategory, number>>>();
   const categoryMap = new Map<DepositCategory, CategoryBreakdown>(
@@ -211,10 +216,33 @@ export function calculateIncome(
   );
   const totalDeposits = addMoney(includedDeposits, excludedDeposits);
   const coverageMonthCount = coverage.months.length || months.length;
+  const untrustedMonths = months.filter((month) => isUntrustedTrust(month.extractionTrust));
+  const verifiedMonths = months.filter((month) => !isUntrustedTrust(month.extractionTrust));
+  const unverifiedIncludedTotal = untrustedMonths.reduce(
+    (sum, month) => addMoney(sum, month.includedTotal),
+    0
+  );
+  const verifiedIncludedTotal = verifiedMonths.reduce(
+    (sum, month) => addMoney(sum, month.includedTotal),
+    0
+  );
+  const verifiedMonthCount =
+    untrustedMonths.length && verifiedMonths.length
+      ? verifiedMonths.length
+      : coverageMonthCount;
   const averageMonthlyIncluded =
-    coverageMonthCount === 0
+    verifiedMonthCount === 0
       ? 0
-      : fromCents(Math.round(toCents(includedDeposits) / coverageMonthCount));
+      : fromCents(
+          Math.round(
+            toCents(
+              untrustedMonths.length && verifiedMonths.length
+                ? verifiedIncludedTotal
+                : includedDeposits
+            ) / verifiedMonthCount
+          )
+        );
+  const extractionTrust = worstTrust(resolved.map((tx) => tx.extractionTrustState));
 
   const sources = Array.from(sourceMap.values())
     .map((source) => ({
@@ -259,6 +287,18 @@ export function calculateIncome(
     ),
   ];
 
+  if (
+    untrustedMonths.length &&
+    verifiedMonths.length &&
+    !warnings.some((warning) => warning.code === 'segment_partial_failure')
+  ) {
+    warnings.push({
+      code: 'segment_partial_failure',
+      message:
+        'Some statement periods could not be verified. Verified months are used for the average; unverified months are shown separately and require buyer review.',
+    });
+  }
+
   const homeState =
     normalizeStateCode(options.homeState ?? '') ??
     (options.documentPeriods ?? [])
@@ -293,9 +333,37 @@ export function calculateIncome(
       excludedCount: months.reduce((sum, month) => sum + month.excludedCount, 0),
       duplicateCount,
       duplicateAmount,
+      verifiedMonthsAnalyzed: verifiedMonths.length,
+      unverifiedIncludedTotal,
     },
     coverage,
     warnings,
     locationReview,
+    extractionTrust,
   };
+}
+
+function isUntrustedTrust(trust: ExtractionTrustState | undefined): boolean {
+  return trust === 'mismatch' || trust === 'incomplete_source';
+}
+
+function worstTrust(
+  states: Array<ExtractionTrustState | undefined>
+): ExtractionTrustState | undefined {
+  if (states.includes('mismatch')) return 'mismatch';
+  if (states.includes('incomplete_source')) return 'incomplete_source';
+  if (states.includes('partial')) return 'partial';
+  if (states.includes('verified')) return 'verified';
+  return undefined;
+}
+
+function applyMonthTrust(transactions: Transaction[], months: MonthlyIncome[]) {
+  for (const month of months) {
+    const monthTxs = transactions.filter(
+      (tx) => tx.direction === 'in' && !tx.duplicateOf && monthKey(tx.date) === month.month
+    );
+    const trust = worstTrust(monthTxs.map((tx) => tx.extractionTrustState));
+    month.extractionTrust = trust;
+    month.reviewRequired = isUntrustedTrust(trust);
+  }
 }

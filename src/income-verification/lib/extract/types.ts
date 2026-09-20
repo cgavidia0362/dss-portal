@@ -1,4 +1,5 @@
 import type { AnalysisWarning, DocumentPeriod, NormalizedTransaction } from '../analysis/types';
+import type { DocumentPreflight, ExtractionTelemetry, SegmentExtraction } from './documentModel';
 
 export interface ExtractedDocument {
   fileName: string;
@@ -7,6 +8,9 @@ export interface ExtractedDocument {
   period: DocumentPeriod;
   warnings: AnalysisWarning[];
   pageCount?: number;
+  segments?: SegmentExtraction[];
+  preflight?: DocumentPreflight;
+  telemetry?: ExtractionTelemetry;
 }
 
 export interface ExtractionResult {
@@ -21,4 +25,6 @@ export interface ExtractionResult {
     transactionCount: number;
     warningCount: number;
   }>;
+  telemetry?: ExtractionTelemetry;
+  segments?: SegmentExtraction[];
 }

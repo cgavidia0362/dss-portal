@@ -90,6 +90,27 @@ export function ResultsDashboard({
         </div>
       )}
 
+      {analysis.extractionTrust === 'incomplete_source' && (
+        <div className="border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">Incomplete source</p>
+          <p className="mt-1">
+            The uploaded statement packet is missing printed pages. Upload the complete statement
+            to verify deposits. Extracted rows are kept for review and are not included in the
+            trusted average.
+          </p>
+        </div>
+      )}
+
+      {analysis.extractionTrust === 'mismatch' && (
+        <div className="border border-red-400 bg-red-50 px-4 py-3 text-sm text-red-950">
+          <p className="font-semibold">Extraction could not be verified. Buyer review required.</p>
+          <p className="mt-1">
+            Statement control totals do not match the extracted deposits. Missing transactions were
+            not invented. Review the flagged periods below before relying on these figures.
+          </p>
+        </div>
+      )}
+
       {analysis.warnings.length > 0 && (
         <div className="border border-slate-300 bg-white px-4 py-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Processing notes</p>
@@ -135,7 +156,13 @@ export function ResultsDashboard({
             <div key={month.month} className="border border-slate-200 px-3 py-3">
               <p className="text-[11px] uppercase tracking-wide text-slate-500">{month.label}</p>
               <p className="mt-1 text-lg font-semibold tabular-nums">{formatMoney(month.includedTotal)}</p>
-              <p className="text-[11px] text-slate-500">{completenessLabel(month.completeness)}</p>
+              <p className="text-[11px] text-slate-500">
+                {month.extractionTrust === 'incomplete_source'
+                  ? 'Incomplete source'
+                  : month.reviewRequired
+                    ? 'Buyer review required'
+                    : completenessLabel(month.completeness)}
+              </p>
             </div>
           ))}
           <div className="border border-dss-navy bg-dss-navy px-3 py-3 text-white">

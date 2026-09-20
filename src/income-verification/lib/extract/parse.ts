@@ -477,6 +477,70 @@ export function extractChaseAccountDepositControls(
     controls.push({ accountLast4, accountLabel, total });
   }
 
+  if (controls.length) return controls;
+  return extractChaseStackedSummaryControls(text);
+}
+
+const SOLO_AMOUNT_LINE = /^\$?(-?[\d,]+\.\d{2})$/;
+
+/**
+ * Spanish/split-column Chase PDFs often print the checking summary as a
+ * vertical amount stack instead of "Deposits and Additions 4,135.22":
+ *   $28.17
+ *   4,135.22
+ *   -3,299.92
+ *   -846.25
+ *   $17.22
+ * Order is beginning, deposits, withdrawal(s), ending.
+ */
+function extractChaseStackedSummaryControls(text: string): ChaseAccountDepositControl[] {
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const checkingMatch = /chase total checking\s+(\d+)/i.exec(text);
+  const checkingLast4 = checkingMatch?.[1].slice(-4) ?? extractAccountLast4(text);
+  const controls: ChaseAccountDepositControl[] = [];
+
+  let i = 0;
+  while (i < lines.length) {
+    const start = i;
+    const amounts: number[] = [];
+    while (i < lines.length) {
+      const line = lines[i] ?? '';
+      if (!line) {
+        if (amounts.length) break;
+        i += 1;
+        continue;
+      }
+      const match = SOLO_AMOUNT_LINE.exec(line);
+      if (!match) break;
+      const amount = parseAmount(match[1]);
+      if (amount == null) break;
+      amounts.push(amount);
+      i += 1;
+    }
+
+    if (amounts.length >= 4 && amounts.length <= 7) {
+      const firstNegative = amounts.findIndex((value) => value < 0);
+      const beginning = amounts[0] ?? 0;
+      const ending = amounts[amounts.length - 1] ?? 0;
+      if (beginning > 0 && ending >= 0 && firstNegative > 1) {
+        const deposit = amounts[firstNegative - 1];
+        if (
+          deposit != null &&
+          deposit > 0 &&
+          !controls.some((control) => amountsEqualish(control.total, deposit))
+        ) {
+          controls.push({
+            accountLast4: checkingLast4,
+            accountLabel: 'Chase Total Checking',
+            total: deposit,
+          });
+        }
+      }
+    }
+
+    if (i === start) i += 1;
+  }
+
   return controls;
 }
 

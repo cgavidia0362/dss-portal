@@ -10,6 +10,8 @@ export type {
   DepositClassification,
   DocumentPeriod,
   DocumentType,
+  ExtractionProvenance,
+  ExtractionTrustState,
   IncomeAnalysis,
   IncomeSourceBreakdown,
   IncomeTotals,

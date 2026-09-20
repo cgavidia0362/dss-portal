@@ -124,6 +124,7 @@ Transaction History
 describe('document detection', () => {
   it('detects TurboPass from P2PCredits/BRAVO markers', () => {
     expect(detectDocumentType('report.pdf', TURBOPASS_TEXT)).toBe('turbopass');
+    expect(detectDocumentType('turbo_pass_2_.pdf', '')).toBe('turbopass');
     expect(detectDocumentType('jan.pdf', BANK_TEXT)).toBe('bank_statement');
     expect(detectDocumentType('export.csv', 'date,amount')).toBe('csv_export');
   });
@@ -1010,6 +1011,70 @@ describe('Chase English first-page split-column extraction', () => {
     const warning = extracted.warnings.find((item) => item.code === 'deposit_control_mismatch');
     expect(warning?.message).toMatch(/Deposits totaling \$999\.99/i);
     expect(warning?.message).toMatch(/\$590\.60/);
+  });
+
+  it('reads Chase checking-summary control totals from a stacked amount column', () => {
+    const stacked = `
+JPMorgan Chase Bank, N.A.
+July 23, 2026 through August 24, 2026
+Chase Total Checking 000002907827999
+$28.17
+4,135.22
+-3,299.92
+-846.25
+$17.22
+07/24 Zelle Payment From Example Sender 30.00 58.17
+`;
+    expect(extractChaseAccountDepositControls(stacked)).toEqual([
+      {
+        accountLast4: '7999',
+        accountLabel: 'Chase Total Checking',
+        total: 4135.22,
+      },
+    ]);
+    const extracted = parseBankStatementText(stacked, 'chase-stacked.pdf');
+    expect(
+      extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')
+    ).toBe(true);
+  });
+
+  it('pairs Spanish date-only rows with following amount and balance lines', () => {
+    const splitRows = `
+JPMorgan Chase Bank, N.A.
+July 23, 2026 through August 24, 2026
+Chase Total Checking 000002907827999
+$28.17
+4,135.22
+-3,299.92
+-846.25
+$17.22
+DETALLE
+TRANSACCIONES
+FECHA
+CANTIDAD
+SALDO
+07/24
+Zelle Payment From Example Sender One
+
+30.00
+58.17
+07/27
+Example Staffing Payroll
+4105.22
+4163.39
+07/27
+Card Purchase Example Grocery
+-10.00
+4153.39
+`;
+    const extracted = parseBankStatementText(splitRows, 'chase-split-rows.pdf');
+    const credits = extracted.transactions.filter((tx) => tx.direction === 'in');
+    const total = Math.round(credits.reduce((sum, tx) => sum + tx.amount, 0) * 100) / 100;
+    expect(credits).toHaveLength(2);
+    expect(total).toBe(4135.22);
+    expect(
+      extracted.warnings.some((warning) => warning.code === 'deposit_control_mismatch')
+    ).toBe(false);
   });
 });
 

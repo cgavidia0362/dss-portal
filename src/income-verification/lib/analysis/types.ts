@@ -19,6 +19,10 @@ export type ClassificationSource = 'rule' | 'ai' | 'underwriter';
 
 export type InclusionSource = 'default' | 'underwriter' | 'duplicate';
 
+export type ExtractionProvenance = 'deterministic' | 'terra_vision' | 'sol_escalation';
+
+export type ExtractionTrustState = 'verified' | 'partial' | 'mismatch' | 'incomplete_source';
+
 export type TurboPassCategory =
   | 'P2PCredits'
   | 'General Deposit'
@@ -62,6 +66,15 @@ export interface NormalizedTransaction {
   turbopassCategory?: TurboPassCategory | null;
   runningBalance?: number | null;
   page?: number | null;
+  statementSegmentId?: string | null;
+  extractionProvenance?: ExtractionProvenance;
+  extractionProvenanceSources?: ExtractionProvenance[];
+  amountSource?: 'explicit' | 'balance_delta_reconstructed' | 'model';
+  extractionConflict?: boolean;
+  referenceId?: string | null;
+  /** Confidence that this row was extracted correctly. Independent of classification confidence. */
+  extractionConfidence?: number | null;
+  extractionTrustState?: ExtractionTrustState;
 }
 
 export interface Transaction extends NormalizedTransaction {
@@ -129,6 +142,8 @@ export interface CoverageMonth {
   completeness: PeriodCompleteness;
   partialReason: string | null;
   sourceDocuments: string[];
+  extractionTrust?: ExtractionTrustState;
+  reviewRequired?: boolean;
 }
 
 export interface AnalysisCoverage {
@@ -152,6 +167,8 @@ export interface MonthlyIncome {
   periodStartDate: string | null;
   periodEndDate: string | null;
   sourceDocuments: string[];
+  extractionTrust?: ExtractionTrustState;
+  reviewRequired?: boolean;
 }
 
 export interface IncomeSourceBreakdown {
@@ -191,6 +208,8 @@ export interface IncomeTotals {
   excludedCount: number;
   duplicateCount: number;
   duplicateAmount: number;
+  verifiedMonthsAnalyzed?: number;
+  unverifiedIncludedTotal?: number;
 }
 
 export interface IncomeAnalysis {
@@ -202,6 +221,7 @@ export interface IncomeAnalysis {
   coverage: AnalysisCoverage;
   warnings: AnalysisWarning[];
   locationReview: LocationReview;
+  extractionTrust?: ExtractionTrustState;
 }
 
 export interface AnalyzeOptions {

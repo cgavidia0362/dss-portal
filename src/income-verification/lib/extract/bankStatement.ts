@@ -374,7 +374,8 @@ function parseDepositSections(
 
 export function parseBankStatementText(
   text: string,
-  fileName: string
+  fileName: string,
+  options?: { pages?: Array<{ pageNumber: number; text: string }> }
 ): ExtractedDocument {
   const warnings: AnalysisWarning[] = [];
   const headerPeriod = parseStatementPeriod(text);
@@ -387,7 +388,7 @@ export function parseBankStatementText(
   const wellsMode = isWellsFargoStatement(text);
   const lakeForestMode = isLakeForestStyleStatement(text);
   const transactions = chaseMode
-    ? parseChaseLedger(text, fileName, headerPeriod, accountLast4)
+    ? parseChaseLedger(text, fileName, headerPeriod, accountLast4, options?.pages)
     : wellsMode
       ? parseWellsFargoLedger(text, fileName, headerPeriod, accountLast4)
       : lakeForestMode
