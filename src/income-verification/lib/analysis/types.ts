@@ -72,6 +72,8 @@ export interface NormalizedTransaction {
   amountSource?: 'explicit' | 'balance_delta_reconstructed' | 'model';
   extractionConflict?: boolean;
   referenceId?: string | null;
+  postedDate?: string | null;
+  transactionDate?: string | null;
   /** Confidence that this row was extracted correctly. Independent of classification confidence. */
   extractionConfidence?: number | null;
   extractionTrustState?: ExtractionTrustState;
@@ -212,6 +214,7 @@ export interface IncomeTotals {
   unverifiedIncludedTotal?: number;
   reviewOnlyExtractedTotal?: number;
   trustedAverageAvailable?: boolean;
+  printedDepositControlTotal?: number;
 }
 
 export interface IncomeAnalysis {
@@ -234,4 +237,5 @@ export interface AnalyzeOptions {
   documentTexts?: string[];
   homeState?: string | null;
   locationReview?: LocationReview;
+  printedDepositControlTotal?: number;
 }

@@ -41,5 +41,6 @@ export async function analyzeExtractedTransactions(
     documentTexts: options.documentTexts,
     homeState: options.homeState ?? initial.locationReview.homeState,
     locationReview: initial.locationReview,
+    printedDepositControlTotal: options.printedDepositControlTotal,
   });
 }

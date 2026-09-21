@@ -1,7 +1,7 @@
 import { analyzeExtractedTransactions } from '../lib/analysis/run';
 import { buildUnderwriterSummary } from '../lib/analysis/summary';
 import { polishUnderwriterSummary } from '../lib/ai/writeSummary';
-import { extractDocuments } from '../lib/extract';
+import { extractDocuments, printedDepositControlTotalFromSegments } from '../lib/extract';
 import { MAX_FILES, type UploadedFile } from '../lib/extract/files';
 import {
   deleteOrphanPoiBlobs,
@@ -63,9 +63,13 @@ async function runAnalysis(uploaded: UploadedFile[]) {
     warnings: extracted.warnings,
     documentTexts: extracted.documentTexts.filter(Boolean),
     homeState,
+    printedDepositControlTotal: printedDepositControlTotalFromSegments(extracted.segments),
   });
   const templateSummary = buildUnderwriterSummary(analysis);
-  const polished = await polishUnderwriterSummary(analysis, templateSummary);
+  const polished =
+    analysis.extractionTrust === 'incomplete_source'
+      ? { summary: templateSummary, source: 'template' as const }
+      : await polishUnderwriterSummary(analysis, templateSummary);
 
   logSafe({
     documents: extracted.documents.length,

@@ -4,6 +4,7 @@ import { ExcludedList } from './ExcludedList';
 import {
   incompleteSourceHeadlineCopy,
   isIncompleteSourceAnalysis,
+  printedDepositControlTotal,
   reviewOnlyExtractedTotal,
 } from './incomeHeadline';
 import { CategoryBreakdown } from './ReviewQueue';
@@ -98,7 +99,9 @@ export function ResultsDashboard({
       {isIncompleteSourceAnalysis(analysis) && (
         <div className="border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <p className="font-semibold">Incomplete source</p>
-          <p className="mt-1">{incompleteSourceHeadlineCopy().notice}</p>
+          <p className="mt-1">{incompleteSourceHeadlineCopy().unavailableAverage}</p>
+          <p className="mt-1">{incompleteSourceHeadlineCopy().cannotReconcile}</p>
+          <p className="mt-1">{incompleteSourceHeadlineCopy().printedInformational}</p>
         </div>
       )}
 
@@ -139,13 +142,31 @@ export function ResultsDashboard({
               <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
                 {incompleteSourceHeadlineCopy().title}
               </p>
-              <p className="mt-2 text-sm text-white/80">
+              {printedDepositControlTotal(analysis) > 0 ? (
+                <>
+                  <p className="mt-3 text-sm text-white/80">
+                    {incompleteSourceHeadlineCopy().printedLabel}:
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums text-white/90">
+                    {formatMoney(printedDepositControlTotal(analysis))}
+                  </p>
+                </>
+              ) : null}
+              <p className="mt-3 text-sm text-white/80">
                 {incompleteSourceHeadlineCopy().extractedLabel}:
               </p>
               <p className="mt-1 text-4xl font-semibold tabular-nums">
                 {formatMoney(reviewOnlyExtractedTotal(analysis))}
               </p>
-              <p className="mt-2 text-sm text-white/65">{incompleteSourceHeadlineCopy().notice}</p>
+              <p className="mt-2 text-sm text-white/65">
+                {incompleteSourceHeadlineCopy().cannotReconcile}
+              </p>
+              <p className="mt-1 text-sm text-white/65">
+                {incompleteSourceHeadlineCopy().printedInformational}
+              </p>
+              <p className="mt-1 text-sm text-white/65">
+                {incompleteSourceHeadlineCopy().unavailableAverage}
+              </p>
             </>
           ) : (
             <>

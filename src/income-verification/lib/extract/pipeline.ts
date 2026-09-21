@@ -6,6 +6,7 @@ import type {
   NormalizedTransaction,
 } from '../analysis/types';
 import { extractHomeState } from '../analysis/location';
+import { addMoney } from '../analysis/money';
 import { isOpenAIConfigured } from '../ai/models';
 import {
   imagesFromRendered,
@@ -835,6 +836,15 @@ export async function extractDocuments(
 }
 
 export { buildPreflight, trustFromReconciliation };
+
+export function printedDepositControlTotalFromSegments(
+  segments?: SegmentExtraction[]
+): number {
+  return (segments ?? []).reduce((sum, segment) => {
+    const total = segment.reconciliation.expectedCreditTotal;
+    return total != null && Number.isFinite(total) && total > 0 ? addMoney(sum, total) : sum;
+  }, 0);
+}
 
 /** Test/helper entry point: run the hybrid pipeline on already-extracted page text. */
 export async function extractFromTextPages(params: {

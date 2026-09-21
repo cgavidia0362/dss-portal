@@ -278,3 +278,109 @@ describe('candidate fusion', () => {
     expect(fused.transactions).toHaveLength(2);
   });
 });
+
+describe('posted-date vs embedded-transaction-date identity', () => {
+  it('merges one Chase ATM cash deposit represented with posting and embedded transaction dates', () => {
+    const fused = fuseTransactionCandidates({
+      deterministic: [
+        tx({
+          id: 'atm-posted',
+          date: '2026-07-27',
+          postedDate: '2026-07-27',
+          transactionDate: '2026-07-25',
+          description: 'ATM cash deposit 1000 Example St Example City IL card 4048',
+          amount: 260,
+          extractionProvenance: 'deterministic',
+          amountSource: 'explicit',
+          runningBalance: 317.76,
+          page: 4,
+        }),
+      ],
+      terra: [
+        tx({
+          id: 'atm-embedded',
+          date: '2026-07-25',
+          postedDate: null,
+          transactionDate: '2026-07-25',
+          description: 'ATM Cash Deposit 07/25 1000 Example St Example City IL Card 4048',
+          amount: 260,
+          extractionProvenance: 'terra_vision',
+          amountSource: 'model',
+          page: 4,
+        }),
+      ],
+    });
+    expect(fused.transactions).toHaveLength(1);
+    expect(fused.stats.duplicatesRemoved).toBe(1);
+    const atm = fused.transactions[0];
+    expect(atm?.amount).toBe(260);
+    expect(atm?.date).toBe('2026-07-27');
+    expect(atm?.postedDate).toBe('2026-07-27');
+    expect(atm?.transactionDate).toBe('2026-07-25');
+    expect(atm?.extractionProvenanceSources).toEqual(['deterministic', 'terra_vision']);
+  });
+
+  it('keeps legitimate nearby same-amount transactions separate without matching row identity', () => {
+    const fused = fuseTransactionCandidates({
+      deterministic: [
+        tx({
+          id: 'atm-example',
+          date: '2026-07-27',
+          description: 'ATM Cash Deposit 07/25 1000 Example St Example City IL Card 4048',
+          amount: 260,
+          extractionProvenance: 'deterministic',
+          runningBalance: 317.76,
+          page: 4,
+        }),
+        tx({
+          id: 'zelle-camilo',
+          date: '2026-07-25',
+          description: 'Zelle payment from Camilo Example 30161522999',
+          amount: 260,
+          extractionProvenance: 'deterministic',
+          runningBalance: 416.76,
+          page: 4,
+          referenceId: '30161522999',
+        }),
+      ],
+      terra: [
+        tx({
+          id: 'atm-aurora',
+          date: '2026-07-25',
+          description: 'ATM Cash Deposit 200 Other Rd Other Town IL Card 8821',
+          amount: 260,
+          extractionProvenance: 'terra_vision',
+          runningBalance: 900.12,
+          page: 6,
+        }),
+      ],
+    });
+    expect(fused.transactions).toHaveLength(3);
+    expect(fused.transactions.filter((item) => item.amount === 260)).toHaveLength(3);
+  });
+
+  it('does not merge two same-extractor nearby ATM deposits of the same amount', () => {
+    const fused = fuseTransactionCandidates({
+      deterministic: [
+        tx({
+          id: 'atm-one',
+          date: '2026-07-25',
+          description: 'ATM Cash Deposit 07/25 1000 Example St Example City IL Card 4048',
+          amount: 145.01,
+          extractionProvenance: 'deterministic',
+          page: 4,
+        }),
+        tx({
+          id: 'atm-two',
+          date: '2026-07-27',
+          description: 'ATM Cash Deposit 07/27 1000 Example St Example City IL Card 4048',
+          amount: 145.01,
+          extractionProvenance: 'deterministic',
+          page: 4,
+        }),
+      ],
+    });
+    expect(fused.transactions).toHaveLength(2);
+    expect(fused.transactions.reduce((sum, item) => sum + item.amount, 0)).toBe(290.02);
+  });
+});

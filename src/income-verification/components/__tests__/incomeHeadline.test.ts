@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { analyzeIncome } from '../../lib/analysis/pipeline';
+import { buildUnderwriterSummary } from '../../lib/analysis/summary';
 import type { NormalizedTransaction } from '../../lib/analysis/types';
 import {
   incompleteSourceHeadlineCopy,
   isIncompleteSourceAnalysis,
+  printedDepositControlTotal,
   reviewOnlyExtractedTotal,
 } from '../incomeHeadline';
 
@@ -45,5 +47,47 @@ describe('incomplete-source headline', () => {
     );
     expect(incompleteSourceHeadlineCopy().notice).toMatch(/review only/i);
     expect(incompleteSourceHeadlineCopy().notice).not.toMatch(/Average monthly included income/i);
+    expect(incompleteSourceHeadlineCopy().unavailableAverage).toBe(
+      'A verified monthly average is unavailable because the source statement is incomplete.'
+    );
+    expect(incompleteSourceHeadlineCopy().unavailableAverage).not.toMatch(/\$0\.00/);
+  });
+
+  it('shows printed statement controls separately from the observable extracted subtotal', () => {
+    const analysis = analyzeIncome(
+      [
+        tx({
+          id: 'observed',
+          date: '2026-07-27',
+          amount: 6533.63,
+          description: 'Observed available-page deposits',
+          extractionTrustState: 'incomplete_source',
+        }),
+      ],
+      { printedDepositControlTotal: 11138.49 }
+    );
+
+    expect(isIncompleteSourceAnalysis(analysis)).toBe(true);
+    expect(printedDepositControlTotal(analysis)).toBe(11138.49);
+    expect(reviewOnlyExtractedTotal(analysis)).toBe(6533.63);
+    expect(printedDepositControlTotal(analysis)).not.toBe(reviewOnlyExtractedTotal(analysis));
+    expect(incompleteSourceHeadlineCopy().printedLabel).toBe('Printed statement deposit controls');
+    expect(incompleteSourceHeadlineCopy().extractedLabel).toBe(
+      'Extracted deposits from available pages'
+    );
+    expect(incompleteSourceHeadlineCopy().cannotReconcile).toContain(
+      'extracted subtotal cannot be reconciled to the full printed statement totals'
+    );
+    expect(incompleteSourceHeadlineCopy().printedInformational).toContain(
+      'must not be treated as verified extracted income'
+    );
+
+    const summary = buildUnderwriterSummary(analysis);
+    expect(summary).toContain('$11,138.49');
+    expect(summary).toContain('$6,533.63');
+    expect(summary).toContain(incompleteSourceHeadlineCopy().unavailableAverage);
+    expect(summary).not.toMatch(/\$0\.00/);
+    expect(summary).not.toMatch(/averaged \$0/i);
+    expect(summary).not.toMatch(/coverage average including partial months is \$0\.00/i);
   });
 });

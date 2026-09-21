@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { parseVisionExtraction } from '../../ai/visionSchema';
-import { extractFromTextPages } from '../pipeline';
+import { extractFromTextPages, printedDepositControlTotalFromSegments } from '../pipeline';
 import type { VisionClient } from '../../ai/extractVision';
 import type { PageRenderer } from '../renderPages';
 
@@ -416,6 +416,11 @@ Page 3 of 4
     );
     expect(result.warnings.some((warning) => warning.code === 'extraction_unverified')).toBe(false);
     expect(result.transactions.filter((tx) => tx.direction === 'in').length).toBeGreaterThan(0);
+    const extractedTotal = result.transactions
+      .filter((tx) => tx.direction === 'in')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+    expect(printedDepositControlTotalFromSegments(result.segments)).toBe(999);
+    expect(extractedTotal).not.toBe(999);
   });
 
   it('does not call Terra or Sol when credits already verify and only debits mismatch', async () => {
@@ -543,6 +548,7 @@ $1.36
       'verified',
       'verified',
     ]);
+    expect(printedDepositControlTotalFromSegments(result.segments)).toBe(11138.49);
   });
 
   it('escalates Terra → Sol using the same segment PDF', async () => {

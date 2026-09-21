@@ -218,10 +218,14 @@ export function visionRowsToTransactions(params: {
   return rows.map((row, index) => {
     const account =
       last4(row.accountIdentifier) ?? last4(params.fallbackAccount) ?? null;
-    const date = row.transactionDate as string;
+    const transactionDate = row.transactionDate as string;
+    const postedDate = row.postedDate || transactionDate;
+    const date = postedDate;
     return {
       id: `${params.fileName}:${params.provenance}:${date}:${row.amount}:${row.sourcePage ?? 0}:${index}`,
       date,
+      postedDate,
+      transactionDate,
       description: row.description,
       rawDescription: row.description,
       amount: roundMoney(row.amount),

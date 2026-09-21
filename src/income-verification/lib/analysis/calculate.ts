@@ -350,6 +350,7 @@ export function calculateIncome(
       duplicateAmount,
       verifiedMonthsAnalyzed: verifiedMonths.length,
       unverifiedIncludedTotal,
+      printedDepositControlTotal: options.printedDepositControlTotal ?? 0,
       reviewOnlyExtractedTotal: hasIncompleteSource
         ? verifiedMonths.length === 0
           ? includedDeposits

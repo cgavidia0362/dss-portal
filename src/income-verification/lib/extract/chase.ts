@@ -1,7 +1,7 @@
 import { amountsEqual, roundMoney } from '../analysis/money';
 import type { MoneyDirection, NormalizedTransaction } from '../analysis/types';
 import { reconstructBalanceDeltas, type LedgerDraft } from './balanceDelta';
-import { extractReferenceId } from './candidates';
+import { extractEmbeddedIsoDates, extractReferenceId } from './candidates';
 import {
   contextYearFromPeriod,
   extractAmounts,
@@ -541,9 +541,14 @@ export function parseChaseLedger(
       direction = row.signedAmount < 0 ? 'out' : 'in';
     }
     const amountAbs = roundMoney(Math.abs(row.signedAmount));
+    const postedDate = row.date;
+    const embedded = extractEmbeddedIsoDates(`${row.description} ${row.rawDescription}`, row.date);
+    const transactionDate = embedded.find((date) => date !== postedDate) ?? postedDate;
     transactions.push({
       id: `${fileName}:${row.date}:${amountAbs}:${row.lineIndex}`,
-      date: row.date,
+      date: postedDate,
+      postedDate,
+      transactionDate,
       description: row.description,
       rawDescription: row.rawDescription,
       amount: amountAbs,

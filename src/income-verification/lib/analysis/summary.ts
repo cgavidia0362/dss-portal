@@ -127,8 +127,26 @@ function fullMonthSentence(facts: SummaryFacts): string {
 
 function averageSentence(facts: SummaryFacts, analysis: IncomeAnalysis): string {
   if (analysis.extractionTrust === 'incomplete_source') {
-    const extracted = analysis.totals.reviewOnlyExtractedTotal ?? analysis.totals.totalDeposits;
-    return `Source statement is incomplete. Extracted deposits from available pages were ${formatMoney(extracted)} for review only and are not included in the trusted income average.`;
+    const copy = {
+      unavailable:
+        'A verified monthly average is unavailable because the source statement is incomplete.',
+      extracted: `Extracted deposits from available pages were ${formatMoney(
+        analysis.totals.reviewOnlyExtractedTotal ?? analysis.totals.totalDeposits
+      )} for review only and are not included in the trusted income average.`,
+      cannotReconcile:
+        'The statement packet is incomplete, so the extracted subtotal cannot be reconciled to the full printed statement totals.',
+      printedInformational:
+        'The printed controls are informational only in this state and must not be treated as verified extracted income.',
+    };
+    const printed = analysis.totals.printedDepositControlTotal;
+    const printedSentence =
+      printed != null && printed > 0
+        ? `Printed statement deposit controls totaled ${formatMoney(printed)}. ${copy.printedInformational}`
+        : copy.printedInformational;
+    return `${copy.unavailable} ${copy.extracted} ${printedSentence} ${copy.cannotReconcile}`;
+  }
+  if (!analysis.totals.trustedAverageAvailable) {
+    return 'A verified monthly average is unavailable because the source statement is incomplete.';
   }
   return `Across the full statement period reviewed, including partial months, deposits averaged ${formatMoney(facts.averageMonthlyIncluded)} per month.`;
 }
@@ -144,6 +162,9 @@ function categorySentence(facts: SummaryFacts): string | null {
 /** Concise underwriting snapshot (3 sentences typical). Does not include review alerts. */
 export function buildUnderwriterSummary(analysis: IncomeAnalysis): string {
   const facts = buildSummaryFacts(analysis);
+  if (analysis.extractionTrust === 'incomplete_source') {
+    return [averageSentence(facts, analysis), categorySentence(facts)].filter(Boolean).join(' ');
+  }
   return [fullMonthSentence(facts), averageSentence(facts, analysis), categorySentence(facts)]
     .filter(Boolean)
     .join(' ');

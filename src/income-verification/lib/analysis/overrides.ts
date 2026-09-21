@@ -20,6 +20,8 @@ function recalculate(
     locationReview: options?.locationReview ?? analysis.locationReview,
     homeState: options?.homeState ?? analysis.locationReview.homeState,
     documentTexts: options?.documentTexts,
+    printedDepositControlTotal:
+      options?.printedDepositControlTotal ?? analysis.totals.printedDepositControlTotal,
   });
 }
 

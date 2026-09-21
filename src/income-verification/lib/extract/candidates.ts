@@ -1,6 +1,7 @@
+import { daysBetween } from '../analysis/dates';
 import type { ExtractionProvenance, NormalizedTransaction } from '../analysis/types';
 import { amountsEqual, roundMoney, toCents } from '../analysis/money';
-import { foldBankText } from './parse';
+import { foldBankText, parseFlexibleDate } from './parse';
 
 export interface FusionStats {
   deterministicCandidates: number;
@@ -56,6 +57,26 @@ export function extractReferenceId(text: string): string | null {
   return standalone[standalone.length - 1] ?? null;
 }
 
+export function extractCardLast4(text: string): string | null {
+  const folded = foldBankText(text);
+  const match = /(?:card|tarjeta)\s+(\d{4})\b/.exec(folded);
+  return match?.[1] ?? null;
+}
+
+export function extractEmbeddedIsoDates(text: string, contextDate: string): string[] {
+  const year = Number(contextDate.slice(0, 4));
+  if (!Number.isFinite(year)) return [];
+  const dates = new Set<string>();
+  const folded = foldBankText(text);
+  const pattern = /\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(folded))) {
+    const iso = parseFlexibleDate(match[1] ?? '', year);
+    if (iso) dates.add(iso);
+  }
+  return [...dates];
+}
+
 export function normalizeCandidateDescription(text: string): string {
   return foldBankText(text)
     .replace(/zelle payment from/g, 'zelle from')
@@ -109,6 +130,125 @@ function identityParts(tx: NormalizedTransaction) {
   };
 }
 
+function dateBag(tx: NormalizedTransaction): Set<string> {
+  const bag = new Set<string>();
+  if (tx.date) bag.add(tx.date);
+  if (tx.postedDate) bag.add(tx.postedDate);
+  if (tx.transactionDate) bag.add(tx.transactionDate);
+  for (const date of extractEmbeddedIsoDates(`${tx.description} ${tx.rawDescription}`, tx.date)) {
+    bag.add(date);
+  }
+  return bag;
+}
+
+function datesOverlap(left: NormalizedTransaction, right: NormalizedTransaction): boolean {
+  const a = dateBag(left);
+  const b = dateBag(right);
+  for (const date of a) {
+    if (b.has(date)) return true;
+  }
+  return false;
+}
+
+function safeDaysBetween(left: string, right: string): number | null {
+  try {
+    return daysBetween(left, right);
+  } catch {
+    return null;
+  }
+}
+
+const LOCATION_STOP = new Set([
+  ...STOP_TOKENS,
+  'atm',
+  'cash',
+  'deposit',
+  'deposito',
+  'cajero',
+  'automatico',
+  'efectivo',
+  'online',
+  'remote',
+  'mobile',
+]);
+
+function locationTokens(text: string): Set<string> {
+  return new Set(
+    normalizeCandidateDescription(text)
+      .split(' ')
+      .filter((token) => token.length > 2 && !LOCATION_STOP.has(token) && !/^\d+$/.test(token))
+  );
+}
+
+function locationOverlap(left: string, right: string): boolean {
+  const a = locationTokens(left);
+  const b = locationTokens(right);
+  if (!a.size || !b.size) return false;
+  for (const token of a) {
+    if (b.has(token)) return true;
+  }
+  return false;
+}
+
+function strongPhysicalIdentity(left: NormalizedTransaction, right: NormalizedTransaction): boolean {
+  const a = identityParts(left);
+  const b = identityParts(right);
+  if (a.account && b.account && a.account !== b.account) return false;
+  if (a.segment && b.segment && a.segment !== b.segment) return false;
+  if (a.page != null && b.page != null && a.page !== b.page) return false;
+  if (!descriptionsLikelySameRow(left.description, right.description)) return false;
+  const cardA = extractCardLast4(`${left.description} ${left.rawDescription}`);
+  const cardB = extractCardLast4(`${right.description} ${right.rawDescription}`);
+  if (cardA && cardB && cardA !== cardB) return false;
+  const cardMatch = Boolean(cardA && cardB && cardA === cardB);
+  const pageMatch = a.page != null && b.page != null && a.page === b.page;
+  const locMatch = locationOverlap(
+    `${left.description} ${left.rawDescription}`,
+    `${right.description} ${right.rawDescription}`
+  );
+  return cardMatch || pageMatch || locMatch;
+}
+
+function differentProvenance(left: NormalizedTransaction, right: NormalizedTransaction): boolean {
+  const leftSources = new Set(
+    left.extractionProvenanceSources?.length
+      ? left.extractionProvenanceSources
+      : left.extractionProvenance
+        ? [left.extractionProvenance]
+        : []
+  );
+  const rightSources = new Set(
+    right.extractionProvenanceSources?.length
+      ? right.extractionProvenanceSources
+      : right.extractionProvenance
+        ? [right.extractionProvenance]
+        : []
+  );
+  if (!leftSources.size || !rightSources.size) return true;
+  for (const source of leftSources) {
+    if (!rightSources.has(source)) return true;
+  }
+  for (const source of rightSources) {
+    if (!leftSources.has(source)) return true;
+  }
+  return false;
+}
+
+function datesCompatible(
+  left: NormalizedTransaction,
+  right: NormalizedTransaction,
+  includeAmount: boolean
+): boolean {
+  const a = identityParts(left);
+  const b = identityParts(right);
+  if (a.date === b.date) return true;
+  if (!includeAmount) return false;
+  if (!differentProvenance(left, right)) return false;
+  if (datesOverlap(left, right)) return true;
+  const nearbyDays = safeDaysBetween(a.date, b.date);
+  return nearbyDays != null && nearbyDays > 0 && nearbyDays <= 4 && strongPhysicalIdentity(left, right);
+}
+
 export function candidatesMatch(
   left: NormalizedTransaction,
   right: NormalizedTransaction,
@@ -120,13 +260,12 @@ export function candidatesMatch(
   if (a.account && b.account && a.account !== b.account) return false;
   if (a.direction !== b.direction) return false;
   if (includeAmount && a.amount !== b.amount) return false;
+  if (!datesCompatible(left, right, includeAmount)) return false;
   if (a.reference && b.reference) {
     if (a.reference !== b.reference) return false;
-    if (a.date !== b.date) return false;
     if (includeAmount) return a.amount === b.amount;
     return descriptionsLikelySameRow(left.description, right.description);
   }
-  if (a.date !== b.date) return false;
 
   if (
     a.runningBalance != null &&
@@ -177,6 +316,32 @@ function preferDescription(existing: string, incoming: string): string {
   return significantTokens(incoming).size > significantTokens(existing).size ? incoming : existing;
 }
 
+function isoDates(...values: Array<string | null | undefined>): string[] {
+  return values.filter((value): value is string => Boolean(value)).sort();
+}
+
+function mergeDateMetadata(
+  existing: NormalizedTransaction,
+  incoming: NormalizedTransaction,
+  winner: NormalizedTransaction
+): Pick<NormalizedTransaction, 'date' | 'postedDate' | 'transactionDate'> {
+  const postedDate =
+    isoDates(existing.postedDate, incoming.postedDate, existing.date, incoming.date).at(-1) ??
+    winner.date;
+  const transactionDate =
+    isoDates(
+      existing.transactionDate,
+      incoming.transactionDate,
+      existing.date !== postedDate ? existing.date : null,
+      incoming.date !== postedDate ? incoming.date : null
+    )[0] ?? postedDate;
+  return {
+    date: postedDate,
+    postedDate,
+    transactionDate,
+  };
+}
+
 function chooseCanonical(
   existing: NormalizedTransaction,
   incoming: NormalizedTransaction
@@ -195,6 +360,7 @@ function chooseCanonical(
     return {
       chosen: {
         ...winner,
+        ...mergeDateMetadata(existing, incoming, winner),
         description: preferDescription(existing.description, incoming.description),
         rawDescription:
           winner.rawDescription.length >= loser.rawDescription.length
@@ -221,6 +387,7 @@ function chooseCanonical(
   return {
     chosen: {
       ...winner,
+      ...mergeDateMetadata(existing, incoming, winner),
       extractionProvenanceSources: mergeProvenance(
         mergeProvenance(winner.extractionProvenanceSources, winner.extractionProvenance),
         loser.extractionProvenance
@@ -232,9 +399,18 @@ function chooseCanonical(
 }
 
 function prepare(tx: NormalizedTransaction): NormalizedTransaction {
+  const embedded = extractEmbeddedIsoDates(`${tx.description} ${tx.rawDescription}`, tx.date);
+  const postedDate = tx.postedDate || tx.date;
+  const transactionDate =
+    tx.transactionDate ||
+    embedded.find((date) => date !== postedDate) ||
+    embedded[0] ||
+    tx.date;
   return {
     ...tx,
     amount: roundMoney(tx.amount),
+    postedDate,
+    transactionDate,
     referenceId: tx.referenceId || extractReferenceId(`${tx.description} ${tx.rawDescription}`),
     extractionProvenanceSources: mergeProvenance(tx.extractionProvenanceSources, tx.extractionProvenance),
   };

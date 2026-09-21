@@ -132,6 +132,42 @@ describe('underwriter summary', () => {
     expect(summary).toContain('$1,000.00 per month');
     expect(summary).not.toMatch(/Full-month deposits were \$/);
   });
+
+  it('does not present a $0.00 coverage average for incomplete source', () => {
+    const analysis = analyzeIncome(
+      [
+        tx({
+          id: 'observed',
+          date: '2026-07-27',
+          amount: 6533.63,
+          description: 'ATM Cash Deposit Example',
+          extractionTrustState: 'incomplete_source',
+        }),
+      ],
+      {
+        printedDepositControlTotal: 11138.49,
+        documentPeriods: [
+          {
+            documentName: 'chase.pdf',
+            startDate: '2026-05-23',
+            endDate: '2026-08-24',
+            source: 'statement_header',
+            accountLast4: '1234',
+          },
+        ],
+      }
+    );
+
+    const summary = buildUnderwriterSummary(analysis);
+    expect(summary).toContain(
+      'A verified monthly average is unavailable because the source statement is incomplete.'
+    );
+    expect(summary).toContain('Printed statement deposit controls totaled $11,138.49');
+    expect(summary).toContain('Extracted deposits from available pages were $6,533.63');
+    expect(summary).not.toMatch(/\$0\.00/);
+    expect(summary).not.toMatch(/averaged \$0/i);
+    expect(summary).not.toMatch(/coverage average including partial months/i);
+  });
 });
 
 describe('home state extraction', () => {

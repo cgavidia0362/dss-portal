@@ -138,6 +138,7 @@ Zelle payment from Camilo Example
     const zelle = extracted.find((tx) => /zelle payment from camilo/i.test(tx.description));
     expect(atm?.amount).toBe(260);
     expect(atm?.date).toBe('2026-07-27');
+    expect(atm?.postedDate).toBe('2026-07-27');
     expect(zelle?.amount).toBe(99);
     expect(zelle?.date).toBe('2026-07-27');
     expect(extracted.filter((tx) => tx.amount === 260 && tx.direction === 'in')).toHaveLength(1);

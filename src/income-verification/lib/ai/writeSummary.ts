@@ -6,6 +6,10 @@ export async function polishUnderwriterSummary(
   analysis: IncomeAnalysis,
   fallback: string
 ): Promise<{ summary: string; source: 'model' | 'template' }> {
+  if (analysis.extractionTrust === 'incomplete_source' || analysis.totals.trustedAverageAvailable === false) {
+    return { summary: fallback, source: 'template' };
+  }
+
   const apiKey = getOpenAIApiKey();
   if (!apiKey) {
     return { summary: fallback, source: 'template' };
