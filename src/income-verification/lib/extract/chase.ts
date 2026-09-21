@@ -126,6 +126,100 @@ function takeQueuedAmount(
   return depositAmounts.shift() ?? null;
 }
 
+const AMOUNT_ONLY_LINE = /^(?:\$?-?[\d,]+\.\d{2})(?:\s+\$?-?[\d,]+\.\d{2})?$/;
+
+function isAmountOnlyLine(raw: string): boolean {
+  return AMOUNT_ONLY_LINE.test(raw.trim());
+}
+
+function parseAmountOnlyLine(
+  raw: string
+): { amount: number; balance: number | null } | null {
+  if (!isAmountOnlyLine(raw)) return null;
+  const amounts = extractAmounts(raw);
+  if (!amounts.length) return null;
+  if (amounts.length >= 2) {
+    return { amount: amounts[amounts.length - 2]!, balance: amounts[amounts.length - 1]! };
+  }
+  return { amount: amounts[0]!, balance: null };
+}
+
+function splitGluedChaseLines(lines: string[]): string[] {
+  const split: string[] = [];
+  for (const line of lines) {
+    const pieces = line.replace(/(\d+\.\d{2})(\d{1,2}\/\d{1,2})/g, '$1\n$2').split('\n');
+    split.push(...pieces);
+  }
+  return split;
+}
+
+function isDateAmountBalanceRow(raw: string): boolean {
+  const folded = foldBankText(raw).replace(/,/g, '');
+  return /^\d{1,2}\/\d{1,2}\s+\$?-?\d+\.\d{2}\s+\$?-?\d+\.\d{2}$/.test(folded);
+}
+
+function applyTrailingMoney(
+  drafts: LedgerDraft[],
+  pageStartCount: number,
+  trailing: { amount: number; balance: number | null },
+  lastSeenBalance: number | null
+): number | null {
+  const pageDrafts = drafts.slice(pageStartCount);
+  const queuedMatch =
+    trailing.balance != null
+      ? pageDrafts.find(
+          (draft) =>
+            draft.signedAmount != null &&
+            draft.runningBalance == null &&
+            amountsEqual(Math.abs(draft.signedAmount), Math.abs(trailing.amount))
+        )
+      : undefined;
+  const missingAmount = pageDrafts.find((draft) => draft.signedAmount == null);
+  const missingBalance = pageDrafts.find((draft) => draft.runningBalance == null);
+  const target = queuedMatch ?? missingAmount ?? missingBalance;
+  if (!target) return lastSeenBalance;
+
+  if (trailing.balance != null) {
+    if (target.signedAmount == null) {
+      const previous =
+        lastSeenBalance ??
+        [...pageDrafts].reverse().find((draft) => draft !== target && draft.runningBalance != null)
+          ?.runningBalance ??
+        null;
+      const delta = previous != null ? roundMoney(trailing.balance - previous) : null;
+      if (delta != null && !amountsEqual(Math.abs(delta), Math.abs(trailing.amount))) {
+        target.signedAmount = delta;
+        target.queuedCredit = false;
+      } else if (target.signedAmount == null) {
+        target.signedAmount = trailing.amount;
+      }
+    }
+    target.runningBalance = trailing.balance;
+    return trailing.balance;
+  }
+
+  if (target.signedAmount == null && target.runningBalance == null) {
+    if (lastSeenBalance != null) {
+      target.runningBalance = trailing.amount;
+      return trailing.amount;
+    }
+    target.signedAmount = trailing.amount;
+    return lastSeenBalance;
+  }
+  if (target.runningBalance == null) {
+    target.runningBalance = trailing.amount;
+    return trailing.amount;
+  }
+  if (target.signedAmount == null) {
+    if (lastSeenBalance != null && target.runningBalance != null) {
+      target.signedAmount = roundMoney(target.runningBalance - lastSeenBalance);
+    } else {
+      target.signedAmount = trailing.amount;
+    }
+  }
+  return lastSeenBalance;
+}
+
 function openingBalanceFromText(text: string): number | null {
   const match =
     /(?:beginning balance|saldo inicial)\s*:?\s*(\(?\$?-?[\d,]+\.\d{2}\)?)/i.exec(text);
@@ -171,11 +265,12 @@ export function parseChaseLedger(
   const initialBalance = lastSeenBalance;
 
   for (const chunk of chunks) {
-    const lines = chunk.text.split(/\r?\n/);
+    const lines = splitGluedChaseLines(chunk.text.split(/\r?\n/));
     let depositAmounts: number[] = [];
     let collectingDepositAmounts = false;
     if (chunk.continuityBreak) lastSeenBalance = null;
     const pageStartCount = drafts.length;
+    const pendingPairs: Array<{ amount: number; balance: number | null }> = [];
 
     let i = 0;
     while (i < lines.length) {
@@ -256,6 +351,8 @@ export function parseChaseLedger(
       const descStart = DESC_START.exec(raw);
       const dateOnly = descStart ? null : DATE_ONLY.exec(raw);
       if (!descStart && !dateOnly) {
+        const trailing = parseAmountOnlyLine(raw);
+        if (trailing?.balance != null) pendingPairs.push(trailing);
         i += 1;
         continue;
       }
@@ -297,12 +394,26 @@ export function parseChaseLedger(
         }
 
         const nextIsDateRow = DESC_START.test(next) || DATE_ONLY.test(next);
+        const trailingPair = parseAmountOnlyLine(next);
+        const earlierUnmatched = drafts
+          .slice(pageStartCount)
+          .some((draft) => draft.signedAmount == null || draft.runningBalance == null);
+        if (trailingPair?.balance != null && !nextIsDateRow && earlierUnmatched) {
+          pendingPairs.push(trailingPair);
+          i += 1;
+          continue;
+        }
         const atmContinuation =
           nextIsDateRow &&
           signedAmount == null &&
           /atm withdrawal|retiro en cajero/i.test(foldBankText(description)) &&
           extractAmounts(next).length >= 1;
-        if (nextIsDateRow && !atmContinuation) break;
+        const atmCashAmountContinuation =
+          nextIsDateRow &&
+          signedAmount == null &&
+          /atm cash deposit|deposito en efectivo/i.test(foldBankText(description)) &&
+          isDateAmountBalanceRow(next);
+        if (nextIsDateRow && !atmContinuation && !atmCashAmountContinuation) break;
 
         const nextAmounts = extractAmounts(next);
         if (nextAmounts.length >= 2) {
@@ -318,6 +429,26 @@ export function parseChaseLedger(
           break;
         }
         if (nextAmounts.length === 1) {
+          const refAmountLine = /^\d{8,14}\s+\$?[\d,]+\.\d{2}$/.test(next);
+          if (refAmountLine && signedAmount == null) {
+            rawParts.push(next);
+            i += 1;
+            const peek = lines[i]?.trim() ?? '';
+            if (SOLO_SIGNED_AMOUNT.test(peek)) {
+              signedAmount = nextAmounts[0];
+              balance = extractAmounts(peek)[0] ?? null;
+              explicitAmountBalancePair = true;
+              rawParts.push(peek);
+              i += 1;
+            } else if (depositAmounts.length === 0 && lastSeenBalance != null) {
+              balance = nextAmounts[0];
+            } else if (depositAmounts.length === 0) {
+              signedAmount = nextAmounts[0];
+            } else {
+              balance = nextAmounts[0];
+            }
+            break;
+          }
           const soloLine = SOLO_SIGNED_AMOUNT.test(next);
           if (soloLine && signedAmount == null) {
             rawParts.push(next);
@@ -389,6 +520,9 @@ export function parseChaseLedger(
         referenceId: extractReferenceId(`${description} ${rawParts.join(' ')}`),
         forceOutgoing: explicitDebitPair,
       });
+    }
+    for (const pair of pendingPairs) {
+      lastSeenBalance = applyTrailingMoney(drafts, pageStartCount, pair, lastSeenBalance);
     }
   }
 

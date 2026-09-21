@@ -126,8 +126,54 @@ describe('extraction trust state', () => {
 
     expect(analysis.extractionTrust).toBe('incomplete_source');
     expect(analysis.months.find((month) => month.month === '2026-06')?.reviewRequired).toBe(true);
-    expect(analysis.totals.averageMonthlyIncluded).toBe(1000);
+    expect(analysis.totals.averageMonthlyIncluded).toBe(0);
+    expect(analysis.totals.trustedAverageAvailable).toBe(false);
     expect(analysis.totals.unverifiedIncludedTotal).toBe(400);
+    expect(analysis.totals.reviewOnlyExtractedTotal).toBe(400);
     expect(analysis.totals.includedDeposits).toBe(1400);
+  });
+
+  it('does not compute a trusted average when every segment is incomplete_source', () => {
+    const analysis = analyzeIncome(
+      [
+        tx({
+          id: 'may',
+          date: '2026-05-15',
+          amount: 400,
+          description: 'ADP PAYROLL ACME',
+          extractionTrustState: 'incomplete_source',
+        }),
+        tx({
+          id: 'june',
+          date: '2026-06-15',
+          amount: 500,
+          description: 'ADP PAYROLL ACME',
+          extractionTrustState: 'incomplete_source',
+        }),
+      ],
+      {
+        documentPeriods: [
+          {
+            documentName: 'statement.pdf',
+            startDate: '2026-05-01',
+            endDate: '2026-05-31',
+            source: 'statement_header',
+            accountLast4: '1234',
+          },
+          {
+            documentName: 'statement.pdf',
+            startDate: '2026-06-01',
+            endDate: '2026-06-30',
+            source: 'statement_header',
+            accountLast4: '1234',
+          },
+        ],
+      }
+    );
+
+    expect(analysis.extractionTrust).toBe('incomplete_source');
+    expect(analysis.totals.averageMonthlyIncluded).toBe(0);
+    expect(analysis.totals.trustedAverageAvailable).toBe(false);
+    expect(analysis.totals.reviewOnlyExtractedTotal).toBe(900);
   });
 });

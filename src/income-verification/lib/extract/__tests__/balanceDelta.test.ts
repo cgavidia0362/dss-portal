@@ -102,4 +102,28 @@ describe('balance-delta reconstruction', () => {
     expect(result.rows.every((item) => item.signedAmount == null)).toBe(true);
     expect(result.recoveredCount).toBe(0);
   });
+
+  it('corrects a queued credit amount when the running-balance delta disagrees', () => {
+    const result = reconstructBalanceDeltas(
+      [
+        row({
+          description: 'ATM Cash Deposit Example City',
+          signedAmount: 99,
+          runningBalance: 1360,
+          queuedCredit: true,
+          lineIndex: 1,
+        }),
+        row({
+          description: 'Zelle payment from Camilo Example',
+          signedAmount: 260,
+          runningBalance: 1459,
+          queuedCredit: true,
+          lineIndex: 2,
+        }),
+      ],
+      1100
+    );
+    expect(result.rows[0]?.signedAmount).toBe(260);
+    expect(result.rows[1]?.signedAmount).toBe(99);
+  });
 });

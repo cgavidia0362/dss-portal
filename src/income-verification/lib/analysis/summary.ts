@@ -125,7 +125,11 @@ function fullMonthSentence(facts: SummaryFacts): string {
   return `Full-month deposits were ${joinSeries(parts)}.`;
 }
 
-function averageSentence(facts: SummaryFacts): string {
+function averageSentence(facts: SummaryFacts, analysis: IncomeAnalysis): string {
+  if (analysis.extractionTrust === 'incomplete_source') {
+    const extracted = analysis.totals.reviewOnlyExtractedTotal ?? analysis.totals.totalDeposits;
+    return `Source statement is incomplete. Extracted deposits from available pages were ${formatMoney(extracted)} for review only and are not included in the trusted income average.`;
+  }
   return `Across the full statement period reviewed, including partial months, deposits averaged ${formatMoney(facts.averageMonthlyIncluded)} per month.`;
 }
 
@@ -140,7 +144,7 @@ function categorySentence(facts: SummaryFacts): string | null {
 /** Concise underwriting snapshot (3 sentences typical). Does not include review alerts. */
 export function buildUnderwriterSummary(analysis: IncomeAnalysis): string {
   const facts = buildSummaryFacts(analysis);
-  return [fullMonthSentence(facts), averageSentence(facts), categorySentence(facts)]
+  return [fullMonthSentence(facts), averageSentence(facts, analysis), categorySentence(facts)]
     .filter(Boolean)
     .join(' ');
 }

@@ -17,6 +17,7 @@ export interface LedgerDraft {
   continuityBreak: boolean;
   referenceId: string | null;
   forceOutgoing?: boolean;
+  queuedCredit?: boolean;
 }
 
 export interface ReconstructedLedgerRow extends LedgerDraft {
@@ -92,8 +93,14 @@ export function reconstructBalanceDeltas(
       const implied: MoneyDirection | null = delta === 0 ? null : delta > 0 ? 'in' : 'out';
 
       if (signedAmount != null && implied && !amountsEqual(signedAmount, delta)) {
-        conflict = true;
-        conflictCount += 1;
+        if (row.queuedCredit && (!hint || hint === implied)) {
+          signedAmount = delta;
+          amountSource = 'balance_delta_reconstructed';
+          recoveredCount += 1;
+        } else {
+          conflict = true;
+          conflictCount += 1;
+        }
       } else if (signedAmount == null && implied) {
         if (hint && implied !== hint) {
           conflict = true;

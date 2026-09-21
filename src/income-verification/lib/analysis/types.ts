@@ -210,6 +210,8 @@ export interface IncomeTotals {
   duplicateAmount: number;
   verifiedMonthsAnalyzed?: number;
   unverifiedIncludedTotal?: number;
+  reviewOnlyExtractedTotal?: number;
+  trustedAverageAvailable?: boolean;
 }
 
 export interface IncomeAnalysis {

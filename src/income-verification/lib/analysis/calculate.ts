@@ -230,8 +230,24 @@ export function calculateIncome(
     untrustedMonths.length && verifiedMonths.length
       ? verifiedMonths.length
       : coverageMonthCount;
-  const averageMonthlyIncluded =
-    verifiedMonthCount === 0
+  const extractionTrust = worstTrust(resolved.map((tx) => tx.extractionTrustState));
+  const hasIncompleteSource =
+    extractionTrust === 'incomplete_source' ||
+    resolved.some((tx) => tx.extractionTrustState === 'incomplete_source');
+  const reviewOnlyExtractedTotal = resolved
+    .filter(
+      (tx) =>
+        tx.direction === 'in' &&
+        !tx.duplicateOf &&
+        (hasIncompleteSource
+          ? verifiedMonths.length === 0 || tx.extractionTrustState === 'incomplete_source'
+          : false)
+    )
+    .reduce((sum, tx) => addMoney(sum, tx.amount), 0);
+  const trustedAverageAvailable = !hasIncompleteSource && verifiedMonthCount > 0;
+  const averageMonthlyIncluded = hasIncompleteSource
+    ? 0
+    : verifiedMonthCount === 0
       ? 0
       : fromCents(
           Math.round(
@@ -242,7 +258,6 @@ export function calculateIncome(
             ) / verifiedMonthCount
           )
         );
-  const extractionTrust = worstTrust(resolved.map((tx) => tx.extractionTrustState));
 
   const sources = Array.from(sourceMap.values())
     .map((source) => ({
@@ -335,6 +350,12 @@ export function calculateIncome(
       duplicateAmount,
       verifiedMonthsAnalyzed: verifiedMonths.length,
       unverifiedIncludedTotal,
+      reviewOnlyExtractedTotal: hasIncompleteSource
+        ? verifiedMonths.length === 0
+          ? includedDeposits
+          : reviewOnlyExtractedTotal
+        : 0,
+      trustedAverageAvailable,
     },
     coverage,
     warnings,

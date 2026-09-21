@@ -1,6 +1,11 @@
 import { formatMoney } from '@income-verification/lib/analysis/format';
 import type { DepositCategory, IncomeAnalysis } from '@income-verification/lib/analysis/types';
 import { ExcludedList } from './ExcludedList';
+import {
+  incompleteSourceHeadlineCopy,
+  isIncompleteSourceAnalysis,
+  reviewOnlyExtractedTotal,
+} from './incomeHeadline';
 import { CategoryBreakdown } from './ReviewQueue';
 import { SourceBreakdown } from './SourceBreakdown';
 import { SummaryCard } from './SummaryCard';
@@ -90,14 +95,10 @@ export function ResultsDashboard({
         </div>
       )}
 
-      {analysis.extractionTrust === 'incomplete_source' && (
+      {isIncompleteSourceAnalysis(analysis) && (
         <div className="border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <p className="font-semibold">Incomplete source</p>
-          <p className="mt-1">
-            The uploaded statement packet is missing printed pages. Upload the complete statement
-            to verify deposits. Extracted rows are kept for review and are not included in the
-            trusted average.
-          </p>
+          <p className="mt-1">{incompleteSourceHeadlineCopy().notice}</p>
         </div>
       )}
 
@@ -133,16 +134,33 @@ export function ResultsDashboard({
 
       <section className="grid grid-cols-12 gap-4">
         <div className="col-span-12 rounded border border-dss-navy bg-dss-navy px-5 py-5 text-white md:col-span-4">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
-            Average monthly included income
-          </p>
-          <p className="mt-2 text-4xl font-semibold tabular-nums">
-            {formatMoney(analysis.totals.averageMonthlyIncluded)}
-          </p>
-          <p className="mt-2 text-sm text-white/65">
-            / month across {analysis.totals.monthsAnalyzed} coverage{' '}
-            {analysis.totals.monthsAnalyzed === 1 ? 'month' : 'months'}
-          </p>
+          {isIncompleteSourceAnalysis(analysis) ? (
+            <>
+              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
+                {incompleteSourceHeadlineCopy().title}
+              </p>
+              <p className="mt-2 text-sm text-white/80">
+                {incompleteSourceHeadlineCopy().extractedLabel}:
+              </p>
+              <p className="mt-1 text-4xl font-semibold tabular-nums">
+                {formatMoney(reviewOnlyExtractedTotal(analysis))}
+              </p>
+              <p className="mt-2 text-sm text-white/65">{incompleteSourceHeadlineCopy().notice}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
+                Average monthly included income
+              </p>
+              <p className="mt-2 text-4xl font-semibold tabular-nums">
+                {formatMoney(analysis.totals.averageMonthlyIncluded)}
+              </p>
+              <p className="mt-2 text-sm text-white/65">
+                / month across {analysis.totals.monthsAnalyzed} coverage{' '}
+                {analysis.totals.monthsAnalyzed === 1 ? 'month' : 'months'}
+              </p>
+            </>
+          )}
         </div>
         <div className="col-span-12 grid grid-cols-2 gap-4 md:col-span-8 md:grid-cols-3">
           {[
@@ -167,7 +185,7 @@ export function ResultsDashboard({
               <p className="mt-1 text-lg font-semibold tabular-nums">{formatMoney(month.includedTotal)}</p>
               <p className="text-[11px] text-slate-500">
                 {month.extractionTrust === 'incomplete_source'
-                  ? 'Incomplete source'
+                  ? incompleteSourceHeadlineCopy().monthLabel
                   : month.reviewRequired
                     ? 'Buyer review required'
                     : completenessLabel(month.completeness)}
@@ -175,11 +193,23 @@ export function ResultsDashboard({
             </div>
           ))}
           <div className="border border-dss-navy bg-dss-navy px-3 py-3 text-white">
-            <p className="text-[11px] uppercase tracking-wide text-white/60">Avg</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums">
-              {formatMoney(analysis.totals.averageMonthlyIncluded)}
-            </p>
-            <p className="text-[11px] text-white/60">Coverage period</p>
+            {isIncompleteSourceAnalysis(analysis) ? (
+              <>
+                <p className="text-[11px] uppercase tracking-wide text-white/60">Review only</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">
+                  {formatMoney(reviewOnlyExtractedTotal(analysis))}
+                </p>
+                <p className="text-[11px] text-white/60">Incomplete source</p>
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] uppercase tracking-wide text-white/60">Avg</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">
+                  {formatMoney(analysis.totals.averageMonthlyIncluded)}
+                </p>
+                <p className="text-[11px] text-white/60">Coverage period</p>
+              </>
+            )}
           </div>
         </div>
       </section>
