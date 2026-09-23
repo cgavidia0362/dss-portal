@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Search, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon, Check, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { statusMatchesFilter } from '../lib/statusLastFilter';
+import { distributeDealersToReps, uniqueDealerCount } from '../lib/distributeDealers';
 
 interface Call {
   id: string;
@@ -106,6 +107,9 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
   const [callsPage, setCallsPage] = useState(1);
 
   const [assignToId, setAssignToId] = useState('');
+  const [assignMode, setAssignMode] = useState<'one' | 'distribute'>('one');
+  const [selectedDistributeRepIds, setSelectedDistributeRepIds] = useState<string[]>([]);
+  const [assignFunnelStep, setAssignFunnelStep] = useState<'reps' | 'status'>('status');
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
@@ -113,8 +117,8 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
   const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set(DEFAULT_STATUSES));
   const [pendingAssignCalls, setPendingAssignCalls] = useState<Call[]>([]);
-  const [pendingAssignRepId, setPendingAssignRepId] = useState('');
-  const [pendingAssignRepName, setPendingAssignRepName] = useState('');
+  const [pendingAssignMode, setPendingAssignMode] = useState<'one' | 'distribute'>('one');
+  const [pendingAssignReps, setPendingAssignReps] = useState<{ id: string; name: string }[]>([]);
 
   // ── VIEW CALLS POPUP ─────────────────────────────────────────────
   const [viewCallsRep, setViewCallsRep] = useState<User | null>(null);
@@ -207,181 +211,255 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
     return statusFilteredUnassigned.filter(c => selectedDealers.has(c.dealerName)).length;
   }, [selectedDealers, statusFilteredUnassigned]);
 
+  const selectedPoolCalls = useMemo(() => {
+    if (step2View === 'dealers') {
+      if (selectedDealers.size === 0) return [];
+      return statusFilteredUnassigned.filter(c => selectedDealers.has(c.dealerName));
+    }
+    if (selectedCalls.size === 0) return [];
+    return statusFilteredUnassigned.filter(c => selectedCalls.has(c.id));
+  }, [step2View, selectedDealers, selectedCalls, statusFilteredUnassigned]);
+
+  const selectedDealerUnitCount = useMemo(
+    () => uniqueDealerCount(selectedPoolCalls),
+    [selectedPoolCalls],
+  );
+
+  const selectedDistributeReps = useMemo(
+    () => selectedDistributeRepIds
+      .map(id => reps.find(r => r.id === id))
+      .filter((r): r is User => Boolean(r)),
+    [selectedDistributeRepIds, reps],
+  );
+
+  const pendingMatchingCalls = useMemo(
+    () => pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses)),
+    [pendingAssignCalls, selectedStatuses],
+  );
+
+  const pendingDistribution = useMemo(
+    () => distributeDealersToReps(pendingMatchingCalls, pendingAssignReps),
+    [pendingMatchingCalls, pendingAssignReps],
+  );
+
   const getRepCalls = (repId: string) => calls.filter(c => c.assignedTo === repId);
 
   const allDealersSelected = dealersInView.length > 0 && dealersInView.every(d => selectedDealers.has(d.name));
   const allCallsPageSelected = paginatedCallsView.length > 0 && paginatedCallsView.every(c => selectedCalls.has(c.id));
 
   // ── ASSIGN ───────────────────────────────────────────────────────
-  const handleAssign = () => {
-    if (!assignToId) return;
-    const rep = users.find(u => u.id === assignToId);
-    if (!rep) return;
+  const closeAssignModal = () => {
+    setShowStatusFilter(false);
+    setAssignFunnelStep('status');
+    setError('');
+  };
 
-    let callsToAssign: Call[] = [];
-
-    if (step2View === 'dealers') {
-      if (selectedDealers.size === 0) return;
-      callsToAssign = statusFilteredUnassigned.filter(c => selectedDealers.has(c.dealerName));
-    } else {
-      if (selectedCalls.size === 0) return;
-      callsToAssign = statusFilteredUnassigned.filter(c => selectedCalls.has(c.id));
-    }
-
-    if (!callsToAssign.length) return;
-
+  const openAssignModal = (mode: 'one' | 'distribute', selectedReps: { id: string; name: string }[], step: 'reps' | 'status') => {
+    if (!selectedPoolCalls.length) return;
     setSelectedStatuses(
       filterStatuses.size > 0 ? new Set(filterStatuses) : new Set(DEFAULT_STATUSES)
     );
-    setPendingAssignCalls(callsToAssign);
-    setPendingAssignRepId(rep.id);
-    setPendingAssignRepName(rep.name);
+    setPendingAssignCalls(selectedPoolCalls);
+    setPendingAssignMode(mode);
+    setPendingAssignReps(selectedReps);
+    setAssignFunnelStep(step);
+    setError('');
     setShowStatusFilter(true);
   };
 
+  const handleAssign = () => {
+    if (!hasSelection) return;
+    if (assignMode === 'one') {
+      if (!assignToId) return;
+      const rep = users.find(u => u.id === assignToId);
+      if (!rep) return;
+      openAssignModal('one', [{ id: rep.id, name: rep.name }], 'status');
+      return;
+    }
+    setSelectedDistributeRepIds([]);
+    openAssignModal('distribute', [], 'reps');
+  };
+
+  const handleContinueDistributeFunnel = () => {
+    if (selectedDistributeReps.length < 2) {
+      setError('Select at least 2 reps to distribute.');
+      return;
+    }
+    setPendingAssignReps(selectedDistributeReps.map(r => ({ id: r.id, name: r.name })));
+    setError('');
+    setAssignFunnelStep('status');
+  };
+
+  const toggleDistributeRep = (repId: string) => {
+    setSelectedDistributeRepIds(prev =>
+      prev.includes(repId) ? prev.filter(id => id !== repId) : [...prev, repId]
+    );
+  };
+
   const isValidUUID = (id: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-const handleConfirmAssign = async () => {
-  const filteredCalls = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses));
-  const allCallIds = filteredCalls.map(c => c.id);
+  const handleConfirmAssign = async () => {
+    const filteredCalls = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses));
+    const validCalls = filteredCalls.filter(c => isValidUUID(c.id));
+    const skippedInvalid = filteredCalls.length - validCalls.length;
+    const pendingReps = pendingAssignReps.filter(r => isValidUUID(r.id));
 
-  // Filter out any non-UUID IDs (locally generated temp IDs)
-  const callIds = allCallIds.filter(isValidUUID);
-  const skippedInvalid = allCallIds.length - callIds.length;
-
-  const mismatchedIds = calls
-    .filter(c =>
-      c.assignedTo === pendingAssignRepId &&
-      !statusMatchesFilter(c.statusLast, selectedStatuses)
-    )
-    .map(c => c.id)
-    .filter(isValidUUID);
-
-  if (!callIds.length && !mismatchedIds.length) {
-    const actualStatuses = Array.from(
-      new Set(pendingAssignCalls.map(c => c.statusLast || 'Unknown'))
-    ).join(', ');
-    setError(`No calls match the selected statuses. The calls in your selection have these statuses: ${actualStatuses}. Please select the matching statuses above.`);
-    return;
-  }
-
-  // Update local state optimistically (valid IDs only)
-  const needCreditIds = filteredCalls
-    .filter(c => callIds.includes(c.id) && (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && !c.dealBy)
-    .map(c => c.id);
-
-  setCalls(prev => prev.map(c => {
-    if (mismatchedIds.includes(c.id)) {
-      return { ...c, assignedTo: undefined, assignedToName: undefined };
-    }
-    if (!callIds.includes(c.id)) return c;
-    const needsDealCredit = needCreditIds.includes(c.id);
-    return {
-      ...c,
-      assignedTo: pendingAssignRepId,
-      assignedToName: pendingAssignRepName,
-      ...(needsDealCredit ? { dealBy: pendingAssignRepId, dealByName: pendingAssignRepName } : {}),
-    };
-  }));
-
-  const count = callIds.length;
-  const assignRepId = pendingAssignRepId;
-  const assignRepName = pendingAssignRepName;
-  const allowedStatusList = Array.from(selectedStatuses);
-  setSelectedDealers(new Set());
-  setSelectedCalls(new Set());
-  setAssignToId('');
-  setShowStatusFilter(false);
-  setPendingAssignCalls([]);
-
-  try {
-    const { error: profileError } = await supabase.from('profiles').update({
-      allowed_statuses: allowedStatusList,
-    }).eq('id', assignRepId);
-
-    if (profileError) {
-      console.error('Supabase allowed_statuses update error:', profileError);
-      setError(`Status filter could not be saved (${profileError.message}). Calls will still be assigned — apply the latest database migration for filters to persist.`);
-      setTimeout(() => setError(''), 8000);
-    } else {
-      setUsers(prev => prev.map(u =>
-        u.id === assignRepId ? { ...u, allowedStatuses: allowedStatusList } : u
-      ));
+    if (!pendingReps.length) {
+      setError('No valid reps selected.');
+      return;
     }
 
-    const BATCH_SIZE = 200;
+    const distribution = distributeDealersToReps(validCalls, pendingReps);
+    const callIds = validCalls.map(c => c.id);
 
-    if (mismatchedIds.length > 0) {
-      for (let i = 0; i < mismatchedIds.length; i += BATCH_SIZE) {
-        const batch = mismatchedIds.slice(i, i + BATCH_SIZE);
-        const { error: unassignError } = await supabase.from('calls').update({
-          assigned_to: null,
-          assigned_to_name: null,
-          updated_at: new Date().toISOString(),
-        }).in('id', batch);
-        if (unassignError) {
-          console.error('Supabase unassign mismatch error:', unassignError);
+    const mismatchedIds = calls
+      .filter(c =>
+        pendingReps.some(rep => c.assignedTo === rep.id) &&
+        !statusMatchesFilter(c.statusLast, selectedStatuses)
+      )
+      .map(c => c.id)
+      .filter(isValidUUID);
+
+    if (!callIds.length && !mismatchedIds.length) {
+      const actualStatuses = Array.from(
+        new Set(pendingAssignCalls.map(c => c.statusLast || 'Unknown'))
+      ).join(', ');
+      setError(`No calls match the selected statuses. The calls in your selection have these statuses: ${actualStatuses}. Please select the matching statuses above.`);
+      return;
+    }
+
+    const needCreditIds = validCalls
+      .filter(c => (c.fuStatus === 'Deal' || c.fuStatus === 'Confirmed Deal') && !c.dealBy)
+      .map(c => c.id);
+
+    setCalls(prev => prev.map(c => {
+      if (mismatchedIds.includes(c.id)) {
+        return { ...c, assignedTo: undefined, assignedToName: undefined };
+      }
+      const assignee = distribution.assignmentByCallId[c.id];
+      if (!assignee) return c;
+      const needsDealCredit = needCreditIds.includes(c.id);
+      return {
+        ...c,
+        assignedTo: assignee.repId,
+        assignedToName: assignee.repName,
+        ...(needsDealCredit ? { dealBy: assignee.repId, dealByName: assignee.repName } : {}),
+      };
+    }));
+
+    const count = callIds.length;
+    const allowedStatusList = Array.from(selectedStatuses);
+    const assignModeUsed = pendingAssignMode;
+    const dealerCount = distribution.dealerCount;
+    const assignRepName = pendingReps[0]?.name || '';
+    const repCount = pendingReps.length;
+    setSelectedDealers(new Set());
+    setSelectedCalls(new Set());
+    setAssignToId('');
+    setSelectedDistributeRepIds([]);
+    setAssignFunnelStep('status');
+    setShowStatusFilter(false);
+    setPendingAssignCalls([]);
+    setPendingAssignReps([]);
+
+    try {
+      for (const rep of pendingReps) {
+        const { error: profileError } = await supabase.from('profiles').update({
+          allowed_statuses: allowedStatusList,
+        }).eq('id', rep.id);
+
+        if (profileError) {
+          console.error('Supabase allowed_statuses update error:', profileError);
+          setError(`Status filter could not be saved (${profileError.message}). Calls will still be assigned — apply the latest database migration for filters to persist.`);
+          setTimeout(() => setError(''), 8000);
+        } else {
+          setUsers(prev => prev.map(u =>
+            u.id === rep.id ? { ...u, allowedStatuses: allowedStatusList } : u
+          ));
         }
       }
-    }
 
-    for (let i = 0; i < callIds.length; i += BATCH_SIZE) {
-      const batch = callIds.slice(i, i + BATCH_SIZE);
+      const BATCH_SIZE = 200;
 
-      // Standard assignment for all
-      const { error: updateError } = await supabase.from('calls').update({
-        assigned_to: assignRepId,
-        assigned_to_name: assignRepName,
-        updated_at: new Date().toISOString(),
-      }).in('id', batch);
-
-      if (updateError) {
-        console.error('Supabase assign error:', updateError);
-        setCalls(prev => prev.map(c => callIds.includes(c.id)
-          ? { ...c, assignedTo: undefined, assignedToName: undefined }
-          : c
-        ));
-        setError(`Assignment failed: ${updateError.message}`);
-        setTimeout(() => setError(''), 6000);
-        return;
+      if (mismatchedIds.length > 0) {
+        for (let i = 0; i < mismatchedIds.length; i += BATCH_SIZE) {
+          const batch = mismatchedIds.slice(i, i + BATCH_SIZE);
+          const { error: unassignError } = await supabase.from('calls').update({
+            assigned_to: null,
+            assigned_to_name: null,
+            updated_at: new Date().toISOString(),
+          }).in('id', batch);
+          if (unassignError) {
+            console.error('Supabase unassign mismatch error:', unassignError);
+          }
+        }
       }
 
-      // If already Deal/Confirmed with no deal_by, credit the assignee as deal getter
-      const batchCreditIds = needCreditIds.filter(id => batch.includes(id));
-      if (batchCreditIds.length > 0) {
-        await supabase.from('calls').update({
-          deal_by: assignRepId,
-          deal_by_name: assignRepName,
-        }).in('id', batchCreditIds);
+      for (const share of distribution.shares) {
+        if (share.callIds.length === 0) continue;
+        for (let i = 0; i < share.callIds.length; i += BATCH_SIZE) {
+          const batch = share.callIds.slice(i, i + BATCH_SIZE);
+          const { error: updateError } = await supabase.from('calls').update({
+            assigned_to: share.repId,
+            assigned_to_name: share.repName,
+            updated_at: new Date().toISOString(),
+          }).in('id', batch);
+
+          if (updateError) {
+            console.error('Supabase assign error:', updateError);
+            setCalls(prev => prev.map(c => callIds.includes(c.id)
+              ? { ...c, assignedTo: undefined, assignedToName: undefined }
+              : c
+            ));
+            setError(`Assignment failed: ${updateError.message}`);
+            setTimeout(() => setError(''), 6000);
+            return;
+          }
+
+          const batchCreditIds = needCreditIds.filter(id => batch.includes(id));
+          if (batchCreditIds.length > 0) {
+            await supabase.from('calls').update({
+              deal_by: share.repId,
+              deal_by_name: share.repName,
+            }).in('id', batchCreditIds);
+          }
+        }
       }
-    }
 
-    const parts: string[] = [];
-    if (count > 0) {
-      parts.push(`${count} call${count !== 1 ? 's' : ''} assigned to ${assignRepName}`);
-    }
-    if (mismatchedIds.length > 0) {
-      parts.push(`${mismatchedIds.length} existing call${mismatchedIds.length !== 1 ? 's' : ''} returned to unassigned (status not in filter)`);
-    }
-    if (skippedInvalid > 0) {
-      parts.push(`${skippedInvalid} skipped (temporary IDs — re-upload those calls to fix)`);
-    }
-    const msg = parts.join('. ');
-    setSuccess(msg || `Updated status filter for ${assignRepName}`);
-    setTimeout(() => setSuccess(''), 6000);
+      const parts: string[] = [];
+      if (count > 0) {
+        if (assignModeUsed === 'distribute') {
+          parts.push(
+            `${count} call${count !== 1 ? 's' : ''} (${dealerCount} dealer${dealerCount !== 1 ? 's' : ''}) distributed across ${repCount} rep${repCount !== 1 ? 's' : ''}`
+          );
+        } else {
+          parts.push(`${count} call${count !== 1 ? 's' : ''} assigned to ${assignRepName}`);
+        }
+      }
+      if (mismatchedIds.length > 0) {
+        parts.push(`${mismatchedIds.length} existing call${mismatchedIds.length !== 1 ? 's' : ''} returned to unassigned (status not in filter)`);
+      }
+      if (skippedInvalid > 0) {
+        parts.push(`${skippedInvalid} skipped (temporary IDs — re-upload those calls to fix)`);
+      }
+      const msg = parts.join('. ');
+      setSuccess(msg || (assignModeUsed === 'distribute'
+        ? `Updated status filters for ${repCount} reps`
+        : `Updated status filter for ${assignRepName}`));
+      setTimeout(() => setSuccess(''), 6000);
 
-  } catch (err: any) {
-    console.error('Assignment exception:', err);
-    // Revert optimistic update
-    setCalls(prev => prev.map(c => callIds.includes(c.id)
-      ? { ...c, assignedTo: undefined, assignedToName: undefined }
-      : c
-    ));
-    setError(`Assignment failed: ${err.message}`);
-    setTimeout(() => setError(''), 6000);
-  }
-};
+    } catch (err: unknown) {
+      console.error('Assignment exception:', err);
+      setCalls(prev => prev.map(c => callIds.includes(c.id)
+        ? { ...c, assignedTo: undefined, assignedToName: undefined }
+        : c
+      ));
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Assignment failed: ${message}`);
+      setTimeout(() => setError(''), 6000);
+    }
+  };
 
   const toggleDealer = (dealerName: string) => {
     setSelectedDealers(prev => {
@@ -463,7 +541,13 @@ const handleConfirmAssign = async () => {
     setCallsPage(1);
   };
 
+  const hasSelection = selectedPoolCalls.length > 0;
+
   const assignButtonLabel = () => {
+    if (assignMode === 'distribute') {
+      if (!hasSelection) return 'Select dealers first';
+      return `Distribute ${selectedDealerUnitCount} dealer${selectedDealerUnitCount !== 1 ? 's' : ''} →`;
+    }
     if (step2View === 'dealers') {
       if (selectedDealers.size > 0 && assignToId)
         return `Assign ${totalCallsInDealerSelection} call${totalCallsInDealerSelection !== 1 ? 's' : ''} →`;
@@ -474,8 +558,12 @@ const handleConfirmAssign = async () => {
     return 'Assign';
   };
 
-  const assignDisabled = !assignToId ||
-    (step2View === 'dealers' ? selectedDealers.size === 0 : selectedCalls.size === 0);
+  const assignDisabled = assignMode === 'distribute'
+    ? !hasSelection
+    : !assignToId || !hasSelection;
+
+  const assignButtonClass =
+    'px-4 py-1.5 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas disabled:text-dss-muted disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition whitespace-nowrap';
 
   // ── UNASSIGN ─────────────────────────────────────────────────────
   const openUnassign = (rep: User) => {
@@ -748,20 +836,55 @@ const handleConfirmAssign = async () => {
                   </button>
                 </div>
 
-                {/* Rep dropdown + Assign button */}
-                <select
-                  value={assignToId}
-                  onChange={e => setAssignToId(e.target.value)}
-                  className="px-3 py-1.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
-                  <option value="">Assign to rep…</option>
-                  {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-                <button
-                  onClick={handleAssign}
-                  disabled={assignDisabled}
-                  className="px-4 py-1.5 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition whitespace-nowrap">
-                  {assignButtonLabel()}
-                </button>
+                <div className="flex bg-dss-canvas rounded-dss-sm p-0.5 border border-dss-border">
+                  <button
+                    type="button"
+                    onClick={() => setAssignMode('one')}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                      assignMode === 'one'
+                        ? 'bg-dss-navy-soft text-white'
+                        : 'text-dss-muted hover:text-dss-ink'
+                    }`}>
+                    One rep
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssignMode('distribute')}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                      assignMode === 'distribute'
+                        ? 'bg-dss-navy-soft text-white'
+                        : 'text-dss-muted hover:text-dss-ink'
+                    }`}>
+                    Evenly distribute
+                  </button>
+                </div>
+
+                {assignMode === 'one' && (
+                  <>
+                    <select
+                      value={assignToId}
+                      onChange={e => setAssignToId(e.target.value)}
+                      className="px-3 py-1.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
+                      <option value="">Assign to rep…</option>
+                      {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                    <button
+                      onClick={handleAssign}
+                      disabled={assignDisabled}
+                      className={assignButtonClass}>
+                      {assignButtonLabel()}
+                    </button>
+                  </>
+                )}
+                {assignMode === 'distribute' && (
+                  <button
+                    onClick={handleAssign}
+                    disabled={assignDisabled}
+                    title={assignDisabled ? assignButtonLabel() : undefined}
+                    className={assignButtonClass}>
+                    {assignButtonLabel()}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1022,117 +1145,213 @@ const handleConfirmAssign = async () => {
         </div>
       </div>
 
-{/* ── STATUS FILTER POPUP ─────────────────────────────────── */}
+{/* ── ASSIGN FUNNEL POPUP ─────────────────────────────────── */}
 {showStatusFilter && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 px-4"
-          onClick={() => setShowStatusFilter(false)}>
-          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-lg overflow-hidden"
+          onClick={closeAssignModal}>
+          <div className={`bg-dss-surface rounded-dss border border-dss-border w-full overflow-hidden ${pendingAssignMode === 'distribute' ? 'max-w-xl' : 'max-w-lg'}`}
             onClick={e => e.stopPropagation()}>
 
-            {/* Header */}
-            <div className="flex items-start justify-between px-6 py-4 border-b border-dss-border">
-              <div>
-                <h3 className="text-base font-semibold text-dss-ink">Filter by status before assigning</h3>
-                <p className="text-xs text-dss-muted mt-1">
-                  {pendingAssignRepName}
-                  {step2View === 'dealers'
-                    ? ` · ${selectedDealers.size} dealer${selectedDealers.size !== 1 ? 's' : ''} selected`
-                    : ` · ${pendingAssignCalls.length} call${pendingAssignCalls.length !== 1 ? 's' : ''} selected`}
-                  {filterState ? ` · ${filterState}` : ' · All States'}
-                </p>
-              </div>
-              <button onClick={() => setShowStatusFilter(false)} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              {/* Inline error */}
-              {error && (
-                <div className="bg-rose-50 bg-opacity-30 border border-rose-200 rounded-dss-sm px-4 py-3">
-                  <p className="text-xs text-dss-danger leading-relaxed">{error}</p>
+            {pendingAssignMode === 'distribute' && assignFunnelStep === 'reps' ? (
+              <>
+                <div className="flex items-start justify-between px-6 py-4 border-b border-dss-border">
+                  <div>
+                    <p className="text-xs text-dss-muted uppercase tracking-wider">Step 1 of 2</p>
+                    <h3 className="text-base font-semibold text-dss-ink mt-0.5">Choose reps</h3>
+                    <p className="text-xs text-dss-muted mt-1">
+                      {uniqueDealerCount(pendingAssignCalls)} dealer{uniqueDealerCount(pendingAssignCalls) !== 1 ? 's' : ''}
+                      {` · ${pendingAssignCalls.length} call${pendingAssignCalls.length !== 1 ? 's' : ''}`}
+                      {filterState ? ` · ${filterState}` : ' · All States'}
+                    </p>
+                  </div>
+                  <button onClick={closeAssignModal} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
                 </div>
-              )}
-              {/* Status chips */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs text-dss-muted uppercase tracking-wider">Select which statuses to include</p>
+
+                <div className="p-5 space-y-4">
+                  {error && (
+                    <div className="bg-rose-50 bg-opacity-30 border border-rose-200 rounded-dss-sm px-4 py-3">
+                      <p className="text-xs text-dss-danger leading-relaxed">{error}</p>
+                    </div>
+                  )}
+                  <p className="text-xs text-dss-muted">Click every rep who should get a share. Each dealer stays with one rep.</p>
+                  {reps.length === 0 ? (
+                    <p className="text-sm text-dss-muted">No reps available.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {reps.map(rep => {
+                        const isOn = selectedDistributeRepIds.includes(rep.id);
+                        return (
+                          <button
+                            key={rep.id}
+                            type="button"
+                            onClick={() => toggleDistributeRep(rep.id)}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-full border text-sm font-medium transition ${
+                              isOn
+                                ? 'bg-dss-navy-soft text-white border-dss-navy-soft'
+                                : 'bg-dss-surface border-dss-border text-dss-ink hover:border-dss-navy-soft'
+                            }`}>
+                            {isOn && <Check className="w-3.5 h-3.5 flex-shrink-0" />}
+                            {rep.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selectedDistributeReps.length > 0 && (
+                    <p className="text-xs text-dss-accent font-medium">
+                      {selectedDistributeReps.length} rep{selectedDistributeReps.length !== 1 ? 's' : ''} selected
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3 px-6 py-4 border-t border-dss-border">
+                  <button onClick={closeAssignModal}
+                    className="px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">
+                    Cancel
+                  </button>
                   <button
-                    onClick={() => {
-                      if (selectedStatuses.size === STATUS_FILTER_OPTIONS.length) {
-                        setSelectedStatuses(new Set(DEFAULT_STATUSES));
-                      } else {
-                        setSelectedStatuses(new Set(STATUS_FILTER_OPTIONS.map(s => s.label)));
-                      }
-                    }}
-                    className="text-xs text-dss-accent hover:text-dss-accent transition">
-                    {selectedStatuses.size === STATUS_FILTER_OPTIONS.length ? 'Reset to defaults' : 'Select all'}
+                    onClick={handleContinueDistributeFunnel}
+                    disabled={selectedDistributeReps.length < 2}
+                    className="flex-1 px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas disabled:text-dss-muted disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition">
+                    {selectedDistributeReps.length < 2
+                      ? 'Select at least 2 reps'
+                      : `Continue with ${selectedDistributeReps.length} reps →`}
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {STATUS_FILTER_OPTIONS.map(({ label, onCls, offCls }) => {
-                    const isOn = selectedStatuses.has(label);
-                    return (
-                      <button
-                        key={label}
-                        onClick={() => {
-                          setSelectedStatuses(prev => {
-                            const n = new Set(prev);
-                            if (n.has(label)) n.delete(label); else n.add(label);
-                            return n;
-                          });
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition ${isOn ? onCls : offCls}`}>
-                        {isOn
-                          ? <Check className="w-3 h-3 flex-shrink-0" />
-                          : <Plus className="w-3 h-3 flex-shrink-0" />}
-                        {label}
-                      </button>
-                    );
-                  })}
+              </>
+            ) : (
+              <>
+                <div className="flex items-start justify-between px-6 py-4 border-b border-dss-border">
+                  <div>
+                    {pendingAssignMode === 'distribute' && (
+                      <p className="text-xs text-dss-muted uppercase tracking-wider">Step 2 of 2</p>
+                    )}
+                    <h3 className="text-base font-semibold text-dss-ink mt-0.5">Filter by status before assigning</h3>
+                    <p className="text-xs text-dss-muted mt-1">
+                      {pendingAssignMode === 'distribute'
+                        ? `${pendingAssignReps.length} rep${pendingAssignReps.length !== 1 ? 's' : ''}`
+                        : (pendingAssignReps[0]?.name || '')}
+                      {` · ${pendingAssignCalls.length} call${pendingAssignCalls.length !== 1 ? 's' : ''} selected`}
+                      {filterState ? ` · ${filterState}` : ' · All States'}
+                    </p>
+                  </div>
+                  <button onClick={closeAssignModal} className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
                 </div>
-              </div>
 
-              {/* Summary */}
-              {(() => {
-                const matching = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses)).length;
-                const skipped = pendingAssignCalls.length - matching;
-                return (
-                  <div className="bg-dss-canvas border border-dss-border rounded-dss-sm px-4 py-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-dss-muted">Total calls in selection</span>
-                      <span className="text-sm font-medium text-dss-ink">{pendingAssignCalls.length}</span>
+                <div className="p-5 space-y-4">
+                  {error && (
+                    <div className="bg-rose-50 bg-opacity-30 border border-rose-200 rounded-dss-sm px-4 py-3">
+                      <p className="text-xs text-dss-danger leading-relaxed">{error}</p>
                     </div>
-                    <div className="h-px bg-dss-canvas" />
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-dss-muted">Calls matching selected statuses</span>
-                      <span className="text-sm font-bold text-dss-success">{matching}</span>
+                  )}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs text-dss-muted uppercase tracking-wider">Select which statuses to include</p>
+                      <button
+                        onClick={() => {
+                          if (selectedStatuses.size === STATUS_FILTER_OPTIONS.length) {
+                            setSelectedStatuses(new Set(DEFAULT_STATUSES));
+                          } else {
+                            setSelectedStatuses(new Set(STATUS_FILTER_OPTIONS.map(s => s.label)));
+                          }
+                        }}
+                        className="text-xs text-dss-accent hover:text-dss-accent transition">
+                        {selectedStatuses.size === STATUS_FILTER_OPTIONS.length ? 'Reset to defaults' : 'Select all'}
+                      </button>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-dss-muted">Calls skipped (stay unassigned)</span>
-                      <span className="text-sm text-dss-muted">{skipped}</span>
+                    <div className="flex flex-wrap gap-2">
+                      {STATUS_FILTER_OPTIONS.map(({ label, onCls, offCls }) => {
+                        const isOn = selectedStatuses.has(label);
+                        return (
+                          <button
+                            key={label}
+                            onClick={() => {
+                              setSelectedStatuses(prev => {
+                                const n = new Set(prev);
+                                if (n.has(label)) n.delete(label); else n.add(label);
+                                return n;
+                              });
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition ${isOn ? onCls : offCls}`}>
+                            {isOn
+                              ? <Check className="w-3 h-3 flex-shrink-0" />
+                              : <Plus className="w-3 h-3 flex-shrink-0" />}
+                            {label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                );
-              })()}
 
-              <p className="text-xs text-dss-muted">Skipped calls stay in the unassigned pool and can be assigned later.</p>
-            </div>
+                  {(() => {
+                    const matching = pendingMatchingCalls.length;
+                    const skipped = pendingAssignCalls.length - matching;
+                    return (
+                      <div className="bg-dss-canvas border border-dss-border rounded-dss-sm px-4 py-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-dss-muted">Total calls in selection</span>
+                          <span className="text-sm font-medium text-dss-ink">{pendingAssignCalls.length}</span>
+                        </div>
+                        <div className="h-px bg-dss-canvas" />
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-dss-muted">Calls matching selected statuses</span>
+                          <span className="text-sm font-bold text-dss-success">{matching}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-dss-muted">Calls skipped (stay unassigned)</span>
+                          <span className="text-sm text-dss-muted">{skipped}</span>
+                        </div>
+                        {pendingAssignMode === 'distribute' && (
+                          <>
+                            <div className="h-px bg-dss-canvas" />
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-dss-muted">Dealers in this split</span>
+                              <span className="text-sm font-medium text-dss-ink">{pendingDistribution.dealerCount}</span>
+                            </div>
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                              {pendingDistribution.shares.map(share => (
+                                <div key={share.repId} className="flex items-center justify-between">
+                                  <span className="text-xs text-dss-ink">{share.repName}</span>
+                                  <span className="text-xs text-dss-muted">
+                                    {share.dealerCount} dealer{share.dealerCount !== 1 ? 's' : ''} · {share.callCount} call{share.callCount !== 1 ? 's' : ''}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
 
-            {/* Footer */}
-            <div className="flex items-center gap-3 px-6 py-4 border-t border-dss-border">
-            <button onClick={() => { setShowStatusFilter(false); setError(''); }}
-                className="px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmAssign}
-                disabled={selectedStatuses.size === 0}
-                className="flex-1 px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition">
-                {(() => {
-                  const matching = pendingAssignCalls.filter(c => statusMatchesFilter(c.statusLast, selectedStatuses)).length;
-                  return `Assign ${matching} call${matching !== 1 ? 's' : ''} to ${pendingAssignRepName} →`;
-                })()}
-              </button>
-            </div>
+                  <p className="text-xs text-dss-muted">Skipped calls stay in the unassigned pool and can be assigned later.</p>
+                </div>
+
+                <div className="flex items-center gap-3 px-6 py-4 border-t border-dss-border">
+                  {pendingAssignMode === 'distribute' ? (
+                    <button
+                      onClick={() => { setAssignFunnelStep('reps'); setError(''); }}
+                      className="inline-flex items-center gap-1 px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">
+                      <ChevronLeft className="w-4 h-4" />
+                      Back
+                    </button>
+                  ) : (
+                    <button onClick={closeAssignModal}
+                      className="px-4 py-2 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    onClick={handleConfirmAssign}
+                    disabled={selectedStatuses.size === 0}
+                    className="flex-1 px-4 py-2 bg-dss-navy-soft hover:bg-dss-navy disabled:bg-dss-canvas disabled:text-dss-muted disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition">
+                    {pendingAssignMode === 'distribute'
+                      ? `Distribute ${pendingMatchingCalls.length} call${pendingMatchingCalls.length !== 1 ? 's' : ''} across ${pendingAssignReps.length} reps →`
+                      : `Assign ${pendingMatchingCalls.length} call${pendingMatchingCalls.length !== 1 ? 's' : ''} to ${pendingAssignReps[0]?.name || 'rep'} →`}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
