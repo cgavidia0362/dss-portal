@@ -125,6 +125,57 @@ const formatCurrency = (n: number) =>
 
 const medal = (i: number) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
 
+type ActionQueueKey = 'pending' | 'firstCall' | 'noAnswer' | 'stale';
+
+const ACTION_QUEUE_LABELS: Record<ActionQueueKey, string> = {
+  pending: 'Pending Follow-Up',
+  firstCall: 'Needs First Call',
+  noAnswer: 'No Answer Retry',
+  stale: 'Stale / Aging',
+};
+
+const QUEUE_POPUP_SORT_FIELDS: Array<{ field: ActiveSortField; label: string }> = [
+  { field: 'applicationId', label: 'App ID' },
+  { field: 'dealerName', label: 'Dealer' },
+  { field: 'customerName', label: 'Customer' },
+  { field: 'state', label: 'State' },
+  { field: 'submittedDate', label: 'Date' },
+  { field: 'statusLast', label: 'Status Last' },
+  { field: 'fuStatus', label: 'FU Status' },
+];
+
+const COMPLETED_FU_STATUSES = new Set(['Deal', 'Confirmed Deal', 'No Deal', 'Closed', 'Duplicates']);
+const STALE_MS = 3 * 24 * 60 * 60 * 1000;
+
+function dealerKey(call: Call): string {
+  const cif = call.dealerCifNumber?.trim();
+  if (cif) return `cif:${cif}`;
+  const name = call.dealerName?.trim().toLowerCase();
+  return name ? `name:${name}` : '';
+}
+
+function uniqueDealerCount(list: Call[]): number {
+  const keys = new Set<string>();
+  for (const call of list) {
+    const key = dealerKey(call);
+    if (key) keys.add(key);
+  }
+  return keys.size;
+}
+
+function isStaleCall(call: Call): boolean {
+  if (!call.updatedAt) return false;
+  if (COMPLETED_FU_STATUSES.has(call.fuStatus || '')) return false;
+  return Date.now() - new Date(call.updatedAt).getTime() > STALE_MS;
+}
+
+function matchesActionQueue(call: Call, key: ActionQueueKey): boolean {
+  if (key === 'pending') return call.fuStatus === 'Pending';
+  if (key === 'firstCall') return !call.fuStatus;
+  if (key === 'noAnswer') return call.fuStatus === 'No Answer';
+  return isStaleCall(call);
+}
+
 export default function CallsTab({
   currentUserId, currentUserRole, calls, setCalls, notes, setNotes,
   dailyGoal, teamGoal, currentUser, onUpdateCurrentUser, todayDailyDeals, users,
@@ -148,6 +199,8 @@ export default function CallsTab({
     newStatus: NonNullable<Call['fuStatus']>;
     creditId: string;
   } | null>(null);
+  const [queuePopup, setQueuePopup] = useState<ActionQueueKey | null>(null);
+  const [queuePopupSort, setQueuePopupSort] = useState<ColumnSort | null>(null);
   const canForceCredit = currentUserRole === 'admin' || currentUserRole === 'manager';
   const creditOptions = getDealCreditOptions(users || [], currentUserRole);
   const [currentPage, setCurrentPage] = useState(1);
@@ -217,6 +270,7 @@ export default function CallsTab({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (queuePopup) { setQueuePopup(null); return; }
         if (editingStatusLast || editingAmount) {
           setEditingStatusLast(null);
           setEditingAmount(null);
@@ -229,7 +283,7 @@ export default function CallsTab({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editingStatusLast, editingAmount, expandedRows, dealerFilter, filterRep]);
+  }, [queuePopup, editingStatusLast, editingAmount, expandedRows, dealerFilter, filterRep]);
 
   const fetchRepStateGoal = async (stateStr: string) => {
     const stateList = stateStr.split(',').map(s => s.trim()).filter(Boolean);
@@ -310,6 +364,15 @@ export default function CallsTab({
       if (prev?.field === field) {
         if (prev.order === 'asc') return { field, order: 'desc' };
         return null;
+      }
+      return { field, order: 'asc' };
+    });
+  };
+
+  const handleQueuePopupSort = (field: ActiveSortField) => {
+    setQueuePopupSort(prev => {
+      if (prev?.field === field) {
+        return { field, order: prev.order === 'asc' ? 'desc' : 'asc' };
       }
       return { field, order: 'asc' };
     });
@@ -504,11 +567,15 @@ export default function CallsTab({
   const pct = (n: number) => `${Math.round((n / breakdownTotal) * 100)}%`;
   const pctValue = (n: number) => Math.round((n / breakdownTotal) * 100);
   const activeQueueCount = noCallCount + pendingCount + noAnswerCount;
-  const staleCount = dashboardCalls.filter(c => {
-    if (!c.updatedAt) return false;
-    if (['Deal', 'Confirmed Deal', 'No Deal', 'Closed', 'Duplicates'].includes(c.fuStatus || '')) return false;
-    return Date.now() - new Date(c.updatedAt).getTime() > 3 * 24 * 60 * 60 * 1000;
-  }).length;
+  const staleCount = dashboardCalls.filter(isStaleCall).length;
+  const uniqueDealersInView = uniqueDealerCount(sortedCalls);
+  const queuePopupCalls = (() => {
+    if (!queuePopup) return [];
+    const list = dashboardCalls.filter((call) => matchesActionQueue(call, queuePopup));
+    if (!queuePopupSort) return list;
+    return [...list].sort((a, b) => compareCalls(a, b, queuePopupSort.field, queuePopupSort.order));
+  })();
+  const queuePopupDealerCount = uniqueDealerCount(queuePopupCalls);
   const workedTodayCount = dashboardCalls.filter(c => c.updatedAt && isToday(new Date(c.updatedAt)) && c.fuStatus).length;
 
   const leaderboard = (() => {
@@ -807,13 +874,13 @@ export default function CallsTab({
     }
   };
 
-  const SortIcon = ({ field }: { field: ActiveSortField }) => {
-    if (columnSort?.field !== field) {
-      return <ArrowUpDown className="w-3 h-3 inline ml-1 text-dss-muted" />;
+  const SortIcon = ({ field, sort = columnSort }: { field: ActiveSortField; sort?: ColumnSort | null }) => {
+    if (sort?.field !== field) {
+      return <ArrowUpDown className="w-3.5 h-3.5 shrink-0 text-dss-muted" />;
     }
-    return columnSort.order === 'asc'
-      ? <ChevronUp className="w-3 h-3 inline ml-1 text-dss-accent" />
-      : <ChevronDown className="w-3 h-3 inline ml-1 text-dss-accent" />;
+    return sort.order === 'asc'
+      ? <ChevronUp className="w-3.5 h-3.5 shrink-0 text-dss-accent" />
+      : <ChevronDown className="w-3.5 h-3.5 shrink-0 text-dss-accent" />;
   };
 
   return (
@@ -1020,19 +1087,28 @@ export default function CallsTab({
                 </div>
                 <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
                   {[
-                    { label: 'Pending Follow-Up', count: pendingCount, icon: Clock, color: 'text-amber-900', border: 'border-amber-300', bg: 'bg-amber-50', priority: 'Medium' },
-                    { label: 'Needs First Call', count: noCallCount, icon: PhoneCall, color: 'text-violet-900', border: 'border-violet-300', bg: 'bg-violet-50', priority: 'High' },
-                    { label: 'No Answer Retry', count: noAnswerCount, icon: RotateCcw, color: 'text-orange-900', border: 'border-orange-300', bg: 'bg-orange-50', priority: 'Retry' },
-                    { label: 'Stale / Aging', count: staleCount, icon: AlertTriangle, color: 'text-rose-900', border: 'border-rose-300', bg: 'bg-rose-50', priority: 'Review' },
-                  ].map(({ label, count, icon: Icon, color, border, bg, priority }) => (
-                    <div key={label} className={`rounded-dss-sm border ${border} ${bg} p-3`}>
+                    { key: 'pending' as const, label: 'Pending Follow-Up', count: pendingCount, icon: Clock, color: 'text-amber-900', border: 'border-amber-300', bg: 'bg-amber-50', hover: 'hover:border-amber-400 hover:bg-amber-100', priority: 'Medium' },
+                    { key: 'firstCall' as const, label: 'Needs First Call', count: noCallCount, icon: PhoneCall, color: 'text-violet-900', border: 'border-violet-300', bg: 'bg-violet-50', hover: 'hover:border-violet-400 hover:bg-violet-100', priority: 'High' },
+                    { key: 'noAnswer' as const, label: 'No Answer Retry', count: noAnswerCount, icon: RotateCcw, color: 'text-orange-900', border: 'border-orange-300', bg: 'bg-orange-50', hover: 'hover:border-orange-400 hover:bg-orange-100', priority: 'Retry' },
+                    { key: 'stale' as const, label: 'Stale / Aging', count: staleCount, icon: AlertTriangle, color: 'text-rose-900', border: 'border-rose-300', bg: 'bg-rose-50', hover: 'hover:border-rose-400 hover:bg-rose-100', priority: 'Review' },
+                  ].map(({ key, label, count, icon: Icon, color, border, bg, hover, priority }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        setQueuePopup(key);
+                        setQueuePopupSort({ field: 'submittedDate', order: 'desc' });
+                      }}
+                      aria-label={`View ${label} calls`}
+                      className={`rounded-dss-sm border ${border} ${bg} ${hover} p-3 text-left transition focus:outline-none focus:ring-2 focus:ring-dss-accent/30`}
+                    >
                       <div className="mb-2 flex items-center justify-between">
                         <Icon className={`h-4 w-4 ${color}`} />
                         <span className={`text-xl font-bold ${color}`}>{count}</span>
                       </div>
                       <p className="min-h-[32px] text-xs font-semibold leading-tight text-dss-ink">{label}</p>
                       <p className={`mt-2 rounded-md border ${border} bg-white px-2 py-1 text-center text-[10px] font-semibold ${color}`}>{priority}</p>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -1252,7 +1328,10 @@ export default function CallsTab({
       <div className="bg-dss-surface rounded-dss-sm border border-dss-border overflow-hidden">
         <div className="px-3 py-2 border-b border-dss-border flex items-center justify-between">
           <p className="text-sm font-semibold text-dss-ink">
-            {sortedCalls.length} calls
+            {sortedCalls.length} call{sortedCalls.length === 1 ? '' : 's'}
+            <span className="ml-2 font-normal text-dss-muted">
+              · {uniqueDealersInView} dealer{uniqueDealersInView === 1 ? '' : 's'}
+            </span>
             <span className="ml-2 font-normal text-dss-muted">· Page {currentPage} of {totalPages || 1}</span>
           </p>
           <div className="flex items-center gap-1">
@@ -1550,7 +1629,8 @@ export default function CallsTab({
 
         <div className="px-3 py-2 border-t border-dss-border flex items-center justify-between">
           <p className="text-xs text-dss-muted">
-            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, sortedCalls.length)}–{Math.min(currentPage * itemsPerPage, sortedCalls.length)} of {sortedCalls.length} calls
+            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, sortedCalls.length)}–{Math.min(currentPage * itemsPerPage, sortedCalls.length)} of {sortedCalls.length} call{sortedCalls.length === 1 ? '' : 's'}
+            {' · '}{uniqueDealersInView} dealer{uniqueDealersInView === 1 ? '' : 's'}
           </p>
           <div className="flex items-center gap-1">
             <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
@@ -1598,6 +1678,125 @@ export default function CallsTab({
               >
                 Confirm
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {queuePopup && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-4 pt-10"
+          onClick={() => setQueuePopup(null)}
+        >
+          <div
+            className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-5xl overflow-hidden shadow-sm"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-dss-border space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-dss-ink">{ACTION_QUEUE_LABELS[queuePopup]}</h3>
+                  <p className="text-xs text-dss-muted mt-0.5">
+                    {queuePopupCalls.length} call{queuePopupCalls.length === 1 ? '' : 's'}
+                    {' · '}{queuePopupDealerCount} dealer{queuePopupDealerCount === 1 ? '' : 's'}
+                    {' · press Escape to close'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQueuePopup(null)}
+                  className="text-dss-muted hover:text-dss-ink p-1"
+                  aria-label="Close queue list"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-dss-muted">Sort</span>
+                {QUEUE_POPUP_SORT_FIELDS.map(({ field, label }) => (
+                  <button
+                    key={field}
+                    type="button"
+                    onClick={() => handleQueuePopupSort(field)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-dss-sm border text-xs font-medium ${
+                      queuePopupSort?.field === field
+                        ? 'bg-dss-accent-soft border-dss-accent/40 text-dss-accent'
+                        : 'bg-white border-dss-border text-dss-ink/80 hover:bg-dss-canvas'
+                    }`}
+                  >
+                    {label}
+                    <span className="text-[11px] leading-none">
+                      {queuePopupSort?.field === field
+                        ? (queuePopupSort.order === 'asc' ? '▲' : '▼')
+                        : '↕'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
+              <table className="w-full min-w-[920px]">
+                <thead className="bg-dss-canvas sticky top-0 z-10">
+                  <tr className="border-b border-dss-border">
+                    {QUEUE_POPUP_SORT_FIELDS.map(({ field, label }) => {
+                      const active = queuePopupSort?.field === field;
+                      return (
+                        <th key={field} className="px-3 py-2 text-left">
+                          <button
+                            type="button"
+                            onClick={() => handleQueuePopupSort(field)}
+                            className={`inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider whitespace-nowrap ${
+                              active ? 'text-dss-accent' : 'text-dss-muted hover:text-dss-ink'
+                            }`}
+                          >
+                            {label === 'State' ? 'St' : label}
+                            <span aria-hidden="true" className="text-sm leading-none">
+                              {active ? (queuePopupSort?.order === 'asc' ? '▲' : '▼') : '↕'}
+                            </span>
+                          </button>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dss-border">
+                  {queuePopupCalls.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-sm text-dss-muted">
+                        No calls in this queue
+                      </td>
+                    </tr>
+                  ) : queuePopupCalls.map((call) => (
+                    <tr key={call.id} className="hover:bg-dss-canvas">
+                      <td className="px-3 py-2 text-xs text-dss-accent font-medium truncate" title={call.applicationId}>
+                        {call.applicationId}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-dss-ink truncate" title={call.dealerName}>
+                        {call.dealerName || '—'}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-dss-muted truncate" title={call.customerName || ''}>
+                        {call.customerName || '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border">
+                          {call.state || '—'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-dss-muted whitespace-nowrap">
+                        {formatShortDate(call.submittedDate)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`px-1.5 py-0 rounded-full text-[10px] border truncate ${getStatusLastStyle(call.statusLast)}`}>
+                          {call.statusLast || '—'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-dss-ink">
+                        {call.fuStatus || 'No Call'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
