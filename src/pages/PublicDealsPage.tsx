@@ -3,9 +3,12 @@ import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { findCallsByAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
+import { activityDbFields } from '../lib/callActivity';
+import { updateCallById } from '../lib/callWrite';
 import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare, Users, Trash2, Trophy, DollarSign, ClipboardList, PlusCircle, Target } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
+import FollowUpPickerModal from '../components/FollowUpPickerModal';
 
 interface DailyDeal {
   id: string;
@@ -186,6 +189,8 @@ export default function PublicDealsPage() {
   const [popupStatusLastOverrides, setPopupStatusLastOverrides] = useState<{ [callId: string]: string }>({});
   const [popupAmountOverrides, setPopupAmountOverrides] = useState<{ [callId: string]: string }>({});
   const [dealerNames, setDealerNames] = useState<string[]>([]);
+  const [followUpModal, setFollowUpModal] = useState<{ callId: string } | null>(null);
+  const [followUpSaving, setFollowUpSaving] = useState(false);
 
   const [showHistory, setShowHistory] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
@@ -378,7 +383,7 @@ export default function PublicDealsPage() {
     setPopupStatusLastOverrides({});
     setPopupAmountOverrides({});
     const { data } = await supabase.from('calls')
-      .select('id, application_id, buyer_final, state, fu_status, status_last, submitted_date, created_at, customer_full_name')
+      .select('id, application_id, buyer_final, state, fu_status, status_last, submitted_date, created_at, customer_full_name, deal_by, deal_by_name, deal_date')
       .eq('dealer_name', dealerName)
       .order('submitted_date', { ascending: false });
     const callsData = data || [];
@@ -413,18 +418,42 @@ export default function PublicDealsPage() {
     setShowAllPopupStatuses(false);
   };
 
-  const handlePopupFuStatus = async (callId: string, newStatus: string) => {
+  const persistPopupFuStatus = async (callId: string, newStatus: string, extras?: { followUpAt?: Date | null }) => {
     const existing = dealerPopupCalls.find((c: any) => c.id === callId);
     const user = users.find(u => u.id === selectedUser);
-    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
-    await supabase.from('calls').update({
+    const stampedAt = new Date();
+    const followUpAt = newStatus === 'Follow Up' ? (extras?.followUpAt && extras.followUpAt.getTime() > Date.now() + 5000 ? extras.followUpAt : null) : null;
+    const { error: err } = await updateCallById(callId, {
       ...dealCreditDbFields(newStatus, {
         dealBy: existing?.deal_by,
         dealByName: existing?.deal_by_name,
         dealDate: existing?.deal_date ? new Date(existing.deal_date) : undefined,
       }, user ? { id: user.id, name: user.name } : undefined),
-      updated_at: new Date().toISOString(),
-    }).eq('id', callId);
+      ...activityDbFields(user ? { id: user.id, name: user.name } : { name: 'Public Deals' }, stampedAt),
+      follow_up_at: followUpAt ? followUpAt.toISOString() : null,
+    });
+    if (err) {
+      setError(`Could not save status: ${err.message}`);
+      return false;
+    }
+    setError('');
+    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
+    setDealerPopupCalls(prev => prev.map((c: any) => c.id === callId ? { ...c, fu_status: newStatus } : c));
+    if (newStatus === 'Deal' || newStatus === 'Confirmed Deal') {
+      await fetchCallDealsToday();
+    } else {
+      setCallDealsToday(prev => prev.filter(c => c.id !== callId));
+      await fetchCallDealsToday();
+    }
+    return true;
+  };
+
+  const handlePopupFuStatus = async (callId: string, newStatus: string) => {
+    if (newStatus === 'Follow Up') {
+      setFollowUpModal({ callId });
+      return;
+    }
+    await persistPopupFuStatus(callId, newStatus);
   };
 
   const handlePopupSaveStatusLast = async (callId: string) => {
@@ -456,6 +485,14 @@ export default function PublicDealsPage() {
     if (!err && data) {
       setPopupNotes(prev => ({ ...prev, [callId]: [...(prev[callId] || []), data] }));
       setPopupNewNoteText(prev => ({ ...prev, [callId]: '' }));
+      const stampedAt = new Date();
+      const { error: stampError } = await updateCallById(
+        callId,
+        activityDbFields(user ? { id: user.id, name: user.name } : { name: 'Public Deals' }, stampedAt)
+      );
+      if (stampError) setError(`Note saved, but Activity did not update: ${stampError.message}`);
+    } else if (err) {
+      setError(`Could not save note: ${err.message}`);
     }
   };
 
@@ -1645,6 +1682,20 @@ export default function PublicDealsPage() {
             </div>
           </div>
         )}
+
+      {followUpModal && (
+        <FollowUpPickerModal
+          open
+          saving={followUpSaving}
+          onClose={() => setFollowUpModal(null)}
+          onConfirm={async (at) => {
+            setFollowUpSaving(true);
+            const saved = await persistPopupFuStatus(followUpModal.callId, 'Follow Up', { followUpAt: at });
+            setFollowUpSaving(false);
+            if (saved) setFollowUpModal(null);
+          }}
+        />
+      )}
 
       </main>
     </div>

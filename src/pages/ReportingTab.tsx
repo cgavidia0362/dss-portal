@@ -5,6 +5,7 @@ import { exportRowsToExcel } from '../lib/exportExcel';
 import { dealCreditDbFields, resolveDealCredit, forceDealCreditDbFields, countsAsStickyBookedDeal, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName } from '../lib/systemReps';
 import { manualDealMatchedByCall, buildManualCreditByApp, resolveCallDealCredit, normalizeAppId, manualDealMatchedByBookedCall } from '../lib/manualDealMatch';
+import { formatCallActivity } from '../lib/callActivity';
 
 interface Call {
   id: string;
@@ -23,6 +24,8 @@ interface Call {
   dealBy?: string;
   dealByName?: string;
   buyerFinal?: string;
+  lastActivityAt?: Date;
+  lastActivityByName?: string;
 }
 
 interface StateGoal {
@@ -152,18 +155,7 @@ const parseAmount = (str: string) =>
 const isDealStatus = (s?: string) => s === 'Deal' || s === 'Confirmed Deal';
 
 const formatLastActivity = (call: Call): string => {
-  if (!call.updatedAt) return '—';
-  if (call.createdAt) {
-    const diffMs = Math.abs(call.updatedAt.getTime() - new Date(call.createdAt).getTime());
-    if (diffMs < 5 * 60 * 1000) return '—';
-  }
-  const date = new Date(call.updatedAt);
-  const today = new Date();
-  const isToday = date.toDateString() === today.toDateString();
-  const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-    .replace(' AM', 'am').replace(' PM', 'pm');
-  if (isToday) return `Today ${timeStr}`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return formatCallActivity(call).text;
 };
 
 export default function ReportingTab({

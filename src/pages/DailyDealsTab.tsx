@@ -1,12 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, forceDealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName, isProntoRep } from '../lib/systemReps';
 import { findCallsByAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
+import { activityDbFields, activityLocalFields } from '../lib/callActivity';
+import { updateCallById } from '../lib/callWrite';
 import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target, Download } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
+import FollowUpPickerModal from '../components/FollowUpPickerModal';
 import { exportRowsToExcel } from '../lib/exportExcel';
 
 interface DailyDeal {
@@ -50,6 +53,10 @@ interface Call {
   dealByName?: string;
   customerName?: string;
   isDuplicate?: boolean;
+  lastActivityAt?: Date;
+  lastActivityBy?: string;
+  lastActivityByName?: string;
+  followUpAt?: Date;
 }
 
 interface DailyDealSummary {
@@ -79,6 +86,7 @@ interface DailyDealsTabProps {
   goals: Goals;
   onRefresh: () => void;
   calls?: Call[];
+  setCalls?: Dispatch<SetStateAction<any[]>>;
   todayDailyDeals?: DailyDealSummary[];
   users?: User[];
 }
@@ -162,7 +170,7 @@ const toLocalDateString = (dateStr: string): string => {
 
 export default function DailyDealsTab({
   currentUser, goals, onRefresh,
-  calls = [], users = [],
+  calls = [], setCalls, users = [],
 }: DailyDealsTabProps) {
   const today = getTodayString();
 
@@ -204,6 +212,8 @@ export default function DailyDealsTab({
     creditId: string;
   } | null>(null);
   const canForceCredit = currentUser.role === 'admin' || currentUser.role === 'manager';
+  const [followUpModal, setFollowUpModal] = useState<{ callId: string } | null>(null);
+  const [followUpSaving, setFollowUpSaving] = useState(false);
 
   // Dealer popup state
   const [dealerPopup, setDealerPopup] = useState<string | null>(null);
@@ -411,7 +421,53 @@ export default function DailyDealsTab({
     setShowAllPopupStatuses(false);
   };
 
+  const patchCall = (callId: string, patch: Partial<Call>) => {
+    setCalls?.(prev => prev.map(c => c.id === callId ? { ...c, ...patch } : c));
+  };
+
+  const persistPopupFuStatus = async (callId: string, newStatus: string, extras?: { followUpAt?: Date | null; creditId?: string; creditName?: string }) => {
+    const existing = calls.find(c => c.id === callId);
+    const actorUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
+    const creditUser = extras?.creditId
+      ? { id: extras.creditId, name: extras.creditName || 'Unknown' }
+      : actorUser;
+    const stampedAt = new Date();
+    const followUpAt = newStatus === 'Follow Up' ? (extras?.followUpAt && extras.followUpAt.getTime() > Date.now() + 5000 ? extras.followUpAt : null) : null;
+    const fields = extras?.creditId
+      ? forceDealCreditDbFields(newStatus, creditUser, existing?.dealDate)
+      : dealCreditDbFields(newStatus, {
+        dealBy: existing?.dealBy,
+        dealByName: existing?.dealByName,
+        dealDate: existing?.dealDate,
+      }, { id: creditUser.id, name: creditUser.name });
+    const { error: err } = await updateCallById(callId, {
+      ...fields,
+      ...activityDbFields({ id: actorUser.id, name: actorUser.name }, stampedAt),
+      follow_up_at: followUpAt ? followUpAt.toISOString() : null,
+    });
+    if (err) {
+      setError(`Could not save status: ${err.message}`);
+      return false;
+    }
+    setError('');
+    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
+    patchCall(callId, {
+      fuStatus: newStatus,
+      followUpAt: followUpAt || undefined,
+      dealDate: fields.deal_date ? new Date(fields.deal_date) : undefined,
+      dealBy: fields.deal_by || undefined,
+      dealByName: fields.deal_by_name || undefined,
+      ...activityLocalFields({ id: actorUser.id, name: actorUser.name }, stampedAt),
+    });
+    onRefresh();
+    return true;
+  };
+
   const handlePopupFuStatus = async (callId: string, newStatus: string) => {
+    if (newStatus === 'Follow Up') {
+      setFollowUpModal({ callId });
+      return;
+    }
     const existing = calls.find(c => c.id === callId);
     if (canForceCredit && isDealLikeStatus(newStatus)) {
       setCreditModal({
@@ -421,35 +477,19 @@ export default function DailyDealsTab({
       });
       return;
     }
-    const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
-    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
-    await supabase.from('calls').update({
-      ...dealCreditDbFields(newStatus, {
-        dealBy: existing?.dealBy,
-        dealByName: existing?.dealByName,
-        dealDate: existing?.dealDate,
-      }, { id: creditUser.id, name: creditUser.name }),
-      updated_at: new Date().toISOString(),
-    }).eq('id', callId);
-    onRefresh();
+    await persistPopupFuStatus(callId, newStatus);
   };
 
   const applyPopupCreditModal = async () => {
     if (!creditModal) return;
     const { callId, newStatus, creditId } = creditModal;
-    const existing = calls.find(c => c.id === callId);
     const opts = getDealCreditOptions(
       [...allUsers, ...users, currentUser].map(u => ({ id: u.id, name: u.name, role: u.role })),
       currentUser.role,
     );
     const creditName = resolveCreditName(creditId, opts);
-    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
-    await supabase.from('calls').update({
-      ...forceDealCreditDbFields(newStatus, { id: creditId, name: creditName }, existing?.dealDate),
-      updated_at: new Date().toISOString(),
-    }).eq('id', callId);
-    setCreditModal(null);
-    onRefresh();
+    const saved = await persistPopupFuStatus(callId, newStatus, { creditId, creditName });
+    if (saved) setCreditModal(null);
   };
 
   const handlePopupSaveStatusLast = async (callId: string) => {
@@ -488,6 +528,18 @@ export default function DailyDealsTab({
     if (!error && data) {
       setPopupNotes(prev => ({ ...prev, [callId]: [...(prev[callId] || []), data] }));
       setPopupNewNoteText(prev => ({ ...prev, [callId]: '' }));
+      const stampedAt = new Date();
+      const { error: stampError } = await updateCallById(
+        callId,
+        activityDbFields({ id: noteAuthorId, name: creditUser.name }, stampedAt)
+      );
+      if (stampError) {
+        setError(`Note saved, but Activity did not update: ${stampError.message}`);
+      } else {
+        patchCall(callId, activityLocalFields({ id: noteAuthorId, name: creditUser.name }, stampedAt));
+      }
+    } else if (error) {
+      setError(`Could not save note: ${error.message}`);
     }
   };
 
@@ -1869,6 +1921,20 @@ export default function DailyDealsTab({
             </div>
           </div>
         </div>
+      )}
+
+      {followUpModal && (
+        <FollowUpPickerModal
+          open
+          saving={followUpSaving}
+          onClose={() => setFollowUpModal(null)}
+          onConfirm={async (at) => {
+            setFollowUpSaving(true);
+            const saved = await persistPopupFuStatus(followUpModal.callId, 'Follow Up', { followUpAt: at });
+            setFollowUpSaving(false);
+            if (saved) setFollowUpModal(null);
+          }}
+        />
       )}
 
       {creditModal && (

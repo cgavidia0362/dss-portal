@@ -1,10 +1,24 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Search, ChevronDown, ChevronUp, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, ChevronDown, ChevronUp, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle, BellOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, resolveDealCredit, forceDealCreditDbFields } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName } from '../lib/systemReps';
 import { statusMatchesFilter } from '../lib/statusLastFilter';
+import {
+  activityDbFields,
+  activityDisplayAt,
+  activityLocalFields,
+  activitySortTime,
+  dealShouldReturnToFollowUp,
+  formatCallActivity,
+  formatFollowUpDue,
+  isFollowUpWaiting,
+  touchDbFields,
+} from '../lib/callActivity';
+import { updateCallById, updateCallsByIds } from '../lib/callWrite';
 import NoteItem from '../components/NoteItem';
+import FollowUpPickerModal from '../components/FollowUpPickerModal';
+import { findDealerAlert, mapDealerAlertRow, type DealerAlert } from '../lib/dealerAlerts';
 
 interface Call {
   id: string;
@@ -29,6 +43,10 @@ interface Call {
   updatedBy?: string;
   updatedByName?: string;
   customerName?: string;
+  lastActivityAt?: Date;
+  lastActivityBy?: string;
+  lastActivityByName?: string;
+  followUpAt?: Date;
 }
 
 interface CallNote {
@@ -73,9 +91,11 @@ interface CallsTabProps {
   onUpdateCurrentUser?: (patch: Partial<User>) => void;
   todayDailyDeals?: DailyDealSummary[];
   users?: User[];
+  dealerAlerts?: DealerAlert[];
+  setDealerAlerts?: React.Dispatch<React.SetStateAction<DealerAlert[]>>;
 }
 
-type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | 'customerName';
+type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | 'customerName' | 'updatedAt';
 type ActiveSortField = SortField;
 type ColumnSort = { field: ActiveSortField; order: 'asc' | 'desc' };
 
@@ -92,6 +112,10 @@ const compareTextSort = (a: string, b: string, order: 'asc' | 'desc'): number =>
   return order === 'asc' ? cmp : -cmp;
 };
 
+function callActivitySortTime(call: Call): number | null {
+  return activitySortTime(activityDisplayAt(call));
+}
+
 const compareCalls = (
   a: Call,
   b: Call,
@@ -106,6 +130,17 @@ const compareCalls = (
     if (aVal < bVal) primary = -1;
     else if (aVal > bVal) primary = 1;
     primary = order === 'asc' ? primary : -primary;
+  } else if (field === 'updatedAt') {
+    const aVal = callActivitySortTime(a);
+    const bVal = callActivitySortTime(b);
+    if (aVal == null && bVal == null) primary = 0;
+    else if (aVal == null) primary = 1;
+    else if (bVal == null) primary = -1;
+    else {
+      if (aVal < bVal) primary = -1;
+      else if (aVal > bVal) primary = 1;
+      primary = order === 'asc' ? primary : -primary;
+    }
   } else if (field === 'buyerFinal') {
     const aVal = parseAmount(a.buyerFinal);
     const bVal = parseAmount(b.buyerFinal);
@@ -164,9 +199,11 @@ function uniqueDealerCount(list: Call[]): number {
 }
 
 function isStaleCall(call: Call): boolean {
-  if (!call.updatedAt) return false;
   if (COMPLETED_FU_STATUSES.has(call.fuStatus || '')) return false;
-  return Date.now() - new Date(call.updatedAt).getTime() > STALE_MS;
+  if (isFollowUpWaiting(call)) return false;
+  const stamp = call.lastActivityAt || call.createdAt || call.updatedAt;
+  if (!stamp) return false;
+  return Date.now() - new Date(stamp).getTime() > STALE_MS;
 }
 
 function matchesActionQueue(call: Call, key: ActionQueueKey): boolean {
@@ -179,10 +216,11 @@ function matchesActionQueue(call: Call, key: ActionQueueKey): boolean {
 export default function CallsTab({
   currentUserId, currentUserRole, calls, setCalls, notes, setNotes,
   dailyGoal, teamGoal, currentUser, onUpdateCurrentUser, todayDailyDeals, users,
+  dealerAlerts = [], setDealerAlerts,
 }: CallsTabProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterFuStatuses, setFilterFuStatuses] = useState<Set<string>>(new Set(['No Call', 'Pending', 'Follow Up']));
+  const [filterFuStatuses, setFilterFuStatuses] = useState<Set<string>>(new Set(['No Call', 'Pending', 'No Answer', 'Follow Up']));
   const [filterState, setFilterState] = useState('');
   const [filterRep, setFilterRep] = useState('');
   const [filterNewOnly, setFilterNewOnly] = useState(false);
@@ -209,7 +247,19 @@ export default function CallsTab({
   const [editingAmount, setEditingAmount] = useState<string | null>(null);
   const [tempStatusLast, setTempStatusLast] = useState('');
   const [tempAmount, setTempAmount] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const [followUpModal, setFollowUpModal] = useState<{
+    callId: string;
+    followUpAt?: Date;
+  } | null>(null);
+  const [followUpSaving, setFollowUpSaving] = useState(false);
+  const [dealerMenu, setDealerMenu] = useState<{ name: string; cif: string } | null>(null);
+  const [dncReasonDraft, setDncReasonDraft] = useState('');
   const itemsPerPage = 50;
+  const dealerMenuAlert = dealerMenu
+    ? findDealerAlert({ dealerName: dealerMenu.name, dealerCifNumber: dealerMenu.cif }, dealerAlerts)
+    : undefined;
 
   const allStatusLastOptions = [
     'Accepted', 'Approved', 'Approval', 'Counter', 'Denial', 'Declined',
@@ -321,40 +371,102 @@ export default function CallsTab({
   };
 
   const formatLastActivity = (call: Call): { text: string; isToday: boolean; byName?: string } => {
-    if (!call.updatedAt) return { text: '—', isToday: false };
-    if (call.createdAt) {
-      const diffMs = Math.abs(call.updatedAt.getTime() - new Date(call.createdAt).getTime());
-      if (diffMs < 5 * 60 * 1000) return { text: '—', isToday: false };
-    }
-    const date = new Date(call.updatedAt);
-    const todayFlag = isToday(date);
-    const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-      .replace(' AM', 'am').replace(' PM', 'pm');
-    const byName = call.updatedByName || undefined;
-    if (todayFlag) return { text: `Today ${timeStr}`, isToday: true, byName };
-    const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    return { text: dateStr, isToday: false, byName };
+    return formatCallActivity(call);
   };
+
+  const actor = () => ({ id: currentUserId, name: currentUser?.name });
 
   const actorUpdate = () => ({
     updatedBy: currentUserId,
     updatedByName: currentUser?.name || undefined,
   });
 
-  const actorDbFields = () => ({
-    updated_by: currentUserId,
-    updated_by_name: currentUser?.name || null,
-    updated_at: new Date().toISOString(),
-  });
+  const actorDbFields = () => touchDbFields(actor());
+
+  const warnDoNotCall = (call: Call) => {
+    const alert = findDealerAlert(call, dealerAlerts);
+    if (!alert) return;
+    const key = `dnc-seen:${dealerKey(call) || call.dealerName}`;
+    if (sessionStorage.getItem(key)) return;
+    const extra = alert.reason ? `\n\n${alert.reason}` : '';
+    window.alert(`This dealer asked not to be called on updates.${extra}`);
+    sessionStorage.setItem(key, '1');
+  };
+
+  const addDoNotCallDealer = async (dealerName: string, cifNumber?: string, reason?: string) => {
+    if (!isAdmin) return false;
+    if (findDealerAlert({ dealerName, dealerCifNumber: cifNumber }, dealerAlerts)) {
+      setSaveError(`${dealerName} is already flagged.`);
+      return false;
+    }
+    const { data, error } = await supabase.from('dealer_alerts').insert({
+      dealer_name: dealerName,
+      dealer_cif_number: cifNumber?.trim() || null,
+      reason: reason?.trim() || null,
+      created_by: currentUserId,
+      created_by_name: currentUser?.name || null,
+    }).select().single();
+    if (error || !data) {
+      setSaveError(`Could not flag dealer: ${error?.message || 'Unknown error'}`);
+      return false;
+    }
+    setSaveError('');
+    setDealerAlerts?.(prev => [...prev, mapDealerAlertRow(data)].sort((a, b) => a.dealerName.localeCompare(b.dealerName)));
+    return true;
+  };
+
+  const removeDoNotCallDealer = async (id: string) => {
+    if (!isAdmin) return false;
+    const { error } = await supabase.from('dealer_alerts').delete().eq('id', id);
+    if (error) {
+      setSaveError(`Could not remove flag: ${error.message}`);
+      return false;
+    }
+    setDealerAlerts?.(prev => prev.filter(a => a.id !== id));
+    return true;
+  };
+
+  const callsRef = useRef(calls);
+  callsRef.current = calls;
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCalls(prev => prev.map(call => {
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        if (call.statusLast === 'Accepted' && call.fuStatus === 'Deal' && call.dealDate && call.dealDate < sevenDaysAgo)
-          return { ...call, fuStatus: 'Pending', dealDate: undefined };
-        return call;
-      }));
+    const tick = setInterval(() => setNowTick(Date.now()), 15000);
+    return () => clearInterval(tick);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const now = Date.now();
+      setNowTick(now);
+      const dueDealIds = callsRef.current
+        .filter(call => dealShouldReturnToFollowUp(call, now))
+        .map(call => call.id);
+      if (dueDealIds.length === 0) return;
+      const agedAt = new Date();
+      const { error } = await updateCallsByIds(dueDealIds, {
+        fu_status: 'Follow Up',
+        follow_up_at: null,
+        last_activity_at: agedAt.toISOString(),
+        last_activity_by_name: 'Queue',
+        updated_at: agedAt.toISOString(),
+      });
+      if (error) {
+        console.error('Error returning aged deals to Follow Up:', error);
+        return;
+      }
+      const dueSet = new Set(dueDealIds);
+      setCalls(prev => prev.map(call =>
+        dueSet.has(call.id)
+          ? {
+            ...call,
+            fuStatus: 'Follow Up',
+            followUpAt: undefined,
+            lastActivityAt: agedAt,
+            lastActivityByName: 'Queue',
+            updatedAt: agedAt,
+          }
+          : call
+      ));
     }, 60000);
     return () => clearInterval(interval);
   }, [setCalls]);
@@ -458,6 +570,7 @@ export default function CallsTab({
 
     // When searching, show all FU statuses (including No Deal / Closed / Duplicates)
     if (!options?.skipFuQueue) {
+      if (isFollowUpWaiting(call, new Date(nowTick))) return false;
       const fuKey = call.fuStatus || 'No Call';
       if (isRep) {
         // My Queue: unworked calls always show; worked calls show only if their FU chip is selected
@@ -576,7 +689,7 @@ export default function CallsTab({
     return [...list].sort((a, b) => compareCalls(a, b, queuePopupSort.field, queuePopupSort.order));
   })();
   const queuePopupDealerCount = uniqueDealerCount(queuePopupCalls);
-  const workedTodayCount = dashboardCalls.filter(c => c.updatedAt && isToday(new Date(c.updatedAt)) && c.fuStatus).length;
+  const workedTodayCount = dashboardCalls.filter(c => c.lastActivityAt && isToday(new Date(c.lastActivityAt)) && c.fuStatus).length;
 
   const leaderboard = (() => {
     const nameMap: { [id: string]: string } = {};
@@ -611,7 +724,19 @@ export default function CallsTab({
 
   // ── HANDLERS ────────────────────────────────────────────────────
 
-  const handleStatusChange = async (callId: string, newStatus: Call['fuStatus']) => {
+  const requestStatusChange = (callId: string, newStatus: Call['fuStatus']) => {
+    if (newStatus === 'Follow Up') {
+      setFollowUpModal({ callId });
+      return;
+    }
+    void handleStatusChange(callId, newStatus);
+  };
+
+  const handleStatusChange = async (
+    callId: string,
+    newStatus: Call['fuStatus'],
+    extras?: { followUpAt?: Date | null },
+  ) => {
     const existing = calls.find(c => c.id === callId);
     if (!existing) return;
 
@@ -628,7 +753,7 @@ export default function CallsTab({
       return;
     }
 
-    let actor = { id: currentUserId, name: currentUser?.name };
+    let creditActor = actor();
     let existingCredit = {
       dealBy: existing.dealBy,
       dealByName: existing.dealByName,
@@ -670,28 +795,38 @@ export default function CallsTab({
               )
               : existing.dealDate,
           };
-          actor = { id: currentUserId, name: currentUser?.name };
         }
       }
     }
 
-    const credit = resolveDealCredit(newStatus, existingCredit, actor);
+    const credit = resolveDealCredit(newStatus, existingCredit, creditActor);
+    const stampedAt = new Date();
+    const followUpAt = newStatus === 'Follow Up'
+      ? (extras?.followUpAt && extras.followUpAt.getTime() > Date.now() + 5000 ? extras.followUpAt : null)
+      : null;
+    const { error } = await updateCallById(callId, {
+      ...dealCreditDbFields(newStatus, existingCredit, creditActor),
+      ...activityDbFields(creditActor, stampedAt),
+      follow_up_at: followUpAt ? followUpAt.toISOString() : null,
+    });
+    if (error) {
+      setSaveError(`Could not save status: ${error.message}`);
+      return false;
+    }
+    setSaveError('');
     setCalls(prev => prev.map(c => c.id === callId
       ? {
         ...c,
         fuStatus: newStatus,
-        updatedAt: new Date(),
         dealDate: credit.dealDate,
         dealBy: credit.dealBy,
         dealByName: credit.dealByName,
-        ...actorUpdate(),
+        followUpAt: followUpAt || undefined,
+        ...activityLocalFields(creditActor, stampedAt),
       }
       : c
     ));
-    await supabase.from('calls').update({
-      ...dealCreditDbFields(newStatus, existingCredit, actor),
-      ...actorDbFields(),
-    }).eq('id', callId);
+    return true;
   };
 
   const applyCreditModal = async () => {
@@ -703,51 +838,68 @@ export default function CallsTab({
     const creditName = resolveCreditName(creditId, creditOptions);
     const fields = forceDealCreditDbFields(newStatus, { id: creditId, name: creditName }, existing.dealDate);
     const dealDate = fields.deal_date ? new Date(fields.deal_date) : existing.dealDate;
-
+    const stampedAt = new Date();
+    const { error } = await updateCallById(callId, {
+      ...fields,
+      ...activityDbFields(actor(), stampedAt),
+      follow_up_at: null,
+    });
+    if (error) {
+      setSaveError(`Could not save status: ${error.message}`);
+      return;
+    }
+    setSaveError('');
     setCalls(prev => prev.map(c => c.id === callId
       ? {
         ...c,
         fuStatus: newStatus,
-        updatedAt: new Date(),
         dealDate,
         dealBy: creditId,
         dealByName: creditName,
-        ...actorUpdate(),
+        followUpAt: undefined,
+        ...activityLocalFields(actor(), stampedAt),
       }
       : c
     ));
-    await supabase.from('calls').update({
-      ...fields,
-      ...actorDbFields(),
-    }).eq('id', callId);
     setCreditModal(null);
   };
 
   const handleSaveStatusLast = async (callId: string) => {
-    setCalls(prev => prev.map(c => c.id === callId ? { ...c, statusLast: tempStatusLast, updatedAt: new Date(), ...actorUpdate() } : c));
-    setEditingStatusLast(null);
-    await supabase.from('calls').update({
+    const { error } = await supabase.from('calls').update({
       status_last: tempStatusLast,
       ...actorDbFields(),
     }).eq('id', callId);
+    if (error) {
+      setSaveError(`Could not save Status Last: ${error.message}`);
+      return;
+    }
+    setSaveError('');
+    setCalls(prev => prev.map(c => c.id === callId ? { ...c, statusLast: tempStatusLast, updatedAt: new Date(), ...actorUpdate() } : c));
+    setEditingStatusLast(null);
   };
 
   const handleSaveAmount = async (callId: string) => {
-    setCalls(prev => prev.map(c => c.id === callId ? { ...c, buyerFinal: tempAmount, updatedAt: new Date(), ...actorUpdate() } : c));
-    setEditingAmount(null);
-    await supabase.from('calls').update({
+    const { error } = await supabase.from('calls').update({
       buyer_final: tempAmount,
       ...actorDbFields(),
     }).eq('id', callId);
+    if (error) {
+      setSaveError(`Could not save amount: ${error.message}`);
+      return;
+    }
+    setSaveError('');
+    setCalls(prev => prev.map(c => c.id === callId ? { ...c, buyerFinal: tempAmount, updatedAt: new Date(), ...actorUpdate() } : c));
+    setEditingAmount(null);
   };
 
   const toggleRow = (id: string) => {
+    const call = calls.find(c => c.id === id);
+    const opening = !expandedRows.has(id);
+    if (opening && call) warnDoNotCall(call);
     setExpandedRows(prev => {
       const n = new Set(prev);
-      const opening = !n.has(id);
       if (opening) {
         n.add(id);
-        const call = calls.find(c => c.id === id);
         if (call) void syncNotesForCall(call);
       } else {
         n.delete(id);
@@ -825,8 +977,6 @@ export default function CallsTab({
     const text = newNoteText[callId]?.trim();
     if (!text) return;
     const call = calls.find(c => c.id === callId);
-    setNewNoteText(prev => ({ ...prev, [callId]: '' }));
-    setCalls(prev => prev.map(c => c.id === callId ? { ...c, updatedAt: new Date(), ...actorUpdate() } : c));
     const { data, error } = await supabase.from('call_notes').insert({
       call_id: callId,
       application_id: call?.applicationId || '',
@@ -835,15 +985,25 @@ export default function CallsTab({
       created_by: currentUserId,
       created_by_name: currentUser?.name || 'User',
     }).select().single();
-    if (!error && data) {
-      setNotes(prev => [...prev, {
-        id: data.id, callId, applicationId: call?.applicationId || '',
-        noteText: text,
-        createdBy: currentUserId, createdByName: currentUser?.name || 'User',
-        createdAt: new Date(data.created_at),
-      }]);
-      await supabase.from('calls').update(actorDbFields()).eq('id', callId);
+    if (error || !data) {
+      setSaveError(`Could not save note: ${error?.message || 'Unknown error'}`);
+      return;
     }
+    setSaveError('');
+    setNewNoteText(prev => ({ ...prev, [callId]: '' }));
+    setNotes(prev => [...prev, {
+      id: data.id, callId, applicationId: call?.applicationId || '',
+      noteText: text,
+      createdBy: currentUserId, createdByName: currentUser?.name || 'User',
+      createdAt: new Date(data.created_at),
+    }]);
+    const stampedAt = new Date();
+    const { error: stampError } = await updateCallById(callId, activityDbFields(actor(), stampedAt));
+    if (stampError) {
+      setSaveError(`Note saved, but Activity did not update: ${stampError.message}`);
+      return;
+    }
+    setCalls(prev => prev.map(c => c.id === callId ? { ...c, ...activityLocalFields(actor(), stampedAt) } : c));
   };
 
   const getCallNotes = (callId: string) => {
@@ -893,6 +1053,12 @@ export default function CallsTab({
           {isAdmin ? 'View and manage all calls' : 'View your assigned calls — search to find and update any call'}
         </p>
       </div>
+
+      {saveError && (
+        <div className="rounded-dss-sm border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          {saveError}
+        </div>
+      )}
 
       {/* KPI CARDS + LEADERBOARD */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-4 items-stretch">
@@ -1399,7 +1565,11 @@ export default function CallsTab({
                     Status Last <SortIcon field="statusLast" />
                   </button>
                 </th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Activity</th>
+                <th className="px-2 py-2 text-left">
+                  <button type="button" onClick={e => { e.stopPropagation(); handleSort('updatedAt'); }} className="flex items-center text-xs font-medium text-dss-muted uppercase tracking-wider hover:text-dss-ink whitespace-nowrap">
+                    Activity <SortIcon field="updatedAt" />
+                  </button>
+                </th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">FU Status</th>
                 <th className="px-2 py-2"></th>
               </tr>
@@ -1410,6 +1580,7 @@ export default function CallsTab({
                 const isExpanded = expandedRows.has(call.id);
                 const isNew = isNewUpload(call);
                 const isFilteredDealer = dealerFilter === call.dealerName;
+                const dealerAlert = findDealerAlert(call, dealerAlerts);
                 const activity = formatLastActivity(call);
                 const isWorked = !!call.fuStatus;
 
@@ -1454,15 +1625,47 @@ export default function CallsTab({
 
                     {/* Dealer */}
                     <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => setDealerFilter(prev => prev === call.dealerName ? '' : call.dealerName)}
-                        title={call.dealerName}
-                        className={`text-xs text-left truncate block w-full transition hover:text-dss-accent ${
-                          isFilteredDealer ? 'text-dss-accent font-medium' : 'text-dss-ink'
-                        }`}
-                      >
-                        {call.dealerName}
-                      </button>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <button
+                          onClick={() => {
+                            if (isAdmin) {
+                              setDealerMenu({ name: call.dealerName, cif: call.dealerCifNumber || '' });
+                              setDncReasonDraft(dealerAlert?.reason || '');
+                              return;
+                            }
+                            const next = dealerFilter === call.dealerName ? '' : call.dealerName;
+                            setDealerFilter(next);
+                            if (next) warnDoNotCall(call);
+                          }}
+                          title={isAdmin ? `${call.dealerName} — dealer actions` : call.dealerName}
+                          className={`text-xs text-left truncate min-w-0 flex-1 transition hover:text-dss-accent ${
+                            isFilteredDealer ? 'text-dss-accent font-medium' : 'text-dss-ink'
+                          }`}
+                        >
+                          {call.dealerName}
+                        </button>
+                        {dealerAlert && (
+                          <span
+                            title={dealerAlert.reason || 'Do not call on updates'}
+                            className="flex-shrink-0 inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-rose-50 text-rose-800 border border-rose-200"
+                          >
+                            Do not call
+                          </span>
+                        )}
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            title="Do not call on updates"
+                            onClick={() => {
+                              setDealerMenu({ name: call.dealerName, cif: call.dealerCifNumber || '' });
+                              setDncReasonDraft(dealerAlert?.reason || '');
+                            }}
+                            className="flex-shrink-0 text-dss-muted hover:text-rose-700"
+                          >
+                            <BellOff className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     {/* Customer */}
@@ -1545,19 +1748,26 @@ export default function CallsTab({
 
                     {/* FU Status */}
                     <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                      <select value={call.fuStatus || ''}
-                        onChange={e => handleStatusChange(call.id, e.target.value as Call['fuStatus'])}
-                        className="px-1.5 py-1 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30 w-full">
-                        <option value="">Select…</option>
-                        <option>Deal</option>
-                        <option>Confirmed Deal</option>
-                        <option>No Deal</option>
-                        <option>Pending</option>
-                        <option>No Answer</option>
-                        <option>Follow Up</option>
-                        <option>Duplicates</option>
-                        <option>Closed</option>
-                      </select>
+                      <div className="space-y-0.5">
+                        <select value={call.fuStatus || ''}
+                          onChange={e => requestStatusChange(call.id, (e.target.value || undefined) as Call['fuStatus'])}
+                          className="px-1.5 py-1 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30 w-full">
+                          <option value="">Select…</option>
+                          <option>Deal</option>
+                          <option>Confirmed Deal</option>
+                          <option>No Deal</option>
+                          <option>Pending</option>
+                          <option>No Answer</option>
+                          <option>Follow Up</option>
+                          <option>Duplicates</option>
+                          <option>Closed</option>
+                        </select>
+                        {call.fuStatus === 'Follow Up' && formatFollowUpDue(call.followUpAt, new Date(nowTick)) && (
+                          <p className="text-[10px] text-orange-800 truncate">
+                            {formatFollowUpDue(call.followUpAt, new Date(nowTick))}
+                          </p>
+                        )}
+                      </div>
                     </td>
 
                     {/* Note button with badge */}
@@ -1645,6 +1855,93 @@ export default function CallsTab({
           </div>
         </div>
       </div>
+
+      {dealerMenu && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setDealerMenu(null)}
+        >
+          <div
+            className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-sm p-5 shadow-sm"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-dss-ink mb-1">{dealerMenu.name}</h3>
+            <p className="text-sm text-dss-muted mb-4">
+              {dealerMenuAlert
+                ? 'This dealer is flagged. Every app shows a Do not call warning.'
+                : 'Flag this dealer so every app warns: do not call on updates.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const next = dealerFilter === dealerMenu.name ? '' : dealerMenu.name;
+                setDealerFilter(next);
+                const sample = calls.find(c => c.dealerName === dealerMenu.name);
+                if (next && sample) warnDoNotCall(sample);
+                setDealerMenu(null);
+              }}
+              className="w-full mb-3 px-3 py-2 rounded-dss-sm border border-dss-border text-sm text-dss-ink hover:bg-dss-canvas"
+            >
+              {dealerFilter === dealerMenu.name ? 'Clear dealer filter' : 'Filter this dealer'}
+            </button>
+            {dealerMenuAlert ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await removeDoNotCallDealer(dealerMenuAlert.id);
+                  if (ok) setDealerMenu(null);
+                }}
+                className="w-full px-3 py-2 rounded-dss-sm border border-rose-200 text-sm text-rose-800 hover:bg-rose-50"
+              >
+                Remove do not call
+              </button>
+            ) : (
+              <>
+                <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">
+                  Optional reason
+                </label>
+                <input
+                  value={dncReasonDraft}
+                  onChange={e => setDncReasonDraft(e.target.value)}
+                  placeholder="email / portal only"
+                  className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink mb-3 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await addDoNotCallDealer(dealerMenu.name, dealerMenu.cif, dncReasonDraft);
+                    if (ok) setDealerMenu(null);
+                  }}
+                  className="w-full px-3 py-2 rounded-dss-sm bg-rose-600 hover:bg-rose-500 text-white text-sm font-medium"
+                >
+                  Do not call on updates
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setDealerMenu(null)}
+              className="w-full mt-2 px-3 py-2 rounded-dss-sm text-sm text-dss-muted hover:text-dss-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {followUpModal && (
+        <FollowUpPickerModal
+          open
+          saving={followUpSaving}
+          onClose={() => setFollowUpModal(null)}
+          onConfirm={async (at) => {
+            setFollowUpSaving(true);
+            const saved = await handleStatusChange(followUpModal.callId, 'Follow Up', { followUpAt: at });
+            setFollowUpSaving(false);
+            if (saved !== false) setFollowUpModal(null);
+          }}
+        />
+      )}
 
       {creditModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
@@ -1772,7 +2069,14 @@ export default function CallsTab({
                         {call.applicationId}
                       </td>
                       <td className="px-3 py-2 text-xs text-dss-ink truncate" title={call.dealerName}>
-                        {call.dealerName || '—'}
+                        <span className="inline-flex items-center gap-1 min-w-0">
+                          <span className="truncate">{call.dealerName || '—'}</span>
+                          {findDealerAlert(call, dealerAlerts) && (
+                            <span className="flex-shrink-0 inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-rose-50 text-rose-800 border border-rose-200">
+                              Do not call
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="px-3 py-2 text-xs text-dss-muted truncate" title={call.customerName || ''}>
                         {call.customerName || '—'}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Upload, CheckCircle, AlertCircle, FileSpreadsheet, DollarSign, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { resolveAutoCloseFuStatus } from '../lib/statusLastFilter';
 import {
   applyMatchActionToCall,
   findUploadDealMatches,
@@ -279,31 +280,49 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
 
     try {
       const matchByApp = new Map(matches.map(m => [m.applicationId, m]));
+      const batchAppIds = sourceCalls.map(c => c.applicationId).filter(Boolean);
+      const existingByApp = new Map<string, { fuStatus?: string | null; createdAt?: string | null }>();
+      try {
+        const CHUNK = 200;
+        for (let i = 0; i < batchAppIds.length; i += CHUNK) {
+          const chunk = batchAppIds.slice(i, i + CHUNK);
+          const { data } = await supabase
+            .from('calls')
+            .select('application_id, fu_status, created_at')
+            .in('application_id', chunk);
+          if (data) {
+            data.forEach((d: { application_id: string; fu_status?: string | null; created_at?: string | null }) => {
+              existingByApp.set(d.application_id, {
+                fuStatus: d.fu_status,
+                createdAt: d.created_at,
+              });
+            });
+          }
+        }
+      } catch { /* non-critical */ }
+
       const processedCalls = sourceCalls.map(c => {
         const match = matchByApp.get(c.applicationId);
-        return match ? applyMatchActionToCall(c, match) : c;
+        const matched = match ? applyMatchActionToCall(c, match) : c;
+        const existing = existingByApp.get(c.applicationId);
+        const fuStatus = resolveAutoCloseFuStatus({
+          statusLast: matched.statusLast,
+          fuStatus: matched.fuStatus ?? existing?.fuStatus,
+          createdAt: existing?.createdAt,
+        });
+        return {
+          ...matched,
+          fuStatus: (fuStatus || undefined) as Call['fuStatus'],
+        };
       });
 
       if (processedCalls.length > 0) {
-        const batchAppIds = processedCalls.map(c => c.applicationId).filter(Boolean);
-        const existingAppIds = new Set<string>();
-        try {
-          const CHUNK = 200;
-          for (let i = 0; i < batchAppIds.length; i += CHUNK) {
-            const chunk = batchAppIds.slice(i, i + CHUNK);
-            const { data } = await supabase
-              .from('calls')
-              .select('application_id')
-              .in('application_id', chunk);
-            if (data) data.forEach((d: any) => existingAppIds.add(d.application_id));
-          }
-        } catch { /* non-critical */ }
-
         const toInsert: Record<string, unknown>[] = [];
         const toUpdate: { applicationId: string; row: Record<string, unknown> }[] = [];
 
         processedCalls.forEach(c => {
           const match = matchByApp.get(c.applicationId);
+          const existing = existingByApp.get(c.applicationId);
           const base: Record<string, unknown> = {
             application_id: c.applicationId,
             dealer_cif_number: c.dealerCifNumber,
@@ -317,7 +336,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
             customer_full_name: c.customerName || null,
           };
 
-          if (existingAppIds.has(c.applicationId)) {
+          if (existing) {
             // Linked / Duplicate actions may update FU + credit on existing rows
             if (match && match.action === 'link') {
               base.fu_status = c.fuStatus || null;
@@ -328,8 +347,11 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
               base.assigned_to_name = c.assignedToName || null;
               base.updated_at = new Date().toISOString();
             } else if (match && match.action === 'duplicate') {
-              base.fu_status = 'Duplicates';
+              base.fu_status = c.fuStatus || 'Duplicates';
               base.is_duplicate = true;
+              base.updated_at = new Date().toISOString();
+            } else if (c.fuStatus === 'Closed' && existing.fuStatus !== 'Closed') {
+              base.fu_status = 'Closed';
               base.updated_at = new Date().toISOString();
             }
             toUpdate.push({ applicationId: c.applicationId, row: base });
