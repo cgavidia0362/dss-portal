@@ -23,6 +23,7 @@ import {
   mergeFetchedCalls,
 } from './lib/callActivity';
 import { updateCallsByIds } from './lib/callWrite';
+import { mapDealerAlertRow, type DealerAlert } from './lib/dealerAlerts';
 
 interface Dealer {
   cifNumber: string;
@@ -139,6 +140,7 @@ function App() {
 
   const [fundingData, setFundingData] = useState<FundingData>({});
   const [todayDailyDeals, setTodayDailyDeals] = useState<DailyDealSummary[]>([]);
+  const [dealerAlerts, setDealerAlerts] = useState<DealerAlert[]>([]);
 
   // ── AUTH ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -175,6 +177,7 @@ function App() {
       fetchCalls();
       fetchFundingData();
       fetchTeamGoals();
+      fetchDealerAlerts();
     }
   }, [isAuthenticated]);
 
@@ -193,6 +196,9 @@ function App() {
       .channel('app_live_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_deals' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'calls' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_alerts' }, () => {
+        fetchDealerAlerts();
+      })
       .subscribe();
     return () => {
       if (timer) clearTimeout(timer);
@@ -539,6 +545,22 @@ function App() {
     }
   };
 
+  const fetchDealerAlerts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('dealer_alerts')
+        .select('*')
+        .order('dealer_name');
+      if (error) {
+        console.error('Error fetching dealer alerts:', error);
+        return;
+      }
+      setDealerAlerts((data || []).map(mapDealerAlertRow));
+    } catch (err) {
+      console.error('Error fetching dealer alerts:', err);
+    }
+  };
+
   // ── HANDLERS ──────────────────────────────────────────────────────
   const handleLogout = async () => {
     try {
@@ -549,6 +571,7 @@ function App() {
       setNotes([]);
       setFundingData({});
       setTodayDailyDeals([]);
+      setDealerAlerts([]);
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -691,6 +714,8 @@ function App() {
                 onUpdateCurrentUser={(patch) => setCurrentUser(prev => prev ? { ...prev, ...patch } : prev)}
                 todayDailyDeals={todayDailyDeals}
                 users={users}
+                dealerAlerts={dealerAlerts}
+                setDealerAlerts={setDealerAlerts}
               />
             )}
 
@@ -709,12 +734,16 @@ function App() {
             {activeTab === 'assign' && (
               <AssignTab
                 currentUserRole={currentUser.role}
+                currentUserId={currentUser.id}
+                currentUserName={currentUser.name}
                 calls={calls}
                 setCalls={setCalls}
                 users={users}
                 setUsers={setUsers}
                 goals={goals}
                 setGoals={setGoals}
+                dealerAlerts={dealerAlerts}
+                setDealerAlerts={setDealerAlerts}
               />
             )}
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronDown, ChevronUp, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle, BellOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, resolveDealCredit, forceDealCreditDbFields } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName } from '../lib/systemReps';
@@ -18,6 +18,7 @@ import {
 import { updateCallById, updateCallsByIds } from '../lib/callWrite';
 import NoteItem from '../components/NoteItem';
 import FollowUpPickerModal from '../components/FollowUpPickerModal';
+import { findDealerAlert, mapDealerAlertRow, type DealerAlert } from '../lib/dealerAlerts';
 
 interface Call {
   id: string;
@@ -90,6 +91,8 @@ interface CallsTabProps {
   onUpdateCurrentUser?: (patch: Partial<User>) => void;
   todayDailyDeals?: DailyDealSummary[];
   users?: User[];
+  dealerAlerts?: DealerAlert[];
+  setDealerAlerts?: React.Dispatch<React.SetStateAction<DealerAlert[]>>;
 }
 
 type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | 'customerName' | 'updatedAt';
@@ -213,6 +216,7 @@ function matchesActionQueue(call: Call, key: ActionQueueKey): boolean {
 export default function CallsTab({
   currentUserId, currentUserRole, calls, setCalls, notes, setNotes,
   dailyGoal, teamGoal, currentUser, onUpdateCurrentUser, todayDailyDeals, users,
+  dealerAlerts = [], setDealerAlerts,
 }: CallsTabProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -250,7 +254,12 @@ export default function CallsTab({
     followUpAt?: Date;
   } | null>(null);
   const [followUpSaving, setFollowUpSaving] = useState(false);
+  const [dealerMenu, setDealerMenu] = useState<{ name: string; cif: string } | null>(null);
+  const [dncReasonDraft, setDncReasonDraft] = useState('');
   const itemsPerPage = 50;
+  const dealerMenuAlert = dealerMenu
+    ? findDealerAlert({ dealerName: dealerMenu.name, dealerCifNumber: dealerMenu.cif }, dealerAlerts)
+    : undefined;
 
   const allStatusLastOptions = [
     'Accepted', 'Approved', 'Approval', 'Counter', 'Denial', 'Declined',
@@ -373,6 +382,49 @@ export default function CallsTab({
   });
 
   const actorDbFields = () => touchDbFields(actor());
+
+  const warnDoNotCall = (call: Call) => {
+    const alert = findDealerAlert(call, dealerAlerts);
+    if (!alert) return;
+    const key = `dnc-seen:${dealerKey(call) || call.dealerName}`;
+    if (sessionStorage.getItem(key)) return;
+    const extra = alert.reason ? `\n\n${alert.reason}` : '';
+    window.alert(`This dealer asked not to be called on updates.${extra}`);
+    sessionStorage.setItem(key, '1');
+  };
+
+  const addDoNotCallDealer = async (dealerName: string, cifNumber?: string, reason?: string) => {
+    if (!isAdmin) return false;
+    if (findDealerAlert({ dealerName, dealerCifNumber: cifNumber }, dealerAlerts)) {
+      setSaveError(`${dealerName} is already flagged.`);
+      return false;
+    }
+    const { data, error } = await supabase.from('dealer_alerts').insert({
+      dealer_name: dealerName,
+      dealer_cif_number: cifNumber?.trim() || null,
+      reason: reason?.trim() || null,
+      created_by: currentUserId,
+      created_by_name: currentUser?.name || null,
+    }).select().single();
+    if (error || !data) {
+      setSaveError(`Could not flag dealer: ${error?.message || 'Unknown error'}`);
+      return false;
+    }
+    setSaveError('');
+    setDealerAlerts?.(prev => [...prev, mapDealerAlertRow(data)].sort((a, b) => a.dealerName.localeCompare(b.dealerName)));
+    return true;
+  };
+
+  const removeDoNotCallDealer = async (id: string) => {
+    if (!isAdmin) return false;
+    const { error } = await supabase.from('dealer_alerts').delete().eq('id', id);
+    if (error) {
+      setSaveError(`Could not remove flag: ${error.message}`);
+      return false;
+    }
+    setDealerAlerts?.(prev => prev.filter(a => a.id !== id));
+    return true;
+  };
 
   const callsRef = useRef(calls);
   callsRef.current = calls;
@@ -841,12 +893,13 @@ export default function CallsTab({
   };
 
   const toggleRow = (id: string) => {
+    const call = calls.find(c => c.id === id);
+    const opening = !expandedRows.has(id);
+    if (opening && call) warnDoNotCall(call);
     setExpandedRows(prev => {
       const n = new Set(prev);
-      const opening = !n.has(id);
       if (opening) {
         n.add(id);
-        const call = calls.find(c => c.id === id);
         if (call) void syncNotesForCall(call);
       } else {
         n.delete(id);
@@ -1527,6 +1580,7 @@ export default function CallsTab({
                 const isExpanded = expandedRows.has(call.id);
                 const isNew = isNewUpload(call);
                 const isFilteredDealer = dealerFilter === call.dealerName;
+                const dealerAlert = findDealerAlert(call, dealerAlerts);
                 const activity = formatLastActivity(call);
                 const isWorked = !!call.fuStatus;
 
@@ -1571,15 +1625,47 @@ export default function CallsTab({
 
                     {/* Dealer */}
                     <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => setDealerFilter(prev => prev === call.dealerName ? '' : call.dealerName)}
-                        title={call.dealerName}
-                        className={`text-xs text-left truncate block w-full transition hover:text-dss-accent ${
-                          isFilteredDealer ? 'text-dss-accent font-medium' : 'text-dss-ink'
-                        }`}
-                      >
-                        {call.dealerName}
-                      </button>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <button
+                          onClick={() => {
+                            if (isAdmin) {
+                              setDealerMenu({ name: call.dealerName, cif: call.dealerCifNumber || '' });
+                              setDncReasonDraft(dealerAlert?.reason || '');
+                              return;
+                            }
+                            const next = dealerFilter === call.dealerName ? '' : call.dealerName;
+                            setDealerFilter(next);
+                            if (next) warnDoNotCall(call);
+                          }}
+                          title={isAdmin ? `${call.dealerName} — dealer actions` : call.dealerName}
+                          className={`text-xs text-left truncate min-w-0 flex-1 transition hover:text-dss-accent ${
+                            isFilteredDealer ? 'text-dss-accent font-medium' : 'text-dss-ink'
+                          }`}
+                        >
+                          {call.dealerName}
+                        </button>
+                        {dealerAlert && (
+                          <span
+                            title={dealerAlert.reason || 'Do not call on updates'}
+                            className="flex-shrink-0 inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-rose-50 text-rose-800 border border-rose-200"
+                          >
+                            Do not call
+                          </span>
+                        )}
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            title="Do not call on updates"
+                            onClick={() => {
+                              setDealerMenu({ name: call.dealerName, cif: call.dealerCifNumber || '' });
+                              setDncReasonDraft(dealerAlert?.reason || '');
+                            }}
+                            className="flex-shrink-0 text-dss-muted hover:text-rose-700"
+                          >
+                            <BellOff className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     {/* Customer */}
@@ -1770,6 +1856,79 @@ export default function CallsTab({
         </div>
       </div>
 
+      {dealerMenu && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setDealerMenu(null)}
+        >
+          <div
+            className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-sm p-5 shadow-sm"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-dss-ink mb-1">{dealerMenu.name}</h3>
+            <p className="text-sm text-dss-muted mb-4">
+              {dealerMenuAlert
+                ? 'This dealer is flagged. Every app shows a Do not call warning.'
+                : 'Flag this dealer so every app warns: do not call on updates.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const next = dealerFilter === dealerMenu.name ? '' : dealerMenu.name;
+                setDealerFilter(next);
+                const sample = calls.find(c => c.dealerName === dealerMenu.name);
+                if (next && sample) warnDoNotCall(sample);
+                setDealerMenu(null);
+              }}
+              className="w-full mb-3 px-3 py-2 rounded-dss-sm border border-dss-border text-sm text-dss-ink hover:bg-dss-canvas"
+            >
+              {dealerFilter === dealerMenu.name ? 'Clear dealer filter' : 'Filter this dealer'}
+            </button>
+            {dealerMenuAlert ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await removeDoNotCallDealer(dealerMenuAlert.id);
+                  if (ok) setDealerMenu(null);
+                }}
+                className="w-full px-3 py-2 rounded-dss-sm border border-rose-200 text-sm text-rose-800 hover:bg-rose-50"
+              >
+                Remove do not call
+              </button>
+            ) : (
+              <>
+                <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">
+                  Optional reason
+                </label>
+                <input
+                  value={dncReasonDraft}
+                  onChange={e => setDncReasonDraft(e.target.value)}
+                  placeholder="email / portal only"
+                  className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink mb-3 focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await addDoNotCallDealer(dealerMenu.name, dealerMenu.cif, dncReasonDraft);
+                    if (ok) setDealerMenu(null);
+                  }}
+                  className="w-full px-3 py-2 rounded-dss-sm bg-rose-600 hover:bg-rose-500 text-white text-sm font-medium"
+                >
+                  Do not call on updates
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setDealerMenu(null)}
+              className="w-full mt-2 px-3 py-2 rounded-dss-sm text-sm text-dss-muted hover:text-dss-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {followUpModal && (
         <FollowUpPickerModal
           open
@@ -1910,7 +2069,14 @@ export default function CallsTab({
                         {call.applicationId}
                       </td>
                       <td className="px-3 py-2 text-xs text-dss-ink truncate" title={call.dealerName}>
-                        {call.dealerName || '—'}
+                        <span className="inline-flex items-center gap-1 min-w-0">
+                          <span className="truncate">{call.dealerName || '—'}</span>
+                          {findDealerAlert(call, dealerAlerts) && (
+                            <span className="flex-shrink-0 inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-rose-50 text-rose-800 border border-rose-200">
+                              Do not call
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="px-3 py-2 text-xs text-dss-muted truncate" title={call.customerName || ''}>
                         {call.customerName || '—'}
