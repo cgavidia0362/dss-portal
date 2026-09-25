@@ -16,6 +16,13 @@ import PublicDealsPage from './pages/PublicDealsPage';
 import VehicleRiskPublic from './pages/VehicleRiskPublic';
 import IncomeVerificationTab from './pages/IncomeVerificationTab';
 import { resolveVisibleTabIds } from './lib/tabAccess';
+import { callShouldAutoClose } from './lib/statusLastFilter';
+import {
+  dealShouldReturnToFollowUp,
+  followUpShouldClearReminder,
+  mergeFetchedCalls,
+} from './lib/callActivity';
+import { updateCallsByIds } from './lib/callWrite';
 
 interface Dealer {
   cifNumber: string;
@@ -47,6 +54,10 @@ interface Call {
   customerName?: string;
   updatedBy?: string;
   updatedByName?: string;
+  lastActivityAt?: Date;
+  lastActivityBy?: string;
+  lastActivityByName?: string;
+  followUpAt?: Date;
 }
 
 interface CallNote {
@@ -167,16 +178,26 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  // Real-time subscription for daily deals
+  // Live KPIs: refresh calls + daily deals when either table changes
   useEffect(() => {
     if (!isAuthenticated) return;
-    const channel = supabase
-      .channel('app_daily_deals_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_deals' }, () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
         fetchTodayDailyDeals();
-      })
+        fetchCalls();
+      }, 250);
+    };
+    const channel = supabase
+      .channel('app_live_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_deals' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calls' }, refresh)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
   }, [isAuthenticated]);
 
   // ── AUTH HELPERS ──────────────────────────────────────────────────
@@ -348,8 +369,109 @@ function App() {
         );
       }
 
+      const now = Date.now();
+      const autoCloseIds = allData
+        .filter((c: any) =>
+          callShouldAutoClose({
+            statusLast: c.status_last || '',
+            fuStatus: c.fu_status,
+            createdAt: c.created_at,
+            now,
+          })
+        )
+        .map((c: any) => c.id as string);
+
+      if (autoCloseIds.length > 0) {
+        const closedAt = new Date().toISOString();
+        const CLOSE_CHUNK = 200;
+        const closedIds = new Set<string>();
+        for (let i = 0; i < autoCloseIds.length; i += CLOSE_CHUNK) {
+          const chunk = autoCloseIds.slice(i, i + CLOSE_CHUNK);
+          const { error: closeError } = await updateCallsByIds(chunk, {
+            fu_status: 'Closed',
+            follow_up_at: null,
+            updated_at: closedAt,
+          });
+          if (closeError) {
+            console.error('Error auto-closing calls:', closeError);
+            break;
+          }
+          chunk.forEach((id) => closedIds.add(id));
+        }
+        if (closedIds.size > 0) {
+          allData = allData.map((c: any) =>
+            closedIds.has(c.id) ? { ...c, fu_status: 'Closed', updated_at: closedAt } : c
+          );
+        }
+      }
+
+      const UPDATE_CHUNK = 200;
+      const applyChunkedUpdate = async (ids: string[], patch: Record<string, unknown>) => {
+        const updated = new Set<string>();
+        for (let i = 0; i < ids.length; i += UPDATE_CHUNK) {
+          const chunk = ids.slice(i, i + UPDATE_CHUNK);
+          const { error } = await updateCallsByIds(chunk, patch);
+          if (error) {
+            console.error('Error updating queued calls:', error);
+            break;
+          }
+          chunk.forEach((id) => updated.add(id));
+        }
+        return updated;
+      };
+
+      const dealFollowUpIds = allData
+        .filter((c: any) =>
+          dealShouldReturnToFollowUp({
+            fuStatus: c.fu_status,
+            lastActivityAt: c.last_activity_at,
+            dealDate: c.deal_date,
+          }, now)
+        )
+        .map((c: any) => c.id as string);
+
+      if (dealFollowUpIds.length > 0) {
+        const agedAt = new Date().toISOString();
+        const agedIds = await applyChunkedUpdate(dealFollowUpIds, {
+          fu_status: 'Follow Up',
+          follow_up_at: null,
+          last_activity_at: agedAt,
+          last_activity_by_name: 'Queue',
+          updated_at: agedAt,
+        });
+        if (agedIds.size > 0) {
+          allData = allData.map((c: any) =>
+            agedIds.has(c.id)
+              ? { ...c, fu_status: 'Follow Up', follow_up_at: null, last_activity_at: agedAt, last_activity_by_name: 'Queue', updated_at: agedAt }
+              : c
+          );
+        }
+      }
+
+      const dueFollowUpIds = allData
+        .filter((c: any) =>
+          followUpShouldClearReminder({
+            fuStatus: c.fu_status,
+            followUpAt: c.follow_up_at,
+          }, new Date(now))
+        )
+        .map((c: any) => c.id as string);
+
+      if (dueFollowUpIds.length > 0) {
+        const dueAt = new Date().toISOString();
+        const clearedIds = await applyChunkedUpdate(dueFollowUpIds, {
+          follow_up_at: null,
+          updated_at: dueAt,
+        });
+        if (clearedIds.size > 0) {
+          allData = allData.map((c: any) =>
+            clearedIds.has(c.id) ? { ...c, follow_up_at: null, updated_at: dueAt } : c
+          );
+        }
+      }
+
       if (allData.length > 0) {
-        setCalls(allData.map((c: any) => ({
+        const mapped: Call[] = allData.map((c: any) => ({
           id: c.id,
           applicationId: c.application_id,
           dealerCifNumber: c.dealer_cif_number || '',
@@ -372,7 +494,12 @@ function App() {
           customerName: c.customer_full_name || undefined,
           updatedBy: c.updated_by || undefined,
           updatedByName: c.updated_by_name || undefined,
-        })));
+          lastActivityAt: c.last_activity_at ? new Date(c.last_activity_at) : undefined,
+          lastActivityBy: c.last_activity_by || undefined,
+          lastActivityByName: c.last_activity_by_name || undefined,
+          followUpAt: c.follow_up_at ? new Date(c.follow_up_at) : undefined,
+        }));
+        setCalls(prev => mergeFetchedCalls(mapped, prev));
       }
     } catch (err) {
       console.error('Error fetching calls:', err);
@@ -628,6 +755,7 @@ function App() {
                 goals={goals}
                 onRefresh={() => { fetchTodayDailyDeals(); fetchCalls(); }}
                 calls={calls}
+                setCalls={setCalls}
                 todayDailyDeals={todayDailyDeals}
                 users={users}
               />
