@@ -5,8 +5,9 @@ import { clampFollowUpAt, followUpPresetOptions } from '../lib/callActivity';
 interface FollowUpPickerModalProps {
   open: boolean;
   saving?: boolean;
+  error?: string;
   onClose: () => void;
-  onConfirm: (at: Date) => void;
+  onConfirm: (at: Date) => void | Promise<void>;
 }
 
 function toTimeInputValue(date: Date): string {
@@ -16,6 +17,7 @@ function toTimeInputValue(date: Date): string {
 export default function FollowUpPickerModal({
   open,
   saving = false,
+  error = '',
   onClose,
   onConfirm,
 }: FollowUpPickerModalProps) {
@@ -114,6 +116,7 @@ export default function FollowUpPickerModal({
           className="w-full px-3 py-2.5 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink mb-2 focus:outline-none focus:ring-2 focus:ring-dss-accent/30"
         />
         {customError && <p className="text-xs text-dss-danger mb-3">{customError}</p>}
+        {error && <p className="text-xs text-dss-danger mb-3">{error}</p>}
 
         <div className="flex justify-end gap-2 mt-4">
           <button

@@ -366,9 +366,10 @@ export default function ReportingTab({
       let funded = 0;
       let totalAmount = 0;
 
-      if (isViewingCurrentMonth && fundingData[state]) {
-        funded = fundingData[state].count;
-        totalAmount = fundingData[state].totalAmount;
+      const hasFundingReport = isViewingCurrentMonth && Object.keys(fundingData).length > 0;
+      if (hasFundingReport) {
+        funded = fundingData[state]?.count || 0;
+        totalAmount = fundingData[state]?.totalAmount || 0;
       } else {
         const callFunded = stateCalls.filter(call => {
           if (!call.dealDate || !isDealStatus(call.fuStatus)) return false;

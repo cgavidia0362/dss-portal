@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, ChevronDown, ChevronUp, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle, BellOff } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, ChevronRight, ArrowUpDown, MessageSquare, Eye, EyeOff, ChevronLeft, ChevronRight as ChevronRightIcon, Edit2, Check, X, Plus, Target, Users, PhoneCall, Trophy, ListChecks, Clock, RotateCcw, AlertTriangle, CheckCircle2, XCircle, BellOff, Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, resolveDealCredit, forceDealCreditDbFields } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName } from '../lib/systemReps';
-import { statusMatchesFilter } from '../lib/statusLastFilter';
+import { statusMatchesFilter, canonicalStatusLastLabel } from '../lib/statusLastFilter';
 import {
   activityDbFields,
   activityDisplayAt,
@@ -13,9 +13,11 @@ import {
   formatCallActivity,
   formatFollowUpDue,
   isFollowUpWaiting,
+  resolveSavedFollowUpAt,
   touchDbFields,
 } from '../lib/callActivity';
 import { updateCallById, updateCallsByIds } from '../lib/callWrite';
+import { exportRowsToExcel } from '../lib/exportExcel';
 import NoteItem from '../components/NoteItem';
 import FollowUpPickerModal from '../components/FollowUpPickerModal';
 import { findDealerAlert, mapDealerAlertRow, type DealerAlert } from '../lib/dealerAlerts';
@@ -262,8 +264,8 @@ export default function CallsTab({
     : undefined;
 
   const allStatusLastOptions = [
-    'Accepted', 'Approved', 'Approval', 'Counter', 'Denial', 'Declined',
-    'Pending Approval', 'Document Received', 'Funded', 'Funding Pending',
+    'Accepted', 'Approved', 'Approval', 'Counter', 'Denial',
+    'Pending Approval', 'Documents Received', 'Funded', 'Funding Pending',
     'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
   ];
 
@@ -515,9 +517,13 @@ export default function CallsTab({
   const queueStatusCalls = isRep && !isGlobalSearch && effectiveAllowedStatuses.length > 0
     ? roleFilteredCalls.filter(c => statusMatchesFilter(c.statusLast, new Set(effectiveAllowedStatuses)))
     : roleFilteredCalls;
-  const uniqueStatusLast = isRep && !isGlobalSearch && effectiveAllowedStatuses.length > 0
-    ? [...effectiveAllowedStatuses].sort((a, b) => a.localeCompare(b))
-    : Array.from(new Set(queueStatusCalls.map(c => c.statusLast).filter(Boolean))).sort();
+  const uniqueStatusLast = (() => {
+    const raw = isRep && !isGlobalSearch && effectiveAllowedStatuses.length > 0
+      ? effectiveAllowedStatuses
+      : queueStatusCalls.map(c => c.statusLast).filter(Boolean);
+    return Array.from(new Set(raw.map(canonicalStatusLastLabel).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b));
+  })();
   const uniqueStates = Array.from(new Set(
     (isGlobalSearch ? calls : roleFilteredCalls).map(c => c.state)
   )).sort();
@@ -560,10 +566,7 @@ export default function CallsTab({
     if (dealerFilter && call.dealerName !== dealerFilter) return false;
     if (filterNewOnly && !dealerFilter && !isNewUpload(call)) return false;
     if (filterStatusLast.size > 0) {
-      const statusMatches = isRep && effectiveAllowedStatuses.length > 0
-        ? statusMatchesFilter(call.statusLast, filterStatusLast)
-        : filterStatusLast.has(call.statusLast);
-      if (!statusMatches) return false;
+      if (!statusMatchesFilter(call.statusLast, filterStatusLast)) return false;
     }
     if (dateFrom && new Date(call.submittedDate) < new Date(dateFrom)) return false;
     if (dateTo && new Date(call.submittedDate) > new Date(dateTo)) return false;
@@ -624,6 +627,29 @@ export default function CallsTab({
   })();
 
   const isQueueView = isRep && !columnSort && !isGlobalSearch;
+
+  const exportFilteredCalls = () => {
+    if (sortedCalls.length === 0) return;
+    exportRowsToExcel(
+      sortedCalls.map(call => {
+        const activity = formatLastActivity(call);
+        return {
+          'App ID': call.applicationId,
+          Dealer: call.dealerName,
+          Customer: call.customerName || '',
+          State: call.state,
+          Amount: parseAmount(call.buyerFinal),
+          Date: call.submittedDate,
+          'Status Last': call.statusLast,
+          Activity: activity.byName ? `${activity.text} · ${activity.byName}` : activity.text,
+          'FU Status': call.fuStatus || 'No Call',
+          'Assigned to': call.assignedToName || '',
+        };
+      }),
+      'Calls',
+      `calls-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
+  };
 
   const totalPages = Math.ceil(sortedCalls.length / itemsPerPage);
   const paginatedCalls = sortedCalls.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -726,6 +752,7 @@ export default function CallsTab({
 
   const requestStatusChange = (callId: string, newStatus: Call['fuStatus']) => {
     if (newStatus === 'Follow Up') {
+      setSaveError('');
       setFollowUpModal({ callId });
       return;
     }
@@ -736,9 +763,9 @@ export default function CallsTab({
     callId: string,
     newStatus: Call['fuStatus'],
     extras?: { followUpAt?: Date | null },
-  ) => {
+  ): Promise<boolean> => {
     const existing = calls.find(c => c.id === callId);
-    if (!existing) return;
+    if (!existing) return false;
 
     // Managers/admins pick who gets credit when marking Deal / Confirmed
     if (
@@ -750,7 +777,7 @@ export default function CallsTab({
         newStatus,
         creditId: existing.dealBy || currentUserId,
       });
-      return;
+      return true;
     }
 
     let creditActor = actor();
@@ -768,7 +795,7 @@ export default function CallsTab({
           `OK = keep their credit and set status to ${newStatus}\n` +
           `Cancel = don't change status`
         );
-        if (!keep) return;
+        if (!keep) return false;
       } else if (!existing.dealBy) {
         const { data: manuals } = await supabase
           .from('daily_deals')
@@ -783,7 +810,7 @@ export default function CallsTab({
             `OK = link and keep their credit (recommended)\n` +
             `Cancel = don't change status`
           );
-          if (!link) return;
+          if (!link) return false;
           existingCredit = {
             dealBy: manual.added_by,
             dealByName: manual.added_by_name || 'Unknown',
@@ -802,7 +829,7 @@ export default function CallsTab({
     const credit = resolveDealCredit(newStatus, existingCredit, creditActor);
     const stampedAt = new Date();
     const followUpAt = newStatus === 'Follow Up'
-      ? (extras?.followUpAt && extras.followUpAt.getTime() > Date.now() + 5000 ? extras.followUpAt : null)
+      ? resolveSavedFollowUpAt(extras?.followUpAt)
       : null;
     const { error } = await updateCallById(callId, {
       ...dealCreditDbFields(newStatus, existingCredit, creditActor),
@@ -1500,7 +1527,16 @@ export default function CallsTab({
             </span>
             <span className="ml-2 font-normal text-dss-muted">· Page {currentPage} of {totalPages || 1}</span>
           </p>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={exportFilteredCalls}
+              disabled={sortedCalls.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </button>
             <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
               className="p-1.5 rounded hover:bg-dss-canvas disabled:opacity-30 transition">
               <ChevronLeft className="w-4 h-4 text-dss-muted" />
@@ -1933,12 +1969,23 @@ export default function CallsTab({
         <FollowUpPickerModal
           open
           saving={followUpSaving}
-          onClose={() => setFollowUpModal(null)}
+          error={saveError}
+          onClose={() => {
+            setFollowUpModal(null);
+            setFollowUpSaving(false);
+            setSaveError('');
+          }}
           onConfirm={async (at) => {
             setFollowUpSaving(true);
-            const saved = await handleStatusChange(followUpModal.callId, 'Follow Up', { followUpAt: at });
-            setFollowUpSaving(false);
-            if (saved !== false) setFollowUpModal(null);
+            setSaveError('');
+            try {
+              const saved = await handleStatusChange(followUpModal.callId, 'Follow Up', { followUpAt: at });
+              if (saved) setFollowUpModal(null);
+            } catch (err) {
+              setSaveError(err instanceof Error ? err.message : 'Could not save reminder.');
+            } finally {
+              setFollowUpSaving(false);
+            }
           }}
         />
       )}

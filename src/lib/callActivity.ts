@@ -109,6 +109,14 @@ export function formatCallActivity(
   return formatLastActivity(at, byName, now);
 }
 
+/** Keep a picked Follow Up time when it is still in the future; otherwise treat as due now. */
+export function resolveSavedFollowUpAt(desired?: Date | null, now = Date.now()): Date | null {
+  if (!desired) return null;
+  const time = desired.getTime();
+  if (Number.isNaN(time) || time <= now) return null;
+  return desired;
+}
+
 export function clampFollowUpAt(desired: Date, now = new Date()): Date | null {
   const desiredTime = desired.getTime();
   if (Number.isNaN(desiredTime) || desiredTime <= now.getTime()) return null;

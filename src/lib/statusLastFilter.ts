@@ -26,6 +26,10 @@ function statusMatchesLabel(normalized: string, label: string): boolean {
       return normalized === 'funding pending';
     case 'Follow Up':
       return normalized === 'follow up';
+    case 'Cancelled':
+      return normalized === 'cancelled' || normalized === 'canceled' || normalized.includes('cancelled') || normalized.includes('canceled');
+    case 'Funded':
+      return normalized === 'funded';
     default:
       return normalized === label.toLowerCase();
   }
@@ -40,11 +44,29 @@ export function statusMatchesFilter(statusLast: string, selected: Set<string>): 
   return false;
 }
 
-const AUTO_CLOSE_STATUS_LAST = new Set(['Denial', 'Duplicate']);
+/** Collapse spreadsheet spelling variants onto one Status Last chip. */
+export function canonicalStatusLastLabel(status: string): string {
+  const n = normalizeStatusLast(status);
+  if (!n) return '';
+  if (n === 'documents received' || n === 'document received') return 'Documents Received';
+  if (n.includes('denial') || n.includes('declined')) return 'Denial';
+  return status.trim();
+}
+
+const AUTO_CLOSE_STATUS_LAST = new Set(['Denial', 'Duplicate', 'Cancelled']);
+const IMPORT_AUTO_CLOSE_STATUS_LAST = new Set(['Documents Received', 'Funded', 'Funding Pending']);
 export const NO_ANSWER_AUTO_CLOSE_MS = 15 * 24 * 60 * 60 * 1000;
 
 export function statusLastShouldAutoClose(statusLast: string): boolean {
   return statusMatchesFilter(statusLast, AUTO_CLOSE_STATUS_LAST);
+}
+
+export function statusLastShouldImportAutoClose(statusLast: string): boolean {
+  return statusMatchesFilter(statusLast, IMPORT_AUTO_CLOSE_STATUS_LAST);
+}
+
+function hasManualFuStatus(fuStatus?: string | null): boolean {
+  return !!fuStatus;
 }
 
 export function isBookedDealFu(fuStatus?: string | null): boolean {
@@ -60,6 +82,7 @@ export function resolveAutoCloseFuStatus(params: {
   const current = params.fuStatus;
   if (isBookedDealFu(current)) return current;
   if (statusLastShouldAutoClose(params.statusLast)) return 'Closed';
+  if (statusLastShouldImportAutoClose(params.statusLast) && !hasManualFuStatus(current)) return 'Closed';
   if (current === 'No Answer' && params.createdAt) {
     const createdMs =
       params.createdAt instanceof Date

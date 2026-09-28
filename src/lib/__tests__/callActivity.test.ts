@@ -12,6 +12,7 @@ import {
   isFollowUpDue,
   isFollowUpWaiting,
   mergeFetchedCalls,
+  resolveSavedFollowUpAt,
 } from '../callActivity';
 
 describe('formatLastActivity', () => {
@@ -104,6 +105,16 @@ describe('follow-up reminders', () => {
     const evening = new Date(2026, 8, 24, 20, 0, 0);
     const hours = followUpPresetOptions(evening).map(option => option.hours);
     expect(hours).toEqual([1, 2, 3]);
+  });
+
+  it('keeps a valid picked reminder time and drops due-now or past times', () => {
+    const nowMs = now.getTime();
+    const inTwoHours = new Date(nowMs + 2 * 60 * 60 * 1000);
+    expect(resolveSavedFollowUpAt(inTwoHours, nowMs)?.getTime()).toBe(inTwoHours.getTime());
+    expect(resolveSavedFollowUpAt(new Date(nowMs + 1000), nowMs)?.getTime()).toBe(nowMs + 1000);
+    expect(resolveSavedFollowUpAt(new Date(nowMs), nowMs)).toBeNull();
+    expect(resolveSavedFollowUpAt(new Date(nowMs - 1000), nowMs)).toBeNull();
+    expect(resolveSavedFollowUpAt(null, nowMs)).toBeNull();
   });
 
   it('hides scheduled Follow Up until due, then returns it to the queue', () => {

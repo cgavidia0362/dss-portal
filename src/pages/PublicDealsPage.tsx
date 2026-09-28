@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { findCallsByAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
-import { activityDbFields } from '../lib/callActivity';
+import { activityDbFields, resolveSavedFollowUpAt } from '../lib/callActivity';
 import { updateCallById } from '../lib/callWrite';
 import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare, Users, Trash2, Trophy, DollarSign, ClipboardList, PlusCircle, Target } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
@@ -74,8 +74,8 @@ interface RepUser {
 const FU_STATUSES = ['Deal', 'Confirmed Deal', 'Pending', 'No Answer', 'No Deal', 'Follow Up'];
 
 const STATUS_LAST_OPTIONS = [
-  'Accepted', 'Approved', 'Approval', 'Counter', 'Denial', 'Declined',
-  'Pending Approval', 'Document Received', 'Funded', 'Funding Pending',
+  'Accepted', 'Approved', 'Approval', 'Counter', 'Denial',
+  'Pending Approval', 'Documents Received', 'Funded', 'Funding Pending',
   'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
 ];
 
@@ -422,7 +422,7 @@ export default function PublicDealsPage() {
     const existing = dealerPopupCalls.find((c: any) => c.id === callId);
     const user = users.find(u => u.id === selectedUser);
     const stampedAt = new Date();
-    const followUpAt = newStatus === 'Follow Up' ? (extras?.followUpAt && extras.followUpAt.getTime() > Date.now() + 5000 ? extras.followUpAt : null) : null;
+    const followUpAt = newStatus === 'Follow Up' ? resolveSavedFollowUpAt(extras?.followUpAt) : null;
     const { error: err } = await updateCallById(callId, {
       ...dealCreditDbFields(newStatus, {
         dealBy: existing?.deal_by,
@@ -1690,9 +1690,12 @@ export default function PublicDealsPage() {
           onClose={() => setFollowUpModal(null)}
           onConfirm={async (at) => {
             setFollowUpSaving(true);
-            const saved = await persistPopupFuStatus(followUpModal.callId, 'Follow Up', { followUpAt: at });
-            setFollowUpSaving(false);
-            if (saved) setFollowUpModal(null);
+            try {
+              const saved = await persistPopupFuStatus(followUpModal.callId, 'Follow Up', { followUpAt: at });
+              if (saved) setFollowUpModal(null);
+            } finally {
+              setFollowUpSaving(false);
+            }
           }}
         />
       )}
