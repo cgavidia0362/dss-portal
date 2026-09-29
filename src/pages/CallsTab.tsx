@@ -183,6 +183,16 @@ const QUEUE_POPUP_SORT_FIELDS: Array<{ field: ActiveSortField; label: string }> 
 
 const COMPLETED_FU_STATUSES = new Set(['Deal', 'Confirmed Deal', 'No Deal', 'Closed', 'Duplicates']);
 const STALE_MS = 3 * 24 * 60 * 60 * 1000;
+const STATUS_LAST_EDIT_OPTIONS = [
+  'Approved',
+  'Counter',
+  'Denial',
+  'Documents Received',
+  'Duplicate',
+  'Funded',
+  'Funding Pending',
+  'Pending Approval',
+];
 
 function dealerKey(call: Call): string {
   const cif = call.dealerCifNumber?.trim();
@@ -262,12 +272,6 @@ export default function CallsTab({
   const dealerMenuAlert = dealerMenu
     ? findDealerAlert({ dealerName: dealerMenu.name, dealerCifNumber: dealerMenu.cif }, dealerAlerts)
     : undefined;
-
-  const allStatusLastOptions = [
-    'Accepted', 'Approved', 'Approval', 'Counter', 'Denial',
-    'Pending Approval', 'Documents Received', 'Funded', 'Funding Pending',
-    'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
-  ];
 
   const fuStatusChips = [
     { label: 'No Call',        onCls: 'bg-teal-50 border-teal-200 text-teal-800' },
@@ -1749,7 +1753,10 @@ export default function CallsTab({
                           <select value={tempStatusLast} onChange={e => setTempStatusLast(e.target.value)}
                             className="px-1 py-0.5 bg-dss-canvas border border-dss-border rounded text-xs text-dss-ink focus:outline-none"
                             autoFocus>
-                            {allStatusLastOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                            {(!tempStatusLast || STATUS_LAST_EDIT_OPTIONS.includes(tempStatusLast)
+                              ? STATUS_LAST_EDIT_OPTIONS
+                              : [tempStatusLast, ...STATUS_LAST_EDIT_OPTIONS]
+                            ).map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                           <button onClick={() => handleSaveStatusLast(call.id)} className="text-dss-success hover:text-dss-success flex-shrink-0"><Check className="w-3 h-3" /></button>
                           <button onClick={() => setEditingStatusLast(null)} className="text-dss-danger hover:text-dss-danger flex-shrink-0"><X className="w-3 h-3" /></button>
