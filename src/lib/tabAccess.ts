@@ -38,13 +38,23 @@ export function getBaseTabsForRole(role: string): TabId[] {
     return ALL_TAB_IDS.filter((id) => id !== 'analytics');
   }
   if (role === 'manager') {
-    return ALL_TAB_IDS.filter((id) => id !== 'users' && id !== 'analytics');
+    return ALL_TAB_IDS.filter((id) =>
+      id !== 'users' &&
+      id !== 'analytics' &&
+      id !== 'vehicle-risk' &&
+      id !== 'income-verification'
+    );
   }
   if (role === 'buying_assistant') {
     return ['calls', 'daily-deals', 'notes'];
   }
   // rep (default)
   return ['calls', 'analytics', 'daily-deals', 'notes'];
+}
+
+export function defaultGrantableTabsForRole(role: string): TabId[] {
+  if (role === 'manager') return GRANTABLE_TABS.map((tab) => tab.id);
+  return [];
 }
 
 function sanitizeAllowedTabs(allowedTabs: string[] | null | undefined): TabId[] {
