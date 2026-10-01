@@ -225,7 +225,7 @@ export default function VehicleRiskAnalyzer({ currentUser }: VehicleRiskAnalyzer
       });
 
       if (data?.error) throw new Error(data.error);
-      if (fnError) throw new Error(functionInvokeErrorMessage(fnError, data, 'Failed to analyze vehicle. Please try again.'));
+      if (fnError) throw new Error(await functionInvokeErrorMessage(fnError, data, 'Failed to analyze vehicle. Please try again.'));
 
       setReport(data as VehicleRiskReportData);
       setAnalyzedVin(normalizedVin);
@@ -272,7 +272,7 @@ export default function VehicleRiskAnalyzer({ currentUser }: VehicleRiskAnalyzer
       });
 
       if (data?.error) throw new Error(data.error);
-      if (fnError) throw new Error(functionInvokeErrorMessage(fnError, data, 'Failed to read this screenshot. Please try again.'));
+      if (fnError) throw new Error(await functionInvokeErrorMessage(fnError, data, 'Failed to read this screenshot. Please try again.'));
 
       const extractedVin = typeof data?.vin === 'string' ? normalizeVin(data.vin) : '';
       const extractedMileage = typeof data?.mileage === 'number' ? data.mileage : 0;
