@@ -53,19 +53,41 @@ describe('tabAccess', () => {
     ]);
   });
 
-  it('does not change admin visibility when grants are present', () => {
-    const base = resolveVisibleTabIds('admin', []);
-    const withGrants = resolveVisibleTabIds('admin', [
+  it('keeps manager tools grantable instead of locking them to the role', () => {
+    expect(getBaseTabsForRole('manager')).toEqual([
+      'calls',
+      'upload',
+      'assign',
+      'daily-deals',
+      'notes',
+      'reporting',
+    ]);
+    expect(resolveVisibleTabIds('manager', [])).toEqual([
+      'calls',
+      'upload',
+      'assign',
+      'daily-deals',
+      'notes',
+      'reporting',
+    ]);
+    expect(
+      resolveVisibleTabIds('manager', ['income-verification', 'vehicle-risk']),
+    ).toEqual([
+      'calls',
+      'upload',
+      'assign',
+      'daily-deals',
+      'notes',
+      'reporting',
       'income-verification',
       'vehicle-risk',
-      'upload',
     ]);
-    expect(withGrants).toEqual(base);
   });
 
   it('canAccessTab honors role and grants', () => {
     expect(canAccessTab('admin', [], 'income-verification')).toBe(true);
-    expect(canAccessTab('manager', [], 'vehicle-risk')).toBe(true);
+    expect(canAccessTab('manager', [], 'vehicle-risk')).toBe(false);
+    expect(canAccessTab('manager', ['vehicle-risk'], 'vehicle-risk')).toBe(true);
     expect(canAccessTab('rep', [], 'income-verification')).toBe(false);
     expect(canAccessTab('rep', ['income-verification'], 'income-verification')).toBe(true);
     expect(canAccessTab('buying_assistant', ['vehicle-risk'], 'vehicle-risk')).toBe(true);
