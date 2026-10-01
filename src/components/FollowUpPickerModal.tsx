@@ -45,15 +45,18 @@ export default function FollowUpPickerModal({
     const [hours, minutes] = value.split(':').map(Number);
     if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
       setSelectedAt(null);
-      setCustomError('Pick a time later today.');
+      setCustomError('Pick a time within the next 24 hours.');
       return;
     }
     const desired = new Date(now);
     desired.setHours(hours, minutes, 0, 0);
+    if (desired.getTime() <= now.getTime()) {
+      desired.setDate(desired.getDate() + 1);
+    }
     const clamped = clampFollowUpAt(desired, now);
     if (!clamped) {
       setSelectedAt(null);
-      setCustomError('Choose a time later today, before midnight, and within 12 hours.');
+      setCustomError('Choose a time later than now, within 24 hours.');
       return;
     }
     setCustomError('');
@@ -77,7 +80,7 @@ export default function FollowUpPickerModal({
           <div>
             <h3 className="text-lg font-semibold text-dss-ink">Follow Up reminder</h3>
             <p className="text-sm text-dss-muted mt-0.5">
-              Pick a time later today. It comes back to the queue when due, and leftover reminders reset at midnight.
+              Pick a time within the next 24 hours. It comes back to the queue when due.
             </p>
           </div>
         </div>
@@ -108,7 +111,7 @@ export default function FollowUpPickerModal({
           </div>
         )}
 
-        <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Time today</label>
+        <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">Time</label>
         <input
           type="time"
           value={customTime}

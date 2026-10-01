@@ -1,6 +1,7 @@
 export const DEAL_FOLLOW_UP_MS = 5 * 24 * 60 * 60 * 1000;
-export const FOLLOW_UP_MAX_MS = 12 * 60 * 60 * 1000;
-export const FOLLOW_UP_HOUR_OPTIONS = [1, 2, 3, 4, 6, 8, 12] as const;
+export const FOLLOW_UP_MAX_MS = 24 * 60 * 60 * 1000;
+export const FOLLOW_UP_HOUR_OPTIONS = [1, 2, 3, 4, 6, 8, 12, 18, 24] as const;
+export const PENDING_QUEUE_HOLD_DAYS = 2;
 
 export type ActivityActor = { id?: string; name?: string } | null | undefined;
 
@@ -120,11 +121,7 @@ export function resolveSavedFollowUpAt(desired?: Date | null, now = Date.now()):
 export function clampFollowUpAt(desired: Date, now = new Date()): Date | null {
   const desiredTime = desired.getTime();
   if (Number.isNaN(desiredTime) || desiredTime <= now.getTime()) return null;
-  const cap = Math.min(
-    now.getTime() + FOLLOW_UP_MAX_MS,
-    endOfLocalDay(now).getTime(),
-  );
-  if (cap <= now.getTime()) return null;
+  const cap = now.getTime() + FOLLOW_UP_MAX_MS;
   return new Date(Math.min(desiredTime, cap));
 }
 
@@ -133,13 +130,6 @@ export function followUpPresetOptions(now = new Date()): { hours: number; at: Da
   const options: { hours: number; at: Date }[] = [];
   for (const hours of FOLLOW_UP_HOUR_OPTIONS) {
     const desired = new Date(now.getTime() + hours * 60 * 60 * 1000);
-    if (
-      desired.getDate() !== now.getDate() ||
-      desired.getMonth() !== now.getMonth() ||
-      desired.getFullYear() !== now.getFullYear()
-    ) {
-      continue;
-    }
     const at = clampFollowUpAt(desired, now);
     if (!at) continue;
     const key = at.getTime();
@@ -174,7 +164,7 @@ export function followUpShouldClearReminder(
   if (call.fuStatus !== 'Follow Up') return false;
   const at = asDate(call.followUpAt);
   if (!at) return false;
-  return at.getTime() <= now.getTime() || at.getTime() < startOfLocalDay(now).getTime();
+  return at.getTime() <= now.getTime();
 }
 
 export function formatFollowUpDue(at?: Date | string | null, now = new Date()): string | null {
@@ -183,7 +173,33 @@ export function formatFollowUpDue(at?: Date | string | null, now = new Date()): 
   if (date.getTime() <= now.getTime()) return 'due now';
   const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
     .replace(' AM', 'am').replace(' PM', 'pm');
-  return `due ${timeStr}`;
+  const sameDay =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+  if (sameDay) return `due ${timeStr}`;
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const isTomorrow =
+    date.getDate() === tomorrow.getDate() &&
+    date.getMonth() === tomorrow.getMonth() &&
+    date.getFullYear() === tomorrow.getFullYear();
+  if (isTomorrow) return `due tomorrow ${timeStr}`;
+  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `due ${dateStr} ${timeStr}`;
+}
+
+/** Pending stays out of a rep's queue until the start of the local day 2 days after it was set. */
+export function isPendingWaiting(
+  call: Pick<ActivityCallFields, 'fuStatus' | 'lastActivityAt' | 'updatedAt'>,
+  now = new Date(),
+): boolean {
+  if (call.fuStatus !== 'Pending') return false;
+  const stamp = asDate(call.lastActivityAt) || asDate(call.updatedAt);
+  if (!stamp) return false;
+  const returnAt = startOfLocalDay(stamp);
+  returnAt.setDate(returnAt.getDate() + PENDING_QUEUE_HOLD_DAYS);
+  return now.getTime() < returnAt.getTime();
 }
 
 export function dealShouldReturnToFollowUp(

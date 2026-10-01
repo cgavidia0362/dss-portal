@@ -13,6 +13,7 @@ import {
   formatCallActivity,
   formatFollowUpDue,
   isFollowUpWaiting,
+  isPendingWaiting,
   resolveSavedFollowUpAt,
   touchDbFields,
 } from '../lib/callActivity';
@@ -213,13 +214,14 @@ function uniqueDealerCount(list: Call[]): number {
 function isStaleCall(call: Call): boolean {
   if (COMPLETED_FU_STATUSES.has(call.fuStatus || '')) return false;
   if (isFollowUpWaiting(call)) return false;
+  if (isPendingWaiting(call)) return false;
   const stamp = call.lastActivityAt || call.createdAt || call.updatedAt;
   if (!stamp) return false;
   return Date.now() - new Date(stamp).getTime() > STALE_MS;
 }
 
 function matchesActionQueue(call: Call, key: ActionQueueKey): boolean {
-  if (key === 'pending') return call.fuStatus === 'Pending';
+  if (key === 'pending') return call.fuStatus === 'Pending' && !isPendingWaiting(call);
   if (key === 'firstCall') return !call.fuStatus;
   if (key === 'noAnswer') return call.fuStatus === 'No Answer';
   return isStaleCall(call);
@@ -578,6 +580,7 @@ export default function CallsTab({
     // When searching, show all FU statuses (including No Deal / Closed / Duplicates)
     if (!options?.skipFuQueue) {
       if (isFollowUpWaiting(call, new Date(nowTick))) return false;
+      if (isRep && isPendingWaiting(call, new Date(nowTick))) return false;
       const fuKey = call.fuStatus || 'No Call';
       if (isRep) {
         // My Queue: unworked calls always show; worked calls show only if their FU chip is selected

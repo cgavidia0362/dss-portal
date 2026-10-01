@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Car, ImageUp, Loader2, Link, Check, RotateCcw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { functionInvokeErrorMessage } from '../lib/supabaseFunctionError';
 import { canAccessTab } from '../lib/tabAccess';
 import VehicleRiskReport from '../components/VehicleRiskReport';
 import {
@@ -223,8 +224,8 @@ export default function VehicleRiskAnalyzer({ currentUser }: VehicleRiskAnalyzer
         body: { vin: normalizedVin, mileage: mileageValue, nhtsaData },
       });
 
-      if (fnError) throw fnError;
       if (data?.error) throw new Error(data.error);
+      if (fnError) throw new Error(functionInvokeErrorMessage(fnError, data, 'Failed to analyze vehicle. Please try again.'));
 
       setReport(data as VehicleRiskReportData);
       setAnalyzedVin(normalizedVin);
@@ -270,8 +271,8 @@ export default function VehicleRiskAnalyzer({ currentUser }: VehicleRiskAnalyzer
         },
       });
 
-      if (fnError) throw fnError;
       if (data?.error) throw new Error(data.error);
+      if (fnError) throw new Error(functionInvokeErrorMessage(fnError, data, 'Failed to read this screenshot. Please try again.'));
 
       const extractedVin = typeof data?.vin === 'string' ? normalizeVin(data.vin) : '';
       const extractedMileage = typeof data?.mileage === 'number' ? data.mileage : 0;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Car, ImageUp, Loader2, RotateCcw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { functionInvokeErrorMessage } from '../lib/supabaseFunctionError';
 import VehicleRiskReport from '../components/VehicleRiskReport';
 import {
   NHTSA_EXTRACT_FIELDS,
@@ -184,8 +185,8 @@ export default function VehicleRiskPublic() {
         body: { vin: normalizedVin, mileage: mileageValue, nhtsaData },
       });
 
-      if (fnError) throw fnError;
       if (data?.error) throw new Error(data.error);
+      if (fnError) throw new Error(functionInvokeErrorMessage(fnError, data, 'Failed to analyze vehicle. Please try again.'));
 
       setReport(data as VehicleRiskReportData);
       setAnalyzedVin(normalizedVin);
@@ -231,8 +232,8 @@ export default function VehicleRiskPublic() {
         },
       });
 
-      if (fnError) throw fnError;
       if (data?.error) throw new Error(data.error);
+      if (fnError) throw new Error(functionInvokeErrorMessage(fnError, data, 'Failed to read this screenshot. Please try again.'));
 
       const extractedVin = typeof data?.vin === 'string' ? normalizeVin(data.vin) : '';
       const extractedMileage = typeof data?.mileage === 'number' ? data.mileage : 0;

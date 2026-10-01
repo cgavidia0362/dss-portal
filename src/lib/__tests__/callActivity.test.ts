@@ -11,6 +11,7 @@ import {
   formatLastActivity,
   isFollowUpDue,
   isFollowUpWaiting,
+  isPendingWaiting,
   mergeFetchedCalls,
   resolveSavedFollowUpAt,
 } from '../callActivity';
@@ -81,30 +82,28 @@ describe('formatCallActivity', () => {
 describe('follow-up reminders', () => {
   const now = new Date(2026, 8, 24, 10, 0, 0);
 
-  it('caps reminders at 12 hours and local midnight', () => {
-    const twelveHours = clampFollowUpAt(new Date(now.getTime() + 14 * 60 * 60 * 1000), now);
-    expect(twelveHours?.getHours()).toBe(22);
+  it('caps reminders at 24 hours and allows the next calendar day', () => {
+    const fourteenHours = clampFollowUpAt(new Date(now.getTime() + 14 * 60 * 60 * 1000), now);
+    expect(fourteenHours?.getHours()).toBe(0);
+    expect(fourteenHours?.getDate()).toBe(25);
 
     const late = new Date(2026, 8, 24, 20, 0, 0);
-    const pastMidnight = clampFollowUpAt(new Date(2026, 8, 25, 2, 0, 0), late);
-    expect(pastMidnight?.getDate()).toBe(24);
-    expect(pastMidnight?.getHours()).toBe(23);
+    const pastMidnight = clampFollowUpAt(new Date(2026, 8, 25, 8, 0, 0), late);
+    expect(pastMidnight?.getDate()).toBe(25);
+    expect(pastMidnight?.getHours()).toBe(8);
+
+    const tooFar = clampFollowUpAt(new Date(now.getTime() + 30 * 60 * 60 * 1000), now);
+    expect(tooFar?.getTime()).toBe(now.getTime() + 24 * 60 * 60 * 1000);
   });
 
-  it('rejects times in the past and after local midnight has passed', () => {
+  it('rejects times in the past', () => {
     expect(clampFollowUpAt(new Date(now.getTime() - 60_000), now)).toBeNull();
-    const almostMidnight = new Date(2026, 8, 24, 23, 59, 50);
-    const capped = clampFollowUpAt(new Date(2026, 8, 25, 0, 5, 0), almostMidnight);
-    expect(capped?.getDate()).toBe(24);
-    expect(capped?.getHours()).toBe(23);
-    const endOfDay = new Date(2026, 8, 24, 23, 59, 59, 999);
-    expect(clampFollowUpAt(new Date(2026, 8, 25, 0, 5, 0), endOfDay)).toBeNull();
   });
 
-  it('only offers hour presets that still fit today', () => {
+  it('offers hour presets that fit inside 24 hours, including overnight', () => {
     const evening = new Date(2026, 8, 24, 20, 0, 0);
     const hours = followUpPresetOptions(evening).map(option => option.hours);
-    expect(hours).toEqual([1, 2, 3]);
+    expect(hours).toEqual([1, 2, 3, 4, 6, 8, 12, 18, 24]);
   });
 
   it('keeps a valid picked reminder time and drops due-now or past times', () => {
@@ -126,13 +125,13 @@ describe('follow-up reminders', () => {
     expect(isFollowUpDue(scheduled, later)).toBe(true);
   });
 
-  it('clears leftover same-day timers at local midnight', () => {
+  it('clears the reminder only once the due time has passed', () => {
     const leftover = {
       fuStatus: 'Follow Up' as const,
-      followUpAt: new Date(2026, 8, 24, 22, 0, 0),
+      followUpAt: new Date(2026, 8, 25, 8, 0, 0),
     };
-    expect(followUpShouldClearReminder(leftover, new Date(2026, 8, 24, 21, 0, 0))).toBe(false);
-    expect(followUpShouldClearReminder(leftover, new Date(2026, 8, 25, 0, 1, 0))).toBe(true);
+    expect(followUpShouldClearReminder(leftover, new Date(2026, 8, 25, 0, 1, 0))).toBe(false);
+    expect(followUpShouldClearReminder(leftover, new Date(2026, 8, 25, 8, 0, 0))).toBe(true);
   });
 });
 
@@ -151,6 +150,22 @@ describe('dealShouldReturnToFollowUp', () => {
     expect(dealShouldReturnToFollowUp({ fuStatus: 'Deal', lastActivityAt: yesterday }, now)).toBe(false);
     expect(dealShouldReturnToFollowUp({ fuStatus: 'Closed', lastActivityAt: sixDaysAgo }, now)).toBe(false);
     expect(dealShouldReturnToFollowUp({ fuStatus: 'Pending', lastActivityAt: sixDaysAgo }, now)).toBe(false);
+  });
+});
+
+describe('isPendingWaiting', () => {
+  it('keeps Pending out of the queue until the start of the local day 2 days later', () => {
+    const stamped = new Date(2026, 8, 28, 16, 30, 0);
+    const pending = { fuStatus: 'Pending', lastActivityAt: stamped };
+    expect(isPendingWaiting(pending, new Date(2026, 8, 28, 17, 0, 0))).toBe(true);
+    expect(isPendingWaiting(pending, new Date(2026, 8, 29, 23, 59, 0))).toBe(true);
+    expect(isPendingWaiting(pending, new Date(2026, 8, 30, 0, 0, 0))).toBe(false);
+  });
+
+  it('does not park other statuses', () => {
+    const stamped = new Date(2026, 8, 28, 16, 30, 0);
+    expect(isPendingWaiting({ fuStatus: 'No Answer', lastActivityAt: stamped }, new Date(2026, 8, 28, 17, 0, 0))).toBe(false);
+    expect(isPendingWaiting({ fuStatus: 'Follow Up', lastActivityAt: stamped }, new Date(2026, 8, 28, 17, 0, 0))).toBe(false);
   });
 });
 
