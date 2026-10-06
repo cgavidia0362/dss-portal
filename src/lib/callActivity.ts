@@ -10,6 +10,7 @@ export interface ActivityCallFields {
   lastActivityAt?: Date | string | null;
   lastActivityBy?: string | null;
   lastActivityByName?: string | null;
+  fuStatusAt?: Date | string | null;
   followUpAt?: Date | string | null;
   dealDate?: Date | string | null;
   updatedAt?: Date | string | null;
@@ -51,6 +52,15 @@ export function activityLocalFields(actor?: ActivityActor, at = new Date()) {
     updatedBy: actor?.id || undefined,
     updatedByName: actor?.name || undefined,
   };
+}
+
+/** Stamp when FU status actually changes. Notes must not write this. */
+export function fuStatusAtDbFields(at = new Date()) {
+  return { fu_status_at: at.toISOString() };
+}
+
+export function fuStatusAtLocalFields(at = new Date()) {
+  return { fuStatusAt: at };
 }
 
 /** Bump row metadata without treating it as a call (amount / Status Last). */
@@ -191,11 +201,11 @@ export function formatFollowUpDue(at?: Date | string | null, now = new Date()): 
 
 /** Pending stays out of a rep's queue until the start of the local day 2 days after it was set. */
 export function isPendingWaiting(
-  call: Pick<ActivityCallFields, 'fuStatus' | 'lastActivityAt' | 'updatedAt'>,
+  call: Pick<ActivityCallFields, 'fuStatus' | 'fuStatusAt' | 'lastActivityAt' | 'updatedAt'>,
   now = new Date(),
 ): boolean {
   if (call.fuStatus !== 'Pending') return false;
-  const stamp = asDate(call.lastActivityAt) || asDate(call.updatedAt);
+  const stamp = asDate(call.fuStatusAt) || asDate(call.lastActivityAt) || asDate(call.updatedAt);
   if (!stamp) return false;
   const returnAt = startOfLocalDay(stamp);
   returnAt.setDate(returnAt.getDate() + PENDING_QUEUE_HOLD_DAYS);
@@ -216,6 +226,7 @@ export function mergeFetchedCalls<T extends {
   id: string;
   lastActivityAt?: Date;
   fuStatus?: string;
+  fuStatusAt?: Date;
   followUpAt?: Date;
   dealDate?: Date;
   dealBy?: string;
@@ -234,6 +245,7 @@ export function mergeFetchedCalls<T extends {
     return {
       ...incoming,
       fuStatus: local.fuStatus,
+      fuStatusAt: local.fuStatusAt,
       lastActivityAt: local.lastActivityAt,
       lastActivityBy: local.lastActivityBy,
       lastActivityByName: local.lastActivityByName,

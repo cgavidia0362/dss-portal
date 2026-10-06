@@ -84,12 +84,30 @@ describe('distributeDealersToReps', () => {
     expect(result.assignmentByCallId.a.repId).not.toBe(result.assignmentByCallId.c.repId);
   });
 
-  it('treats same name with different CIFs as different dealers', () => {
+  it('keeps the same dealer name together even with mixed or missing CIFs', () => {
     const calls = [
-      call('a', { cif: '111', name: 'Acme' }),
-      call('b', { cif: '222', name: 'Acme' }),
+      call('a', { cif: '111', name: 'Smart Buy Auto Finance' }),
+      call('b', { cif: '222', name: 'Smart Buy Auto Finance' }),
+      call('c', { name: 'Smart Buy Auto Finance' }),
+      call('d', { cif: '333', name: 'Westlake' }),
     ];
     expect(uniqueDealerCount(calls)).toBe(2);
+    const result = distributeDealersToReps(calls, [reps[0], reps[1]]);
+    expect(result.assignmentByCallId.a.repId).toBe(result.assignmentByCallId.b.repId);
+    expect(result.assignmentByCallId.a.repId).toBe(result.assignmentByCallId.c.repId);
+    expect(result.assignmentByCallId.a.repId).not.toBe(result.assignmentByCallId.d.repId);
+  });
+
+  it('merges a dealer when some rows share a CIF and others share the name', () => {
+    const calls = [
+      call('a', { cif: '111', name: 'Acme North' }),
+      call('b', { cif: '111', name: 'Acme South' }),
+      call('c', { cif: '222', name: 'Acme North' }),
+    ];
+    expect(uniqueDealerCount(calls)).toBe(1);
+    const result = distributeDealersToReps(calls, [reps[0], reps[1]]);
+    expect(result.assignmentByCallId.a.repId).toBe(result.assignmentByCallId.b.repId);
+    expect(result.assignmentByCallId.a.repId).toBe(result.assignmentByCallId.c.repId);
   });
 
   it('assigns every dealer to one rep when only one rep is selected', () => {

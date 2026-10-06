@@ -340,6 +340,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
             // Linked / Duplicate actions may update FU + credit on existing rows
             if (match && match.action === 'link') {
               base.fu_status = c.fuStatus || null;
+              if (c.fuStatus) base.fu_status_at = new Date().toISOString();
               base.deal_date = c.dealDate ? c.dealDate.toISOString() : null;
               base.deal_by = c.dealBy || null;
               base.deal_by_name = c.dealByName || null;
@@ -348,10 +349,12 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
               base.updated_at = new Date().toISOString();
             } else if (match && match.action === 'duplicate') {
               base.fu_status = c.fuStatus || 'Duplicates';
+              base.fu_status_at = new Date().toISOString();
               base.is_duplicate = true;
               base.updated_at = new Date().toISOString();
             } else if (c.fuStatus === 'Closed' && existing.fuStatus !== 'Closed') {
               base.fu_status = 'Closed';
+              base.fu_status_at = new Date().toISOString();
               base.updated_at = new Date().toISOString();
             }
             toUpdate.push({ applicationId: c.applicationId, row: base });
@@ -359,6 +362,7 @@ export default function UploadTab({ dealers, setDealers, fundingData, setFunding
             toInsert.push({
               ...base,
               fu_status: c.fuStatus || null,
+              ...(c.fuStatus ? { fu_status_at: new Date().toISOString() } : {}),
               updated_at: new Date().toISOString(),
               deal_date: c.dealDate ? c.dealDate.toISOString() : null,
               assigned_to: c.assignedTo || null,

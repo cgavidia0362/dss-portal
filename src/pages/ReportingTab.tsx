@@ -5,7 +5,7 @@ import { exportRowsToExcel } from '../lib/exportExcel';
 import { dealCreditDbFields, resolveDealCredit, forceDealCreditDbFields, countsAsStickyBookedDeal, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName } from '../lib/systemReps';
 import { manualDealMatchedByCall, buildManualCreditByApp, resolveCallDealCredit, normalizeAppId, manualDealMatchedByBookedCall } from '../lib/manualDealMatch';
-import { formatCallActivity } from '../lib/callActivity';
+import { formatCallActivity, fuStatusAtDbFields, fuStatusAtLocalFields } from '../lib/callActivity';
 
 interface Call {
   id: string;
@@ -323,6 +323,7 @@ export default function ReportingTab({
         const ids = toClean.map(c => c.id);
         const { error } = await supabase.from('calls').update({
           fu_status: null,
+          fu_status_at: new Date().toISOString(),
           deal_date: null,
         }).in('id', ids);
         if (!error) {
@@ -823,14 +824,16 @@ export default function ReportingTab({
         dealByName: existing?.dealByName,
         dealDate: existing?.dealDate,
       }, { id: currentUserId, name: undefined });
+      const stampedAt = new Date();
       setCalls(prev => prev.map(c => c.id === row.id
         ? {
           ...c,
           fuStatus: newStatus,
-          updatedAt: new Date(),
+          updatedAt: stampedAt,
           dealDate: credit.dealDate,
           dealBy: credit.dealBy,
           dealByName: credit.dealByName,
+          ...fuStatusAtLocalFields(stampedAt),
         }
         : c
       ));
@@ -840,7 +843,8 @@ export default function ReportingTab({
           dealByName: existing?.dealByName,
           dealDate: existing?.dealDate,
         }),
-        updated_at: new Date().toISOString(),
+        updated_at: stampedAt.toISOString(),
+        ...fuStatusAtDbFields(stampedAt),
       }).eq('id', row.id);
 
       setRepDealsRows(prev => {
@@ -890,21 +894,24 @@ export default function ReportingTab({
     if (row.source === 'call') {
       const existing = calls.find(c => c.id === row.id);
       const fields = forceDealCreditDbFields(newStatus, { id: creditId, name: creditName }, existing?.dealDate);
+      const stampedAt = new Date();
       const dealDate = fields.deal_date ? new Date(fields.deal_date) : existing?.dealDate;
       setCalls(prev => prev.map(c => c.id === row.id
         ? {
           ...c,
           fuStatus: newStatus,
-          updatedAt: new Date(),
+          updatedAt: stampedAt,
           dealDate,
           dealBy: creditId,
           dealByName: creditName,
+          ...fuStatusAtLocalFields(stampedAt),
         }
         : c
       ));
       await supabase.from('calls').update({
         ...fields,
-        updated_at: new Date().toISOString(),
+        updated_at: stampedAt.toISOString(),
+        ...fuStatusAtDbFields(stampedAt),
       }).eq('id', row.id);
 
       setRepDealsRows(prev => {

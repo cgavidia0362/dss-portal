@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { findCallsByAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
-import { activityDbFields, resolveSavedFollowUpAt } from '../lib/callActivity';
+import { activityDbFields, fuStatusAtDbFields, resolveSavedFollowUpAt } from '../lib/callActivity';
 import { updateCallById } from '../lib/callWrite';
 import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare, Users, Trash2, Trophy, DollarSign, ClipboardList, PlusCircle, Target } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
@@ -430,6 +430,7 @@ export default function PublicDealsPage() {
         dealDate: existing?.deal_date ? new Date(existing.deal_date) : undefined,
       }, user ? { id: user.id, name: user.name } : undefined),
       ...activityDbFields(user ? { id: user.id, name: user.name } : { name: 'Public Deals' }, stampedAt),
+      ...fuStatusAtDbFields(stampedAt),
       follow_up_at: followUpAt ? followUpAt.toISOString() : null,
     });
     if (err) {

@@ -4,7 +4,7 @@ import { dealCreditDbFields, forceDealCreditDbFields, isDealCreditLocked, isDeal
 import { getDealCreditOptions, resolveCreditName, isProntoRep } from '../lib/systemReps';
 import { findCallsByAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
-import { activityDbFields, activityLocalFields, resolveSavedFollowUpAt } from '../lib/callActivity';
+import { activityDbFields, activityLocalFields, fuStatusAtDbFields, fuStatusAtLocalFields, resolveSavedFollowUpAt } from '../lib/callActivity';
 import { updateCallById } from '../lib/callWrite';
 import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target, Download } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
@@ -56,6 +56,7 @@ interface Call {
   lastActivityAt?: Date;
   lastActivityBy?: string;
   lastActivityByName?: string;
+  fuStatusAt?: Date;
   followUpAt?: Date;
 }
 
@@ -443,6 +444,7 @@ export default function DailyDealsTab({
     const { error: err } = await updateCallById(callId, {
       ...fields,
       ...activityDbFields({ id: actorUser.id, name: actorUser.name }, stampedAt),
+      ...fuStatusAtDbFields(stampedAt),
       follow_up_at: followUpAt ? followUpAt.toISOString() : null,
     });
     if (err) {
@@ -458,6 +460,7 @@ export default function DailyDealsTab({
       dealBy: fields.deal_by || undefined,
       dealByName: fields.deal_by_name || undefined,
       ...activityLocalFields({ id: actorUser.id, name: actorUser.name }, stampedAt),
+      ...fuStatusAtLocalFields(stampedAt),
     });
     onRefresh();
     return true;

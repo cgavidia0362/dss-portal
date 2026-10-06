@@ -5,6 +5,7 @@ const OPTIONAL_CALL_COLUMNS = [
   'last_activity_by',
   'last_activity_by_name',
   'follow_up_at',
+  'fu_status_at',
 ] as const;
 
 function isMissingColumnError(error: { message?: string; code?: string } | null) {

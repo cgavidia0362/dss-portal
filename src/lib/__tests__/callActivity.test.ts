@@ -156,10 +156,17 @@ describe('dealShouldReturnToFollowUp', () => {
 describe('isPendingWaiting', () => {
   it('keeps Pending out of the queue until the start of the local day 2 days later', () => {
     const stamped = new Date(2026, 8, 28, 16, 30, 0);
-    const pending = { fuStatus: 'Pending', lastActivityAt: stamped };
+    const pending = { fuStatus: 'Pending', fuStatusAt: stamped };
     expect(isPendingWaiting(pending, new Date(2026, 8, 28, 17, 0, 0))).toBe(true);
     expect(isPendingWaiting(pending, new Date(2026, 8, 29, 23, 59, 0))).toBe(true);
     expect(isPendingWaiting(pending, new Date(2026, 8, 30, 0, 0, 0))).toBe(false);
+  });
+
+  it('does not restart the hold when a later note stamps lastActivityAt', () => {
+    const pendingSet = new Date(2026, 8, 28, 16, 30, 0);
+    const noteAt = new Date(2026, 8, 30, 10, 0, 0);
+    const pending = { fuStatus: 'Pending', fuStatusAt: pendingSet, lastActivityAt: noteAt };
+    expect(isPendingWaiting(pending, new Date(2026, 8, 30, 10, 5, 0))).toBe(false);
   });
 
   it('does not park other statuses', () => {

@@ -58,6 +58,7 @@ interface Call {
   lastActivityAt?: Date;
   lastActivityBy?: string;
   lastActivityByName?: string;
+  fuStatusAt?: Date;
   followUpAt?: Date;
 }
 
@@ -364,6 +365,7 @@ function App() {
       if (orphanAcceptedIds.length > 0) {
         await supabase.from('calls').update({
           fu_status: null,
+          fu_status_at: new Date().toISOString(),
           deal_date: null,
         }).in('id', orphanAcceptedIds);
 
@@ -395,6 +397,7 @@ function App() {
           const chunk = autoCloseIds.slice(i, i + CLOSE_CHUNK);
           const { error: closeError } = await updateCallsByIds(chunk, {
             fu_status: 'Closed',
+            fu_status_at: closedAt,
             follow_up_at: null,
             updated_at: closedAt,
           });
@@ -406,7 +409,7 @@ function App() {
         }
         if (closedIds.size > 0) {
           allData = allData.map((c: any) =>
-            closedIds.has(c.id) ? { ...c, fu_status: 'Closed', updated_at: closedAt } : c
+            closedIds.has(c.id) ? { ...c, fu_status: 'Closed', fu_status_at: closedAt, updated_at: closedAt } : c
           );
         }
       }
@@ -440,6 +443,7 @@ function App() {
         const agedAt = new Date().toISOString();
         const agedIds = await applyChunkedUpdate(dealFollowUpIds, {
           fu_status: 'Follow Up',
+          fu_status_at: agedAt,
           follow_up_at: null,
           last_activity_at: agedAt,
           last_activity_by_name: 'Queue',
@@ -448,7 +452,7 @@ function App() {
         if (agedIds.size > 0) {
           allData = allData.map((c: any) =>
             agedIds.has(c.id)
-              ? { ...c, fu_status: 'Follow Up', follow_up_at: null, last_activity_at: agedAt, last_activity_by_name: 'Queue', updated_at: agedAt }
+              ? { ...c, fu_status: 'Follow Up', fu_status_at: agedAt, follow_up_at: null, last_activity_at: agedAt, last_activity_by_name: 'Queue', updated_at: agedAt }
               : c
           );
         }
@@ -503,6 +507,7 @@ function App() {
           lastActivityAt: c.last_activity_at ? new Date(c.last_activity_at) : undefined,
           lastActivityBy: c.last_activity_by || undefined,
           lastActivityByName: c.last_activity_by_name || undefined,
+          fuStatusAt: c.fu_status_at ? new Date(c.fu_status_at) : undefined,
           followUpAt: c.follow_up_at ? new Date(c.follow_up_at) : undefined,
         }));
         setCalls(prev => mergeFetchedCalls(mapped, prev));

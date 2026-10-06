@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { excludeKnownDealersFromLenders, uniqueDealerNames } from '../lib/notesInsights';
 import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X } from 'lucide-react';
 
 interface CombinedNote {
@@ -260,7 +261,12 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       if (data?.error) throw new Error(data.error);
       if (!data?.lossSummary) throw new Error('Unexpected AI response');
 
-      setInsights(data as LossInsights);
+      const dealerNames = uniqueDealerNames(notesForAi.map(n => n.dealerName));
+      const insightsData = data as LossInsights;
+      setInsights({
+        ...insightsData,
+        whoLosingTo: excludeKnownDealersFromLenders(insightsData.whoLosingTo || [], dealerNames),
+      });
       setViewingSavedId(null);
       setSaveMessage('');
     } catch (err: any) {

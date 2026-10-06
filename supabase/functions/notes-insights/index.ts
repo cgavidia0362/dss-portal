@@ -52,38 +52,79 @@ Reps leave notes when deals are lost. Your job is to extract competitive intelli
 
 Answer these questions based ONLY on the notes provided:
 1. Why are we losing deals AND how are competitors beating us? Cover both in one combined summary (themes: co-signer requirements, pricing, approval strength, more money / higher advance, better net check, lower fees, lower rate, better terms, faster funding, process friction, abandonment, etc.).
-2. Who are we losing deals to? List EVERY bank / finance company / lender named in the notes. Do not skip uncommon names. Do not merge different companies into one entry unless they are clearly the same lender (e.g. "Cap One" and "Capital One").
+2. Who are we losing deals to? List EVERY bank / lender / finance company named as the competing FUNDING source (e.g. Westlake, Credit Acceptance, Capital One, Exeter, DriveTime lender, CAC, Strike, Santander). Do not skip uncommon lender names. Do not merge different lenders unless they are clearly the same company (e.g. "Cap One" and "Capital One").
 
-If a note does not name a competitor or reason, do not invent one. Say when evidence is thin.
+CRITICAL — dealers are not lenders:
+- The rooftop on each note (Dealer: ...) is a car dealer, never a competitor lender.
+- Names like "Smart Buy Auto Finance", "Driveway Deals", "Driveaway Auto Finance" are dealers even if they contain "finance" or "auto".
+- Phrases such as "customer went to [name]", "deals sent to [name]", "sent to [name]", "went elsewhere to [name]" usually mean another DEALER, not a lender. Do not put those names in whoLosingTo unless the note clearly says they are a bank/lender that funded the deal (e.g. "went with Westlake", "CAC took it", "approved at 12% with Exeter").
+- Never list a name from the Known dealers list in whoLosingTo.
+
+If a note does not name a competitor lender or reason, do not invent one. Say when evidence is thin.
 
 Respond with ONLY valid JSON — no markdown, no code fences.
 
 Schema:
 {
-  "lossSummary": "<2-4 paragraphs combining WHY we lose and HOW competitors beat us into one cohesive summary. Do not split into separate why/how sections. Be specific and cite patterns from the notes.>",
+  "lossSummary": "<2-4 paragraphs combining WHY we lose and HOW competitor lenders beat us into one cohesive summary. Do not split into separate why/how sections. Be specific and cite patterns from the notes.>",
   "whoLosingTo": [
     {
-      "competitor": "<bank or finance company name — use the clearest common spelling>",
+      "competitor": "<bank or lender name — use the clearest common spelling>",
       "mentionCount": <integer count of notes that mention this lender>,
-      "howTheyBeatUs": "<1-3 sentences on why dealers/customers chose them per the notes. If the notes only name them without a reason, say that explicitly.>"
+      "howTheyBeatUs": "<1-3 sentences on why dealers/customers chose this lender per the notes. If the notes only name them without a reason, say that explicitly.>"
     }
   ],
   "overallSummary": "<1-2 short paragraphs: executive takeaway for managers on where Pronto is losing and what to watch.>"
 }
 
 Rules:
-- whoLosingTo must be EXHAUSTIVE for lenders named in the notes. If 12 lenders appear, return 12 entries. Never truncate the list to a "top few".
+- whoLosingTo must be EXHAUSTIVE for LENDERS named in the notes. If 12 lenders appear, return 12 entries. Never truncate the list to a "top few".
 - Sort whoLosingTo by mentionCount descending (highest first).
-- Only include competitors that are actually named or clearly implied in the notes (e.g. "went with Westlake", "CAC took it", "Strike beat us").
-- If no competitors are named, return an empty whoLosingTo array and say so in lossSummary / overallSummary.
+- Only include lenders that are actually named or clearly implied as the funding source.
+- If no lenders are named, return an empty whoLosingTo array and say so in lossSummary / overallSummary.
 - Prefer concrete details from notes over generic advice.
 - CRITICAL: Return ONLY raw JSON starting with { and ending with }.`;
 
-function buildUserPrompt(notes: NoteInput[], dateRangeLabel: string): string {
+function uniqueDealerNames(notes: NoteInput[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const note of notes) {
+    const trimmed = (note.dealerName || "").trim();
+    const key = trimmed.toLowerCase().replace(/\s+/g, " ");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    names.push(trimmed);
+  }
+  return names;
+}
+
+function normalizeDealerLabel(value?: string | null): string {
+  return (value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isKnownDealerName(competitor: string, dealerNames: string[]): boolean {
+  const needle = normalizeDealerLabel(competitor);
+  if (needle.length < 4) return false;
+  return dealerNames.some((name) => {
+    const hay = normalizeDealerLabel(name);
+    if (hay.length < 4) return false;
+    return needle === hay || needle.includes(hay) || hay.includes(needle);
+  });
+}
+
+function excludeKnownDealers(
+  rows: { competitor: string; mentionCount: number; howTheyBeatUs: string }[],
+  dealerNames: string[],
+) {
+  if (dealerNames.length === 0) return rows;
+  return rows.filter((row) => !isKnownDealerName(row.competitor, dealerNames));
+}
+
+function buildUserPrompt(notes: NoteInput[], dateRangeLabel: string, dealerNames: string[]): string {
   const lines = notes.map((n, i) => {
     const meta = [
       n.createdByName || "Unknown rep",
-      n.dealerName || "Unknown dealer",
+      n.dealerName ? `Dealer: ${n.dealerName}` : "Unknown dealer",
       n.appId ? `App ${n.appId}` : null,
       n.source || null,
       n.createdAt || null,
@@ -91,9 +132,16 @@ function buildUserPrompt(notes: NoteInput[], dateRangeLabel: string): string {
     return `${i + 1}. [${meta}]\n${n.noteText.trim()}`;
   });
 
+  const dealerList = dealerNames.length > 0
+    ? dealerNames.map((name) => `- ${name}`).join("\n")
+    : "- (none provided)";
+
   return `Analyze these No Deal notes for the period: ${dateRangeLabel}
 
 Total notes: ${notes.length}
+
+Known dealers (NEVER list these in whoLosingTo — they are rooftops, not lenders):
+${dealerList}
 
 ${lines.join("\n\n")}`;
 }
@@ -119,22 +167,32 @@ async function callOpenAI(userPrompt: string): Promise<Omit<InsightsResult, "not
     throw new Error("OPENAI_API_KEY is not configured");
   }
 
+  const model = Deno.env.get("OPENAI_CLASSIFICATION_MODEL")
+    || Deno.env.get("OPENAI_MODEL")
+    || "gpt-5.4-mini";
+  const isGpt5 = /gpt-5/i.test(model);
+  const body: Record<string, unknown> = {
+    model,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+  };
+  if (isGpt5) {
+    body.max_completion_tokens = 4096;
+  } else {
+    body.max_tokens = 4096;
+    body.temperature = 0.2;
+  }
+
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: "gpt-4.1-mini",
-      max_tokens: 4096,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -233,7 +291,9 @@ Deno.serve(async (req) => {
     // Cap payload to keep token cost predictable (prefer longer notes first)
     const ranked = [...usable].sort((a, b) => (b.noteText?.length || 0) - (a.noteText?.length || 0));
     const capped = ranked.slice(0, 300);
-    const ai = await callOpenAI(buildUserPrompt(capped, dateRangeLabel));
+    const dealerNames = uniqueDealerNames(capped);
+    const ai = await callOpenAI(buildUserPrompt(capped, dateRangeLabel, dealerNames));
+    ai.whoLosingTo = excludeKnownDealers(ai.whoLosingTo, dealerNames);
 
     const result: InsightsResult = {
       ...ai,

@@ -12,6 +12,8 @@ import {
   dealShouldReturnToFollowUp,
   formatCallActivity,
   formatFollowUpDue,
+  fuStatusAtDbFields,
+  fuStatusAtLocalFields,
   isFollowUpWaiting,
   isPendingWaiting,
   resolveSavedFollowUpAt,
@@ -49,6 +51,7 @@ interface Call {
   lastActivityAt?: Date;
   lastActivityBy?: string;
   lastActivityByName?: string;
+  fuStatusAt?: Date;
   followUpAt?: Date;
 }
 
@@ -454,6 +457,7 @@ export default function CallsTab({
       const { error } = await updateCallsByIds(dueDealIds, {
         fu_status: 'Follow Up',
         follow_up_at: null,
+        ...fuStatusAtDbFields(agedAt),
         last_activity_at: agedAt.toISOString(),
         last_activity_by_name: 'Queue',
         updated_at: agedAt.toISOString(),
@@ -469,6 +473,7 @@ export default function CallsTab({
             ...call,
             fuStatus: 'Follow Up',
             followUpAt: undefined,
+            ...fuStatusAtLocalFields(agedAt),
             lastActivityAt: agedAt,
             lastActivityByName: 'Queue',
             updatedAt: agedAt,
@@ -841,6 +846,7 @@ export default function CallsTab({
     const { error } = await updateCallById(callId, {
       ...dealCreditDbFields(newStatus, existingCredit, creditActor),
       ...activityDbFields(creditActor, stampedAt),
+      ...fuStatusAtDbFields(stampedAt),
       follow_up_at: followUpAt ? followUpAt.toISOString() : null,
     });
     if (error) {
@@ -857,6 +863,7 @@ export default function CallsTab({
         dealByName: credit.dealByName,
         followUpAt: followUpAt || undefined,
         ...activityLocalFields(creditActor, stampedAt),
+        ...fuStatusAtLocalFields(stampedAt),
       }
       : c
     ));
@@ -876,6 +883,7 @@ export default function CallsTab({
     const { error } = await updateCallById(callId, {
       ...fields,
       ...activityDbFields(actor(), stampedAt),
+      ...fuStatusAtDbFields(stampedAt),
       follow_up_at: null,
     });
     if (error) {
@@ -892,6 +900,7 @@ export default function CallsTab({
         dealByName: creditName,
         followUpAt: undefined,
         ...activityLocalFields(actor(), stampedAt),
+        ...fuStatusAtLocalFields(stampedAt),
       }
       : c
     ));
