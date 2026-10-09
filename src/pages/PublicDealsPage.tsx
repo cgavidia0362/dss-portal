@@ -3,9 +3,12 @@ import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { findCallsByAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
+import { activityDbFields, fuStatusAtDbFields, resolveSavedFollowUpAt } from '../lib/callActivity';
+import { updateCallById } from '../lib/callWrite';
 import { ChevronRight, ChevronDown, Edit2, Check, X, MessageSquare, Users, Trash2, Trophy, DollarSign, ClipboardList, PlusCircle, Target } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
+import FollowUpPickerModal from '../components/FollowUpPickerModal';
 
 interface DailyDeal {
   id: string;
@@ -71,8 +74,8 @@ interface RepUser {
 const FU_STATUSES = ['Deal', 'Confirmed Deal', 'Pending', 'No Answer', 'No Deal', 'Follow Up'];
 
 const STATUS_LAST_OPTIONS = [
-  'Accepted', 'Approved', 'Approval', 'Counter', 'Denial', 'Declined',
-  'Pending Approval', 'Document Received', 'Funded', 'Funding Pending',
+  'Accepted', 'Approved', 'Approval', 'Counter', 'Denial',
+  'Pending Approval', 'Documents Received', 'Funded', 'Funding Pending',
   'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
 ];
 
@@ -186,6 +189,8 @@ export default function PublicDealsPage() {
   const [popupStatusLastOverrides, setPopupStatusLastOverrides] = useState<{ [callId: string]: string }>({});
   const [popupAmountOverrides, setPopupAmountOverrides] = useState<{ [callId: string]: string }>({});
   const [dealerNames, setDealerNames] = useState<string[]>([]);
+  const [followUpModal, setFollowUpModal] = useState<{ callId: string } | null>(null);
+  const [followUpSaving, setFollowUpSaving] = useState(false);
 
   const [showHistory, setShowHistory] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
@@ -378,7 +383,7 @@ export default function PublicDealsPage() {
     setPopupStatusLastOverrides({});
     setPopupAmountOverrides({});
     const { data } = await supabase.from('calls')
-      .select('id, application_id, buyer_final, state, fu_status, status_last, submitted_date, created_at, customer_full_name')
+      .select('id, application_id, buyer_final, state, fu_status, status_last, submitted_date, created_at, customer_full_name, deal_by, deal_by_name, deal_date')
       .eq('dealer_name', dealerName)
       .order('submitted_date', { ascending: false });
     const callsData = data || [];
@@ -413,18 +418,43 @@ export default function PublicDealsPage() {
     setShowAllPopupStatuses(false);
   };
 
-  const handlePopupFuStatus = async (callId: string, newStatus: string) => {
+  const persistPopupFuStatus = async (callId: string, newStatus: string, extras?: { followUpAt?: Date | null }) => {
     const existing = dealerPopupCalls.find((c: any) => c.id === callId);
     const user = users.find(u => u.id === selectedUser);
-    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
-    await supabase.from('calls').update({
+    const stampedAt = new Date();
+    const followUpAt = newStatus === 'Follow Up' ? resolveSavedFollowUpAt(extras?.followUpAt) : null;
+    const { error: err } = await updateCallById(callId, {
       ...dealCreditDbFields(newStatus, {
         dealBy: existing?.deal_by,
         dealByName: existing?.deal_by_name,
         dealDate: existing?.deal_date ? new Date(existing.deal_date) : undefined,
       }, user ? { id: user.id, name: user.name } : undefined),
-      updated_at: new Date().toISOString(),
-    }).eq('id', callId);
+      ...activityDbFields(user ? { id: user.id, name: user.name } : { name: 'Public Deals' }, stampedAt),
+      ...fuStatusAtDbFields(stampedAt),
+      follow_up_at: followUpAt ? followUpAt.toISOString() : null,
+    });
+    if (err) {
+      setError(`Could not save status: ${err.message}`);
+      return false;
+    }
+    setError('');
+    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
+    setDealerPopupCalls(prev => prev.map((c: any) => c.id === callId ? { ...c, fu_status: newStatus } : c));
+    if (newStatus === 'Deal' || newStatus === 'Confirmed Deal') {
+      await fetchCallDealsToday();
+    } else {
+      setCallDealsToday(prev => prev.filter(c => c.id !== callId));
+      await fetchCallDealsToday();
+    }
+    return true;
+  };
+
+  const handlePopupFuStatus = async (callId: string, newStatus: string) => {
+    if (newStatus === 'Follow Up') {
+      setFollowUpModal({ callId });
+      return;
+    }
+    await persistPopupFuStatus(callId, newStatus);
   };
 
   const handlePopupSaveStatusLast = async (callId: string) => {
@@ -456,6 +486,14 @@ export default function PublicDealsPage() {
     if (!err && data) {
       setPopupNotes(prev => ({ ...prev, [callId]: [...(prev[callId] || []), data] }));
       setPopupNewNoteText(prev => ({ ...prev, [callId]: '' }));
+      const stampedAt = new Date();
+      const { error: stampError } = await updateCallById(
+        callId,
+        activityDbFields(user ? { id: user.id, name: user.name } : { name: 'Public Deals' }, stampedAt)
+      );
+      if (stampError) setError(`Note saved, but Activity did not update: ${stampError.message}`);
+    } else if (err) {
+      setError(`Could not save note: ${err.message}`);
     }
   };
 
@@ -1556,95 +1594,126 @@ export default function PublicDealsPage() {
 
         {/* HISTORY MODAL */}
         {showHistory && (
-          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-16 z-50 px-4"
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4"
             onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}>
-            <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
+            <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-6xl h-[min(44rem,calc(100vh-2rem))] flex flex-col overflow-hidden"
               onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-6 py-4 border-b border-dss-border shrink-0">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-dss-border shrink-0">
                 <h3 className="text-lg font-semibold text-dss-ink">Deal History</h3>
                 <button onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}
                   className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
               </div>
-              <div className="p-6 overflow-y-auto flex-1 min-h-0">
-                <div className="flex items-center justify-between mb-4">
-                  <button onClick={() => { if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); } else setCalendarMonth(m => m - 1); }}
-                    className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">‹</button>
-                  <span className="text-base font-medium text-dss-ink">{monthNames[calendarMonth]} {calendarYear}</span>
-                  <button onClick={() => { if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); } else setCalendarMonth(m => m + 1); }}
-                    className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">›</button>
-                </div>
-                <div className="grid grid-cols-7 gap-1 mb-2">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                    <div key={d} className="text-center text-xs text-dss-muted py-1">{d}</div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1 mb-4">
-                  {calendarDays.map((day, i) => {
-                    if (!day) return <div key={i} />;
-                    const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                    const isTodayDate = dateStr === today;
-                    const isFuture = dateStr > today;
-                    const hasDeals = datesWithDeals.has(dateStr);
-                    const isSelected = selectedDate === dateStr;
-                    let cls = 'relative text-center text-sm py-2 rounded-dss-sm transition font-normal ';
-                    if (isTodayDate) cls += 'bg-dss-navy-soft text-white font-medium';
-                    else if (isFuture) cls += 'text-dss-muted';
-                    else if (isSelected) cls += 'bg-dss-accent-soft border border-dss-accent text-dss-accent cursor-pointer';
-                    else if (hasDeals) cls += 'bg-emerald-50 text-dss-success hover:bg-green-800 cursor-pointer font-medium';
-                    else cls += 'text-dss-muted';
-                    return (
-                      <div key={i} className={cls} onClick={() => handleCalendarClick(day)}>
-                        {day}
-                        {hasDeals && !isTodayDate && !isSelected && (
-                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-green-400 block" />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="flex gap-5 mb-4 pb-4 border-b border-dss-border">
-                  <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-400" /><span className="text-xs text-dss-muted">Has entries</span></div>
-                  <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-dss-navy" /><span className="text-xs text-dss-muted">Today</span></div>
-                </div>
-                {selectedDate && (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-semibold text-dss-ink">{formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}</p>
-                      <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-dss-muted hover:text-dss-ink">clear</button>
-                    </div>
-                    <div className="rounded-dss-sm border border-dss-border overflow-hidden max-h-[45vh] overflow-y-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-dss-canvas sticky top-0 z-10">
-                          <tr>{['App ID', 'Dealer', 'Customer', 'Amount', 'State', 'Status', 'By'].map(h => (
-                            <th key={h} className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">{h}</th>
-                          ))}</tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-700 bg-dss-surface">
-                          {selectedDateDeals.map(deal => (
-                            <tr key={deal.id} className="hover:bg-dss-canvas">
-                              <td className="px-3 py-2.5 text-dss-accent font-medium">
-                                {deal.appId}
-                                {deal.id.startsWith('call-') && (
-                                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-dss-accent-soft/40 text-dss-accent border border-dss-navy-soft">Calls</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2.5 text-dss-ink">{deal.dealerName}</td>
-                              <td className="px-3 py-2.5 text-dss-ink">{deal.customerName}</td>
-                              <td className="px-3 py-2.5 font-medium text-dss-ink">{formatCurrency(parseAmount(deal.amount))}</td>
-                              <td className="px-3 py-2.5"><span className="px-2 py-0.5 bg-dss-canvas text-dss-ink/80 text-xs rounded border border-dss-border">{deal.state}</span></td>
-                              <td className="px-3 py-2.5"><span className={`px-2 py-0.5 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>{deal.fuStatus}</span></td>
-                              <td className="px-3 py-2.5 text-dss-muted">{deal.addedByName}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+              <div className="p-5 flex-1 min-h-0 flex flex-col lg:flex-row gap-5">
+                <div className="shrink-0 lg:w-[17.5rem]">
+                  <div className="flex items-center justify-between mb-3">
+                    <button onClick={() => { if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); } else setCalendarMonth(m => m - 1); }}
+                      className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">‹</button>
+                    <span className="text-base font-medium text-dss-ink">{monthNames[calendarMonth]} {calendarYear}</span>
+                    <button onClick={() => { if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); } else setCalendarMonth(m => m + 1); }}
+                      className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">›</button>
                   </div>
-                )}
+                  <div className="grid grid-cols-7 gap-1 mb-1">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                      <div key={d} className="text-center text-xs text-dss-muted py-1">{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1 mb-3">
+                    {calendarDays.map((day, i) => {
+                      if (!day) return <div key={i} />;
+                      const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      const isTodayDate = dateStr === today;
+                      const isFuture = dateStr > today;
+                      const hasDeals = datesWithDeals.has(dateStr);
+                      const isSelected = selectedDate === dateStr;
+                      let cls = 'relative text-center text-sm py-1.5 rounded-dss-sm transition font-normal ';
+                      if (isTodayDate) cls += 'bg-dss-navy-soft text-white font-medium';
+                      else if (isFuture) cls += 'text-dss-muted';
+                      else if (isSelected) cls += 'bg-dss-accent-soft border border-dss-accent text-dss-accent cursor-pointer';
+                      else if (hasDeals) cls += 'bg-emerald-50 text-dss-success hover:bg-green-800 cursor-pointer font-medium';
+                      else cls += 'text-dss-muted';
+                      return (
+                        <div key={i} className={cls} onClick={() => handleCalendarClick(day)}>
+                          {day}
+                          {hasDeals && !isTodayDate && !isSelected && (
+                            <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-green-400 block" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-400" /><span className="text-xs text-dss-muted">Has entries</span></div>
+                    <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-dss-navy" /><span className="text-xs text-dss-muted">Today</span></div>
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+                  {selectedDate ? (
+                    <>
+                      <div className="flex items-center justify-between mb-3 shrink-0 gap-3">
+                        <p className="text-sm font-semibold text-dss-ink">{formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}</p>
+                        <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-dss-muted hover:text-dss-ink">clear</button>
+                      </div>
+                      <div className="rounded-dss-sm border border-dss-border overflow-auto flex-1 min-h-0">
+                        <table className="w-full text-sm">
+                          <thead className="bg-dss-canvas sticky top-0 z-10">
+                            <tr>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">App ID</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Dealer</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Customer</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Amount</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">State</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Status</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">By</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-dss-border bg-dss-surface">
+                            {selectedDateDeals.map(deal => (
+                              <tr key={deal.id} className="hover:bg-dss-canvas">
+                                <td className="px-3 py-2 text-dss-accent font-medium whitespace-nowrap">
+                                  {deal.appId}
+                                  {deal.id.startsWith('call-') && (
+                                    <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-dss-accent-soft/40 text-dss-accent border border-dss-navy-soft">Calls</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-dss-ink">{deal.dealerName}</td>
+                                <td className="px-3 py-2 text-dss-ink">{deal.customerName}</td>
+                                <td className="px-3 py-2 font-medium text-dss-ink whitespace-nowrap">{formatCurrency(parseAmount(deal.amount))}</td>
+                                <td className="px-3 py-2"><span className="px-2 py-0.5 bg-dss-canvas text-dss-ink/80 text-xs rounded border border-dss-border">{deal.state}</span></td>
+                                <td className="px-3 py-2 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>{deal.fuStatus}</span></td>
+                                <td className="px-3 py-2 text-dss-muted whitespace-nowrap">{deal.addedByName}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center rounded-dss-sm border border-dashed border-dss-border text-sm text-dss-muted">
+                      Select a date to view deals
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         )}
+
+      {followUpModal && (
+        <FollowUpPickerModal
+          open
+          saving={followUpSaving}
+          onClose={() => setFollowUpModal(null)}
+          onConfirm={async (at) => {
+            setFollowUpSaving(true);
+            try {
+              const saved = await persistPopupFuStatus(followUpModal.callId, 'Follow Up', { followUpAt: at });
+              if (saved) setFollowUpModal(null);
+            } finally {
+              setFollowUpSaving(false);
+            }
+          }}
+        />
+      )}
 
       </main>
     </div>

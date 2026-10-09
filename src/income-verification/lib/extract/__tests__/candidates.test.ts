@@ -23,6 +23,8 @@ function tx(
     referenceId: overrides.referenceId,
     runningBalance: overrides.runningBalance,
     page: overrides.page,
+    sourceRowIndex: overrides.sourceRowIndex,
+    sourceAccountLabel: overrides.sourceAccountLabel,
   };
 }
 
@@ -382,5 +384,144 @@ describe('posted-date vs embedded-transaction-date identity', () => {
     });
     expect(fused.transactions).toHaveLength(2);
     expect(fused.transactions.reduce((sum, item) => sum + item.amount, 0)).toBe(290.02);
+  });
+
+  it('keeps two same-day identical transfers with different source rows', () => {
+    const fused = fuseTransactionCandidates({
+      deterministic: [
+        tx({
+          date: '2026-07-16',
+          description: 'TRANSFER FROM SAVINGS',
+          amount: 50,
+          extractionProvenance: 'deterministic',
+          page: 4,
+          sourceRowIndex: 11,
+          sourceAccountLabel: 'FirstBank Checking',
+        }),
+        tx({
+          date: '2026-07-16',
+          description: 'TRANSFER FROM SAVINGS',
+          amount: 50,
+          extractionProvenance: 'deterministic',
+          page: 4,
+          sourceRowIndex: 12,
+          sourceAccountLabel: 'FirstBank Checking',
+        }),
+      ],
+    });
+    expect(fused.transactions).toHaveLength(2);
+  });
+
+  it('keeps identical rows in different documents, pages, or checking/savings sections', () => {
+    const fused = fuseTransactionCandidates({
+      deterministic: [
+        tx({
+          id: 'june-checking',
+          sourceDocument: 'june.pdf',
+          statementSegmentId: 'june.pdf:stmt:0:1-7',
+          date: '2026-07-16',
+          description: 'TRANSFER FROM SAVINGS',
+          amount: 50,
+          extractionProvenance: 'deterministic',
+          page: 4,
+          sourceRowIndex: 11,
+          sourceAccountLabel: 'FirstBank Checking',
+          sourceAccount: '9999',
+        }),
+        tx({
+          id: 'july-checking',
+          sourceDocument: 'july.pdf',
+          statementSegmentId: 'july.pdf:stmt:0:1-9',
+          date: '2026-07-16',
+          description: 'TRANSFER FROM SAVINGS',
+          amount: 50,
+          extractionProvenance: 'deterministic',
+          page: 4,
+          sourceRowIndex: 11,
+          sourceAccountLabel: 'FirstBank Checking',
+          sourceAccount: '9999',
+        }),
+        tx({
+          id: 'page-five',
+          sourceDocument: 'july.pdf',
+          statementSegmentId: 'july.pdf:stmt:0:1-9',
+          date: '2026-07-16',
+          description: 'TRANSFER FROM SAVINGS',
+          amount: 50,
+          extractionProvenance: 'deterministic',
+          page: 5,
+          sourceRowIndex: 18,
+          sourceAccountLabel: 'FirstBank Checking',
+          sourceAccount: '9999',
+        }),
+        tx({
+          id: 'savings',
+          sourceDocument: 'july.pdf',
+          statementSegmentId: 'july.pdf:stmt:0:1-9',
+          date: '2026-07-16',
+          description: 'TRANSFER FROM CHECKING',
+          amount: 50,
+          extractionProvenance: 'deterministic',
+          page: 4,
+          sourceRowIndex: 11,
+          sourceAccountLabel: 'FirstBank Savings',
+          sourceAccount: '9999',
+        }),
+      ],
+    });
+    expect(fused.transactions).toHaveLength(4);
+  });
+
+  it('collapses two extractors of the same physical row and keeps unlabeled Chase-style rows mergeable', () => {
+    const sameRow = fuseTransactionCandidates({
+      deterministic: [
+        tx({
+          id: 'det',
+          sourceDocument: 'july.pdf',
+          statementSegmentId: 'july.pdf:stmt:0:1-9',
+          date: '2026-07-10',
+          description: 'ATH MOVIL -P2P TRANSFER CREDIT',
+          amount: 13.75,
+          extractionProvenance: 'deterministic',
+          page: 3,
+          sourceRowIndex: 7,
+          sourceAccountLabel: 'FirstBank Checking',
+        }),
+      ],
+      terra: [
+        tx({
+          id: 'terra',
+          sourceDocument: 'july.pdf',
+          statementSegmentId: 'july.pdf:stmt:0:1-9',
+          date: '2026-07-10',
+          description: 'ATH MOVIL P2P TRANSFER CREDIT',
+          amount: 13.75,
+          extractionProvenance: 'terra_vision',
+          page: 3,
+          sourceRowIndex: 7,
+          sourceAccountLabel: 'FirstBank Checking',
+        }),
+      ],
+    });
+    expect(sameRow.transactions).toHaveLength(1);
+    expect(sameRow.stats.duplicatesRemoved).toBe(1);
+
+    const unlabeled = fuseTransactionCandidates({
+      deterministic: [
+        tx({
+          description: 'Zelle payment from Avery Example',
+          amount: 40,
+          extractionProvenance: 'deterministic',
+        }),
+      ],
+      terra: [
+        tx({
+          description: 'Zelle payment from Avery Example',
+          amount: 40,
+          extractionProvenance: 'terra_vision',
+        }),
+      ],
+    });
+    expect(unlabeled.transactions).toHaveLength(1);
   });
 });

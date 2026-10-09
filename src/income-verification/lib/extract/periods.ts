@@ -8,6 +8,7 @@ import {
   parseStatementPeriod,
   type StatementPeriod,
 } from './parse';
+import { extractFirstBankControls } from './firstBank';
 import type { StatementControlTotals, StatementDebitControls } from './documentModel';
 import { roundMoney } from '../analysis/money';
 
@@ -232,6 +233,9 @@ export function extractChaseAccountStatementControls(text: string): StatementCon
 }
 
 export function extractControlTotalsFromText(text: string): StatementControlTotals[] {
+  const firstBank = extractFirstBankControls(text);
+  if (firstBank.length) return firstBank;
+
   const chase = extractChaseAccountStatementControls(text);
   if (chase.length) return chase;
 

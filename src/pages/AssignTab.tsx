@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon, Check, Plus } from 'lucide-react';
+import { Search, UserMinus, Target, List, ChevronLeft, ChevronRight as ChevronRightIcon, Check, Plus, BellOff, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { statusMatchesFilter } from '../lib/statusLastFilter';
 import { distributeDealersToReps, uniqueDealerCount } from '../lib/distributeDealers';
+import { findDealerAlert, mapDealerAlertRow, type DealerAlert } from '../lib/dealerAlerts';
 
 interface Call {
   id: string;
@@ -45,12 +46,16 @@ interface Goals {
 
 interface AssignTabProps {
   currentUserRole: 'admin' | 'manager' | 'rep' | 'buying_assistant';
+  currentUserId?: string;
+  currentUserName?: string;
   calls: Call[];
   setCalls: React.Dispatch<React.SetStateAction<Call[]>>;
   users: User[];
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
   goals: Goals;
   setGoals: React.Dispatch<React.SetStateAction<Goals>>;
+  dealerAlerts?: DealerAlert[];
+  setDealerAlerts?: React.Dispatch<React.SetStateAction<DealerAlert[]>>;
 }
 
 const parseAmount = (str: string) =>
@@ -89,7 +94,10 @@ const STATUS_FILTER_OPTIONS = [
 
 const DEFAULT_STATUSES = new Set(['Approved', 'Counter', 'New Application', 'Pending Approval', 'Reconsider', 'Follow Up']);
 
-export default function AssignTab({ calls, setCalls, users, setUsers, goals, setGoals }: AssignTabProps) {
+export default function AssignTab({
+  currentUserRole, currentUserId, currentUserName, calls, setCalls, users, setUsers, goals, setGoals,
+  dealerAlerts = [], setDealerAlerts,
+}: AssignTabProps) {
 
   // ── ASSIGN STATE ─────────────────────────────────────────────────
   const [filterState, setFilterState] = useState('');
@@ -138,6 +146,11 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
   const [goalRep, setGoalRep] = useState<User | null>(null);
   const [goalValue, setGoalValue] = useState('');
   const [savingGoal, setSavingGoal] = useState(false);
+
+  const [dncQuery, setDncQuery] = useState('');
+  const [dncReason, setDncReason] = useState('');
+  const [dncSaving, setDncSaving] = useState(false);
+  const canManageDnc = currentUserRole === 'admin' || currentUserRole === 'manager';
 
   // ── COMPUTED ─────────────────────────────────────────────────────
   const reps = users.filter(u => u.role === 'rep');
@@ -673,6 +686,64 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
 
   const maxDealerCount = Math.max(...dealersInView.map(d => d.callCount), 1);
 
+  const uniqueDealerOptions = useMemo(() => {
+    const map = new Map<string, { name: string; cifNumber: string }>();
+    calls.forEach(c => {
+      const name = (c.dealerName || '').trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      const existing = map.get(key);
+      const cifNumber = c.dealerCifNumber || '';
+      if (!existing) map.set(key, { name, cifNumber });
+      else if (!existing.cifNumber && cifNumber) existing.cifNumber = cifNumber;
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [calls]);
+
+  const dncSuggestions = useMemo(() => {
+    const q = dncQuery.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return uniqueDealerOptions
+      .filter(d => d.name.toLowerCase().includes(q) && !findDealerAlert({ dealerName: d.name, dealerCifNumber: d.cifNumber }, dealerAlerts))
+      .slice(0, 8);
+  }, [dncQuery, uniqueDealerOptions, dealerAlerts]);
+
+  const addDoNotCallDealer = async (dealer: { name: string; cifNumber?: string }) => {
+    if (!canManageDnc || !currentUserId) return;
+    if (findDealerAlert({ dealerName: dealer.name, dealerCifNumber: dealer.cifNumber }, dealerAlerts)) {
+      setError(`${dealer.name} is already flagged.`);
+      return;
+    }
+    setDncSaving(true);
+    setError('');
+    const { data, error: err } = await supabase.from('dealer_alerts').insert({
+      dealer_name: dealer.name,
+      dealer_cif_number: dealer.cifNumber?.trim() || null,
+      reason: dncReason.trim() || null,
+      created_by: currentUserId,
+      created_by_name: currentUserName || null,
+    }).select().single();
+    setDncSaving(false);
+    if (err || !data) {
+      setError(`Could not flag dealer: ${err?.message || 'Unknown error'}`);
+      return;
+    }
+    setDealerAlerts?.(prev => [...prev, mapDealerAlertRow(data)].sort((a, b) => a.dealerName.localeCompare(b.dealerName)));
+    setDncQuery('');
+    setDncReason('');
+    setSuccess(`${dealer.name} marked as do not call on updates.`);
+  };
+
+  const removeDoNotCallDealer = async (id: string) => {
+    if (!canManageDnc) return;
+    const { error: err } = await supabase.from('dealer_alerts').delete().eq('id', id);
+    if (err) {
+      setError(`Could not remove flag: ${err.message}`);
+      return;
+    }
+    setDealerAlerts?.(prev => prev.filter(a => a.id !== id));
+  };
+
   return (
     <div className="space-y-6">
 
@@ -684,6 +755,88 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
 
       {success && <div className="bg-emerald-50 border border-emerald-200 text-dss-success px-4 py-3 rounded-dss-sm text-sm">{success}</div>}
       {error && <div className="bg-rose-50 border border-rose-200 text-dss-danger px-4 py-3 rounded-dss-sm text-sm">{error}</div>}
+
+      {canManageDnc && (
+        <div className="bg-dss-surface rounded-dss-sm border border-rose-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-rose-100 flex items-center gap-2">
+            <BellOff className="w-4 h-4 text-rose-700" />
+            <div>
+              <h3 className="text-sm font-semibold text-dss-ink">Do not call on updates</h3>
+              <p className="text-xs text-dss-muted">Flag a dealer once. Every app for that store will warn the assigned rep.</p>
+            </div>
+          </div>
+          <div className="p-4 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-dss-muted absolute left-2.5 top-2.5" />
+                <input
+                  value={dncQuery}
+                  onChange={e => setDncQuery(e.target.value)}
+                  placeholder="Search dealer name…"
+                  className="w-full pl-8 pr-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
+                />
+                {dncSuggestions.length > 0 && (
+                  <div className="absolute z-20 mt-1 w-full bg-dss-surface border border-dss-border rounded-dss-sm shadow-sm max-h-48 overflow-y-auto">
+                    {dncSuggestions.map(d => (
+                      <button
+                        key={d.name}
+                        type="button"
+                        onClick={() => setDncQuery(d.name)}
+                        className="w-full text-left px-3 py-2 text-sm text-dss-ink hover:bg-dss-canvas"
+                      >
+                        {d.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <input
+                value={dncReason}
+                onChange={e => setDncReason(e.target.value)}
+                placeholder="Optional reason (email / portal only)"
+                className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-sm text-dss-ink focus:outline-none focus:ring-1 focus:ring-dss-accent/30"
+              />
+              <button
+                type="button"
+                disabled={dncSaving || !dncQuery.trim()}
+                onClick={() => {
+                  const match = uniqueDealerOptions.find(d => d.name.toLowerCase() === dncQuery.trim().toLowerCase())
+                    || { name: dncQuery.trim(), cifNumber: '' };
+                  void addDoNotCallDealer(match);
+                }}
+                className="px-3 py-2 rounded-dss-sm bg-rose-600 hover:bg-rose-500 text-white text-sm font-medium disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+            {dealerAlerts.length === 0 ? (
+              <p className="text-sm text-dss-muted">No dealers flagged yet.</p>
+            ) : (
+              <div className="divide-y divide-dss-border border border-dss-border rounded-dss-sm">
+                {dealerAlerts.map(alert => (
+                  <div key={alert.id} className="flex items-center gap-3 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-dss-ink truncate">{alert.dealerName}</p>
+                      <p className="text-xs text-dss-muted truncate">
+                        {alert.reason || 'Do not call on updates'}
+                        {alert.createdByName ? ` · ${alert.createdByName}` : ''}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void removeDoNotCallDealer(alert.id)}
+                      className="p-1 rounded text-dss-muted hover:text-dss-danger hover:bg-rose-50"
+                      title="Remove flag"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── ASSIGNMENT SUMMARY ──────────────────────────────────── */}
       <div>
@@ -987,6 +1140,14 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
                         <p className={`text-sm font-medium truncate ${isSelected ? 'text-dss-accent' : 'text-dss-ink'}`}>
                           {dealer.name}
                         </p>
+                        {findDealerAlert({ dealerName: dealer.name, dealerCifNumber: dealer.cifNumber }, dealerAlerts) && (
+                          <span
+                            title={findDealerAlert({ dealerName: dealer.name, dealerCifNumber: dealer.cifNumber }, dealerAlerts)?.reason || 'Do not call on updates'}
+                            className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0 rounded text-[10px] font-medium bg-rose-50 text-rose-800 border border-rose-200"
+                          >
+                            Do not call
+                          </span>
+                        )}
                         {!filterState && <p className="text-xs text-dss-muted">All States</p>}
                         {filterState && <p className="text-xs text-dss-muted">{filterState}</p>}
                       </div>
@@ -1083,7 +1244,16 @@ export default function AssignTab({ calls, setCalls, users, setUsers, goals, set
                         />
                       </div>
                       <div className="px-2 text-xs text-dss-accent font-medium truncate">{call.applicationId}</div>
-                      <div className="px-2 text-xs text-dss-ink truncate">{call.dealerName}</div>
+                      <div className="px-2 min-w-0">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-xs text-dss-ink truncate">{call.dealerName}</span>
+                          {findDealerAlert(call, dealerAlerts) && (
+                            <span className="flex-shrink-0 inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-rose-50 text-rose-800 border border-rose-200">
+                              Do not call
+                            </span>
+                          )}
+                        </div>
+                      </div>
                       <div className="px-2 text-xs text-dss-muted truncate">{call.customerName || '—'}</div>
                       <div className="px-2">
                         <span className="px-1.5 py-0 bg-dss-canvas text-dss-ink/80 text-[10px] rounded border border-dss-border">{call.state}</span>
