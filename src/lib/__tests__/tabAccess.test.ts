@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canAccessTab,
+  defaultGrantableTabsForRole,
   getBaseTabsForRole,
   resolveVisibleTabIds,
 } from '../tabAccess';
@@ -9,6 +10,7 @@ describe('tabAccess', () => {
   it('returns role base tabs for admin and rep', () => {
     expect(getBaseTabsForRole('admin')).toContain('income-verification');
     expect(getBaseTabsForRole('admin')).toContain('vehicle-risk');
+    expect(getBaseTabsForRole('admin')).toContain('data-portal');
     expect(getBaseTabsForRole('admin')).not.toContain('analytics');
 
     expect(getBaseTabsForRole('rep')).toEqual([
@@ -26,7 +28,7 @@ describe('tabAccess', () => {
 
   it('adds grantable tabs for reps without duplicating role base', () => {
     expect(
-      resolveVisibleTabIds('rep', ['income-verification', 'vehicle-risk']),
+      resolveVisibleTabIds('rep', ['income-verification', 'vehicle-risk', 'data-portal']),
     ).toEqual([
       'calls',
       'analytics',
@@ -34,6 +36,7 @@ describe('tabAccess', () => {
       'notes',
       'income-verification',
       'vehicle-risk',
+      'data-portal',
     ]);
   });
 
@@ -51,6 +54,14 @@ describe('tabAccess', () => {
       'daily-deals',
       'notes',
     ]);
+  });
+
+  it('does not auto-grant Data Portal when creating a manager', () => {
+    expect(defaultGrantableTabsForRole('manager')).toEqual([
+      'income-verification',
+      'vehicle-risk',
+    ]);
+    expect(defaultGrantableTabsForRole('rep')).toEqual([]);
   });
 
   it('keeps manager tools grantable instead of locking them to the role', () => {
@@ -82,14 +93,30 @@ describe('tabAccess', () => {
       'income-verification',
       'vehicle-risk',
     ]);
+    expect(
+      resolveVisibleTabIds('manager', ['data-portal']),
+    ).toEqual([
+      'calls',
+      'upload',
+      'assign',
+      'daily-deals',
+      'notes',
+      'reporting',
+      'data-portal',
+    ]);
   });
 
   it('canAccessTab honors role and grants', () => {
     expect(canAccessTab('admin', [], 'income-verification')).toBe(true);
+    expect(canAccessTab('admin', [], 'data-portal')).toBe(true);
     expect(canAccessTab('manager', [], 'vehicle-risk')).toBe(false);
+    expect(canAccessTab('manager', [], 'data-portal')).toBe(false);
     expect(canAccessTab('manager', ['vehicle-risk'], 'vehicle-risk')).toBe(true);
+    expect(canAccessTab('manager', ['data-portal'], 'data-portal')).toBe(true);
     expect(canAccessTab('rep', [], 'income-verification')).toBe(false);
+    expect(canAccessTab('rep', [], 'data-portal')).toBe(false);
     expect(canAccessTab('rep', ['income-verification'], 'income-verification')).toBe(true);
+    expect(canAccessTab('rep', ['data-portal'], 'data-portal')).toBe(true);
     expect(canAccessTab('buying_assistant', ['vehicle-risk'], 'vehicle-risk')).toBe(true);
     expect(canAccessTab('rep', ['vehicle-risk'], 'income-verification')).toBe(false);
   });

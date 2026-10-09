@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart3, Upload, Users, FileText, UserCog, LogOut, TrendingUp, StickyNote, Car, BadgeDollarSign } from 'lucide-react';
+import { BarChart3, Upload, Users, FileText, UserCog, LogOut, TrendingUp, StickyNote, Car, BadgeDollarSign, ExternalLink } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import LoginPage from './pages/LoginPage';
 import CallsTab from './pages/CallsTab';
@@ -15,6 +15,7 @@ import VehicleRiskAnalyzer from './pages/VehicleRiskAnalyzer';
 import PublicDealsPage from './pages/PublicDealsPage';
 import VehicleRiskPublic from './pages/VehicleRiskPublic';
 import IncomeVerificationTab from './pages/IncomeVerificationTab';
+import DataPortalTab from './pages/DataPortalTab';
 import { resolveVisibleTabIds } from './lib/tabAccess';
 import { callShouldAutoClose } from './lib/statusLastFilter';
 import {
@@ -597,6 +598,7 @@ function App() {
       { id: 'vehicle-risk', label: 'Vehicle Risk', icon: Car },
       { id: 'income-verification', label: 'Income Verification', icon: BadgeDollarSign },
       { id: 'reporting', label: 'Reporting', icon: BarChart3 },
+      { id: 'data-portal', label: 'Data Portal', icon: ExternalLink },
     ];
     const visibleIds = new Set<string>(resolveVisibleTabIds(role, allowedTabs));
     return allTabs.filter((t) => visibleIds.has(t.id));
@@ -629,7 +631,7 @@ function App() {
   const activeTabMeta = tabs.find((t) => t.id === activeTab);
   const navGroups: Array<{ label: string; ids: string[] }> = [
     { label: 'Operations', ids: ['calls', 'upload', 'assign'] },
-    { label: 'Analysis', ids: ['analytics', 'daily-deals', 'notes', 'reporting'] },
+    { label: 'Analysis', ids: ['analytics', 'daily-deals', 'notes', 'reporting', 'data-portal'] },
     { label: 'Tools', ids: ['vehicle-risk', 'income-verification'] },
     { label: 'Admin', ids: ['users'] },
   ];
@@ -804,6 +806,10 @@ function App() {
 
             {activeTab === 'vehicle-risk' && (
               <VehicleRiskAnalyzer currentUser={currentUser} />
+            )}
+
+            {activeTab === 'data-portal' && (
+              <DataPortalTab currentUser={currentUser} />
             )}
           </main>
         )}

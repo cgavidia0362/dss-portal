@@ -10,12 +10,14 @@ export type TabId =
   | 'notes'
   | 'vehicle-risk'
   | 'income-verification'
-  | 'reporting';
+  | 'reporting'
+  | 'data-portal';
 
 /** Tabs an admin can grant beyond role defaults. */
 export const GRANTABLE_TABS: Array<{ id: TabId; label: string }> = [
   { id: 'income-verification', label: 'Income Verification' },
   { id: 'vehicle-risk', label: 'Vehicle Risk' },
+  { id: 'data-portal', label: 'Data Portal' },
 ];
 
 const GRANTABLE_TAB_IDS = new Set<string>(GRANTABLE_TABS.map((tab) => tab.id));
@@ -31,6 +33,7 @@ const ALL_TAB_IDS: TabId[] = [
   'vehicle-risk',
   'income-verification',
   'reporting',
+  'data-portal',
 ];
 
 export function getBaseTabsForRole(role: string): TabId[] {
@@ -42,7 +45,8 @@ export function getBaseTabsForRole(role: string): TabId[] {
       id !== 'users' &&
       id !== 'analytics' &&
       id !== 'vehicle-risk' &&
-      id !== 'income-verification'
+      id !== 'income-verification' &&
+      id !== 'data-portal'
     );
   }
   if (role === 'buying_assistant') {
@@ -53,7 +57,7 @@ export function getBaseTabsForRole(role: string): TabId[] {
 }
 
 export function defaultGrantableTabsForRole(role: string): TabId[] {
-  if (role === 'manager') return GRANTABLE_TABS.map((tab) => tab.id);
+  if (role === 'manager') return ['income-verification', 'vehicle-risk'];
   return [];
 }
 
