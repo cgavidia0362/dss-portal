@@ -20,7 +20,7 @@ import {
   touchDbFields,
 } from '../lib/callActivity';
 import { updateCallById, updateCallsByIds } from '../lib/callWrite';
-import { exportRowsToExcel } from '../lib/exportExcel';
+import { exportRowsToExcel, joinNotesForExcel } from '../lib/exportExcel';
 import NoteItem from '../components/NoteItem';
 import FollowUpPickerModal from '../components/FollowUpPickerModal';
 import { findDealerAlert, mapDealerAlertRow, type DealerAlert } from '../lib/dealerAlerts';
@@ -656,6 +656,7 @@ export default function CallsTab({
           Activity: activity.byName ? `${activity.text} · ${activity.byName}` : activity.text,
           'FU Status': call.fuStatus || 'No Call',
           'Assigned to': call.assignedToName || '',
+          Notes: joinNotesForExcel(getCallNotes(call.id)),
         };
       }),
       'Calls',

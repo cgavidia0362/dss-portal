@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { excludeKnownDealersFromLenders, uniqueDealerNames } from '../lib/notesInsights';
-import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X } from 'lucide-react';
+import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X, Download } from 'lucide-react';
+import { exportRowsToExcel } from '../lib/exportExcel';
 
 interface CombinedNote {
   id: string;
@@ -344,6 +345,27 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
     return true;
   });
 
+  const exportFilteredNotes = () => {
+    if (filteredNotes.length === 0) return;
+    const filename = dateFrom === dateTo
+      ? `notes-${dateFrom}.xlsx`
+      : `notes-${dateFrom}-to-${dateTo}.xlsx`;
+    exportRowsToExcel(
+      filteredNotes.map(note => ({
+        'App ID': note.appId || '',
+        Dealer: note.dealerName || '',
+        Customer: note.customerName || '',
+        Source: note.source === 'calls' ? 'Calls' : 'Daily Deals',
+        Status: note.fuStatus || 'No Deal',
+        Notes: (note.noteText || '').trim(),
+        By: note.createdByName || '',
+        Date: new Date(note.createdAt).toLocaleString('en-US'),
+      })),
+      'Notes',
+      filename,
+    );
+  };
+
   const totalPages = Math.max(1, Math.ceil(filteredNotes.length / NOTES_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
   const paginatedNotes = filteredNotes.slice(
@@ -508,7 +530,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             </span>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           {callsCount > 0 && (
             <span className="text-xs px-2.5 py-1 bg-dss-accent-soft bg-opacity-40 text-dss-accent rounded-full border border-dss-navy-soft">
               {callsCount} from Calls
@@ -519,6 +541,15 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               {dealCount} from Daily Deals
             </span>
           )}
+          <button
+            type="button"
+            onClick={exportFilteredNotes}
+            disabled={filteredNotes.length === 0 || loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
+          </button>
         </div>
       </div>
 
