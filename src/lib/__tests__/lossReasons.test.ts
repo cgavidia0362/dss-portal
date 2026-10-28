@@ -1,86 +1,107 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyLossReasons,
+  ensureOtherBankRow,
   excelFlag,
-  groupNotesByLossReason,
+  isUnnamedSendOut,
   splitTextByAppIds,
 } from '../lossReasons';
 
+const blank = {
+  apr: false,
+  fees: false,
+  stips: false,
+  counter: false,
+  cobuyer: false,
+  noReason: false,
+};
+
 describe('classifyLossReasons', () => {
-  it('flags the spreadsheet fee example', () => {
-    expect(classifyLossReasons('$95 Fee with Strike')).toEqual({
-      apr: false,
-      fees: true,
-      stips: false,
-      other: false,
-      noReason: false,
-    });
-  });
-
-  it('flags the spreadsheet APR example', () => {
+  it('flags a better APR elsewhere', () => {
     expect(classifyLossReasons('11% APR at another dealer')).toEqual({
+      ...blank,
       apr: true,
-      fees: false,
-      stips: false,
-      other: false,
-      noReason: false,
     });
   });
 
-  it('flags No Reason Listed', () => {
-    expect(classifyLossReasons('No Reason Listed')).toEqual({
-      apr: false,
-      fees: false,
-      stips: false,
-      other: false,
+  it('flags a better fee at another lender', () => {
+    expect(classifyLossReasons('$95 Fee with Strike')).toEqual({
+      ...blank,
+      fees: true,
+    });
+  });
+
+  it('flags too many stips or docs', () => {
+    expect(classifyLossReasons('Too many extra stips and additional docs')).toEqual({
+      ...blank,
+      stips: true,
+    });
+  });
+
+  it('flags a full call / more money as Counter', () => {
+    expect(classifyLossReasons('Westlake called the full amount, we countered')).toMatchObject({
+      counter: true,
+    });
+    expect(classifyLossReasons('They got more money and a higher advance')).toMatchObject({
+      counter: true,
+    });
+  });
+
+  it('flags cobuyer / cosigner requests', () => {
+    expect(classifyLossReasons('Need a cobuyer to get this done')).toEqual({
+      ...blank,
+      cobuyer: true,
+    });
+    expect(classifyLossReasons('Asked for a co-signer')).toMatchObject({ cobuyer: true });
+  });
+
+  it('flags sent elsewhere with no why as No reason', () => {
+    expect(classifyLossReasons('Sent it elsewhere')).toEqual({
+      ...blank,
+      noReason: true,
+    });
+    expect(classifyLossReasons('Closed it out, no reason listed')).toMatchObject({
       noReason: true,
     });
   });
 
-  it('treats empty notes as no reason', () => {
-    expect(classifyLossReasons('   ')).toMatchObject({ noReason: true, other: false });
+  it('leaves unmatched operational notes blank', () => {
+    expect(classifyLossReasons('No answer')).toEqual(blank);
+    expect(classifyLossReasons('Customer not working')).toEqual(blank);
+    expect(classifyLossReasons('No down')).toEqual(blank);
+    expect(classifyLossReasons('   ')).toEqual(blank);
   });
 
-  it('flags stips language', () => {
-    expect(classifyLossReasons('Too many extra stips and additional docs')).toMatchObject({
-      stips: true,
-      noReason: false,
-    });
-  });
-
-  it('allows APR and fees on the same note', () => {
-    expect(classifyLossReasons('Lost on 12% APR and a $150 fee')).toEqual({
+  it('does not mark No reason when a real KPI is present', () => {
+    expect(classifyLossReasons('Sent it elsewhere for a better APR')).toEqual({
+      ...blank,
       apr: true,
-      fees: true,
-      stips: false,
-      other: false,
-      noReason: false,
-    });
-  });
-
-  it('uses Other when there is a reason that is not APR, fees, or stips', () => {
-    expect(classifyLossReasons('Customer went with Westlake for more money')).toEqual({
-      apr: false,
-      fees: false,
-      stips: false,
-      other: true,
-      noReason: false,
     });
   });
 });
 
-describe('groupNotesByLossReason', () => {
-  it('counts notes and unique app ids per bucket', () => {
-    const buckets = groupNotesByLossReason([
-      { appId: 'DTBFJ1', noteText: '11% APR at another dealer' },
-      { appId: 'DTBFJ2', noteText: '$95 Fee with Strike' },
-      { appId: 'DTBFJ1', noteText: 'No Reason Listed' },
-    ]);
-    const byKey = Object.fromEntries(buckets.map((b) => [b.key, b]));
-    expect(byKey.apr.count).toBe(1);
-    expect(byKey.apr.appIds).toEqual(['DTBFJ1']);
-    expect(byKey.fees.count).toBe(1);
-    expect(byKey.noReason.count).toBe(1);
+describe('isUnnamedSendOut', () => {
+  it('treats unnamed send-outs as Other bank', () => {
+    expect(isUnnamedSendOut('Sent it elsewhere')).toBe(true);
+    expect(isUnnamedSendOut('Went with Westlake')).toBe(false);
+  });
+});
+
+describe('ensureOtherBankRow', () => {
+  it('adds Other bank and sorts by most notes', () => {
+    const rows = ensureOtherBankRow(
+      [
+        { competitor: 'Westlake', mentionCount: 2, howTheyBeatUs: 'Better APR' },
+        { competitor: 'Strike', mentionCount: 5, howTheyBeatUs: 'Lower fee' },
+      ],
+      [
+        { noteText: 'Sent it elsewhere' },
+        { noteText: 'Closed it out' },
+        { noteText: 'Went with Westlake' },
+      ],
+    );
+    expect(rows.map((r) => r.competitor)).toEqual(['Strike', 'Westlake', 'Other bank']);
+    expect(rows[2].mentionCount).toBe(2);
   });
 });
 

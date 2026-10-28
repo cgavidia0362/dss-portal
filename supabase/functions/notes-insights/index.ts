@@ -52,44 +52,44 @@ function extractJson(text: string): unknown {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
-const SYSTEM_PROMPT = `You analyze "No Deal" notes for Pronto Finance, a subprime auto finance company.
+const SYSTEM_PROMPT = `You read No Deal notes for Pronto Finance, a subprime auto lender.
 
-Reps leave notes when deals are lost. Your job is to extract competitive intelligence from those notes.
+Write like you are talking to a desk manager. Keep it simple. Use car-lending words: APR, full call, counter, stips, cobuyer, fee, sent it elsewhere, no call.
 
-Answer these questions based ONLY on the notes provided:
-1. Why are we losing deals AND how are competitors beating us? Cover both in one combined summary (themes: co-signer requirements, pricing, approval strength, more money / higher advance, better net check, lower fees, lower rate, better terms, faster funding, process friction, abandonment, etc.).
-2. Who are we losing deals to? List EVERY bank / lender / finance company named as the competing FUNDING source (e.g. Westlake, Credit Acceptance, Capital One, Exeter, DriveTime lender, CAC, Strike, Santander). Do not skip uncommon lender names. Do not merge different lenders unless they are clearly the same company (e.g. "Cap One" and "Capital One").
-3. Break down losses by reason category: APR (rate / interest), Fees, Stips (stipulations / extra conditions), Other specific reasons, and No reason listed. Use the pre-counted buckets when provided. When you cite an example, include the App ID from that note (e.g. App DTBFJ123) so a manager can open it.
+Do NOT use academic or AI phrasing. Never say friction, abandonment, operational leakage, marginal-file, economics, or deal structure.
+
+Answer ONLY from the notes:
+1. Why we lost, in plain talk. Cover APR, fees, stips, counters (full call / more money), cobuyer, and no reason when those show up. Say which banks beat us and how (better APR, lower fee, they called the deal, etc.).
+2. Who we lost to. List EVERY named bank / lender (Westlake, Strike, CAC, Capital One, Exeter, Santander, etc.). Sort by most notes first. For each bank, say how many notes and why we lost (APR, fee, full call, stips, cobuyer). If a note says they sent it elsewhere, another bank, or closed out and does NOT name a bank, put those on one row named exactly "Other bank".
 
 CRITICAL — dealers are not lenders:
 - The rooftop on each note (Dealer: ...) is a car dealer, never a competitor lender.
 - Names like "Smart Buy Auto Finance", "Driveway Deals", "Driveaway Auto Finance" are dealers even if they contain "finance" or "auto".
-- Phrases such as "customer went to [name]", "deals sent to [name]", "sent to [name]", "went elsewhere to [name]" usually mean another DEALER, not a lender. Do not put those names in whoLosingTo unless the note clearly says they are a bank/lender that funded the deal (e.g. "went with Westlake", "CAC took it", "approved at 12% with Exeter").
+- "Customer went to [name]" / "deals sent to [name]" usually means another DEALER. Do not list that name unless the note clearly says a bank funded it (e.g. "went with Westlake", "CAC took it").
 - Never list a name from the Known dealers list in whoLosingTo.
 
-If a note does not name a competitor lender or reason, do not invent one. Say when evidence is thin.
+Do not invent banks or reasons. If the notes are thin, say that.
 
 Respond with ONLY valid JSON — no markdown, no code fences.
 
 Schema:
 {
-  "lossSummary": "<2-4 paragraphs combining WHY we lose and HOW competitor lenders beat us into one cohesive summary. Cover APR vs Fees vs Stips vs Other vs No reason when those show up. Do not split into separate why/how sections. Be specific, cite patterns, and include App IDs when referencing a specific deal.>",
+  "lossSummary": "<2-3 short paragraphs. Plain desk talk. Why we lost and how other banks beat us. No fluff.>",
   "whoLosingTo": [
     {
-      "competitor": "<bank or lender name — use the clearest common spelling>",
-      "mentionCount": <integer count of notes that mention this lender>,
-      "howTheyBeatUs": "<1-3 sentences on why dealers/customers chose this lender per the notes. If the notes only name them without a reason, say that explicitly.>"
+      "competitor": "<bank name, or Other bank>",
+      "mentionCount": <integer>,
+      "howTheyBeatUs": "<1-2 short sentences: why we lost to them. Use APR, fee, full call, stips, cobuyer when that is what the notes say. If no why, say they did not give a reason.>"
     }
   ],
-  "overallSummary": "<1-2 short paragraphs: executive takeaway for managers on where Pronto is losing and what to watch.>"
+  "overallSummary": "<3-6 short sentences for managers. What to watch. Same simple language.>"
 }
 
 Rules:
-- whoLosingTo must be EXHAUSTIVE for LENDERS named in the notes. If 12 lenders appear, return 12 entries. Never truncate the list to a "top few".
+- whoLosingTo must list every named lender. Do not cut the list to a top few.
 - Sort whoLosingTo by mentionCount descending (highest first).
-- Only include lenders that are actually named or clearly implied as the funding source.
-- If no lenders are named, return an empty whoLosingTo array and say so in lossSummary / overallSummary.
-- Prefer concrete details from notes over generic advice.
+- Include "Other bank" when notes say sent elsewhere / another bank / closed out with no bank named.
+- If no lenders and no Other bank notes, return an empty whoLosingTo array.
 - CRITICAL: Return ONLY raw JSON starting with { and ending with }.`;
 
 function uniqueDealerNames(notes: NoteInput[]): string[] {
@@ -144,11 +144,8 @@ function parseLossReasonBreakdown(raw: unknown): LossReasonBreakdownRow[] {
 
 function formatLossReasonBreakdown(rows: LossReasonBreakdownRow[]): string {
   if (rows.length === 0) return "";
-  const lines = rows.map((row) => {
-    const apps = row.appIds.length > 0 ? row.appIds.join(", ") : "none";
-    return `- ${row.category}: ${row.count} note(s). App IDs: ${apps}`;
-  });
-  return `Pre-counted loss-reason buckets (use these counts; cite App IDs when giving examples):
+  const lines = rows.map((row) => `- ${row.category}: ${row.count} note(s)`);
+  return `Pre-counted why-we-lost KPIs (use these counts):
 ${lines.join("\n")}
 
 `;

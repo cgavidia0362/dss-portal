@@ -4,6 +4,7 @@ import { excludeKnownDealersFromLenders, uniqueDealerNames } from '../lib/notesI
 import {
   classifyLossReasons,
   excelFlag,
+  ensureOtherBankRow,
   groupNotesByLossReason,
   splitTextByAppIds,
   uniqueAppIds,
@@ -286,7 +287,6 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
       const lossReasonBreakdown = groupNotesByLossReason(notesForAi).map(bucket => ({
         category: bucket.label,
         count: bucket.count,
-        appIds: bucket.appIds.slice(0, 25),
       }));
 
       const { data, error } = await supabase.functions.invoke('notes-insights', {
@@ -313,7 +313,10 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
       const insightsData = data as LossInsights;
       setInsights({
         ...insightsData,
-        whoLosingTo: excludeKnownDealersFromLenders(insightsData.whoLosingTo || [], dealerNames),
+        whoLosingTo: ensureOtherBankRow(
+          excludeKnownDealersFromLenders(insightsData.whoLosingTo || [], dealerNames),
+          notesForAi,
+        ),
       });
       setViewingSavedId(null);
       setSaveMessage('');
@@ -409,7 +412,8 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
           APR: excelFlag(flags.apr),
           Fees: excelFlag(flags.fees),
           Stips: excelFlag(flags.stips),
-          Other: excelFlag(flags.other),
+          Counter: excelFlag(flags.counter),
+          Cobuyer: excelFlag(flags.cobuyer),
           'No reason': excelFlag(flags.noReason),
           Detail: (note.noteText || '').trim(),
           By: note.createdByName || '',
@@ -428,6 +432,10 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
   const lossReasonBuckets = useMemo(
     () => groupNotesByLossReason(filteredNotes),
     [filteredNotes],
+  );
+  const rankedLenders = useMemo(
+    () => ensureOtherBankRow(insights?.whoLosingTo || [], filteredNotes),
+    [insights, filteredNotes],
   );
 
   const totalPages = Math.max(1, Math.ceil(filteredNotes.length / NOTES_PER_PAGE));
@@ -647,8 +655,8 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
               <div className="flex items-center gap-3">
                 <span className="text-xs text-dss-muted">
                   Analyzed {insights.noteCountAnalyzed} note{insights.noteCountAnalyzed !== 1 ? 's' : ''}
-                  {insights.whoLosingTo?.length > 0 && (
-                    <> · {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''}</>
+                  {rankedLenders.length > 0 && (
+                    <> · {rankedLenders.length} bank{rankedLenders.length !== 1 ? 's' : ''}</>
                   )}
                 </span>
                 {!viewingSavedId && (
@@ -672,7 +680,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
 
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
             <h3 className="text-sm font-semibold text-dss-ink mb-3">Why we lost</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               {lossReasonBuckets.map(bucket => (
                 <div
                   key={bucket.key}
@@ -680,31 +688,6 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
                 >
                   <p className="text-lg font-bold text-dss-ink">{bucket.count}</p>
                   <p className="text-xs text-dss-muted">{bucket.label}</p>
-                </div>
-              ))}
-            </div>
-            <div className="space-y-3">
-              {lossReasonBuckets.filter(bucket => bucket.count > 0).map(bucket => (
-                <div key={`${bucket.key}-apps`}>
-                  <p className="text-xs font-medium text-dss-muted uppercase tracking-wider mb-1.5">
-                    {bucket.label} · {bucket.count}
-                  </p>
-                  {bucket.appIds.length === 0 ? (
-                    <p className="text-sm text-dss-muted">No app IDs on these notes.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {bucket.appIds.map(appId => (
-                        <button
-                          key={`${bucket.key}-${appId}`}
-                          type="button"
-                          onClick={() => onOpenApp?.(appId)}
-                          className="px-2 py-1 rounded-dss-sm border border-dss-navy-soft bg-dss-accent-soft/40 text-xs font-semibold text-dss-accent hover:bg-dss-accent-soft"
-                        >
-                          {appId}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
@@ -723,22 +706,24 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
             <h3 className="text-sm font-semibold text-amber-800 mb-3">
               Who are we losing to?
-              {insights.whoLosingTo.length > 0 && (
+              {rankedLenders.length > 0 && (
                 <span className="ml-2 text-xs font-normal text-dss-muted">
-                  {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''} named in notes
+                  most notes first
                 </span>
               )}
             </h3>
-            {insights.whoLosingTo.length === 0 ? (
-              <p className="text-sm text-dss-muted">No specific banks or finance companies were named in these notes.</p>
+            {rankedLenders.length === 0 ? (
+              <p className="text-sm text-dss-muted">No banks named, and no unnamed send-outs in these notes.</p>
             ) : (
               <div className="space-y-3">
-                {insights.whoLosingTo.map((row, idx) => (
+                {rankedLenders.map((row, idx) => (
                   <div key={`${row.competitor}-${idx}`} className="border border-dss-border rounded-dss-sm p-4 bg-dss-canvas">
                     <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                      <p className="text-sm font-semibold text-dss-accent">{row.competitor}</p>
+                      <p className="text-sm font-semibold text-dss-accent">
+                        {idx + 1}. {row.competitor}
+                      </p>
                       <span className="text-xs text-dss-muted">
-                        mentioned ~{row.mentionCount}×
+                        {row.mentionCount} note{row.mentionCount === 1 ? '' : 's'}
                       </span>
                     </div>
                     <LinkifiedText
