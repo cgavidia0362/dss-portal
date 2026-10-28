@@ -1,6 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { excludeKnownDealersFromLenders, uniqueDealerNames } from '../lib/notesInsights';
+import {
+  classifyLossReasons,
+  excelFlag,
+  groupNotesByLossReason,
+  splitTextByAppIds,
+  uniqueAppIds,
+} from '../lib/lossReasons';
 import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X, Download } from 'lucide-react';
 import { exportRowsToExcel } from '../lib/exportExcel';
 
@@ -26,6 +33,7 @@ interface User {
 interface NotesTabProps {
   currentUser: User;
   users: User[];
+  onOpenApp?: (appId: string) => void;
 }
 
 interface LossInsights {
@@ -75,7 +83,39 @@ const formatDateLabel = (from: string, to: string) => {
   return `${fDate} — ${tDate}`;
 };
 
-export default function NotesTab({ currentUser, users }: NotesTabProps) {
+function LinkifiedText({
+  text,
+  appIds,
+  onOpenApp,
+  className,
+}: {
+  text: string;
+  appIds: string[];
+  onOpenApp?: (appId: string) => void;
+  className?: string;
+}) {
+  const parts = splitTextByAppIds(text, appIds);
+  return (
+    <p className={className}>
+      {parts.map((part, i) =>
+        part.type === 'app' && onOpenApp ? (
+          <button
+            key={`${part.value}-${i}`}
+            type="button"
+            onClick={() => onOpenApp(part.value)}
+            className="font-semibold text-dss-accent hover:underline"
+          >
+            {part.value}
+          </button>
+        ) : (
+          <span key={i}>{part.value}</span>
+        )
+      )}
+    </p>
+  );
+}
+
+export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProps) {
   const today = getTodayString();
   const isAdminOrManager = currentUser.role === 'admin' || currentUser.role === 'manager';
 
@@ -243,6 +283,12 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
         return;
       }
 
+      const lossReasonBreakdown = groupNotesByLossReason(notesForAi).map(bucket => ({
+        category: bucket.label,
+        count: bucket.count,
+        appIds: bucket.appIds.slice(0, 25),
+      }));
+
       const { data, error } = await supabase.functions.invoke('notes-insights', {
         body: {
           dateRangeLabel: formatDateLabel(dateFrom, dateTo),
@@ -255,6 +301,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             createdAt: n.createdAt,
             source: n.source,
           })),
+          lossReasonBreakdown,
         },
       });
 
@@ -351,20 +398,37 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       ? `notes-${dateFrom}.xlsx`
       : `notes-${dateFrom}-to-${dateTo}.xlsx`;
     exportRowsToExcel(
-      filteredNotes.map(note => ({
-        'App ID': note.appId || '',
-        Dealer: note.dealerName || '',
-        Customer: note.customerName || '',
-        Source: note.source === 'calls' ? 'Calls' : 'Daily Deals',
-        Status: note.fuStatus || 'No Deal',
-        Notes: (note.noteText || '').trim(),
-        By: note.createdByName || '',
-        Date: new Date(note.createdAt).toLocaleString('en-US'),
-      })),
+      filteredNotes.map(note => {
+        const flags = classifyLossReasons(note.noteText);
+        return {
+          'App ID': note.appId || '',
+          Dealer: note.dealerName || '',
+          Customer: note.customerName || '',
+          Source: note.source === 'calls' ? 'Calls' : 'Daily Deals',
+          Status: note.fuStatus || 'No Deal',
+          APR: excelFlag(flags.apr),
+          Fees: excelFlag(flags.fees),
+          Stips: excelFlag(flags.stips),
+          Other: excelFlag(flags.other),
+          'No reason': excelFlag(flags.noReason),
+          Detail: (note.noteText || '').trim(),
+          By: note.createdByName || '',
+          Date: new Date(note.createdAt).toLocaleString('en-US'),
+        };
+      }),
       'Notes',
       filename,
     );
   };
+
+  const knownAppIds = useMemo(
+    () => uniqueAppIds(filteredNotes.map(note => note.appId)),
+    [filteredNotes],
+  );
+  const lossReasonBuckets = useMemo(
+    () => groupNotesByLossReason(filteredNotes),
+    [filteredNotes],
+  );
 
   const totalPages = Math.max(1, Math.ceil(filteredNotes.length / NOTES_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
@@ -598,12 +662,62 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                 )}
               </div>
             </div>
-            <p className="text-sm text-dss-ink leading-relaxed whitespace-pre-line">{insights.overallSummary}</p>
+            <LinkifiedText
+              text={insights.overallSummary}
+              appIds={knownAppIds}
+              onOpenApp={onOpenApp}
+              className="text-sm text-dss-ink leading-relaxed whitespace-pre-line"
+            />
+          </div>
+
+          <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
+            <h3 className="text-sm font-semibold text-dss-ink mb-3">Why we lost</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
+              {lossReasonBuckets.map(bucket => (
+                <div
+                  key={bucket.key}
+                  className="rounded-dss-sm border border-dss-border bg-dss-canvas px-3 py-2 text-center"
+                >
+                  <p className="text-lg font-bold text-dss-ink">{bucket.count}</p>
+                  <p className="text-xs text-dss-muted">{bucket.label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-3">
+              {lossReasonBuckets.filter(bucket => bucket.count > 0).map(bucket => (
+                <div key={`${bucket.key}-apps`}>
+                  <p className="text-xs font-medium text-dss-muted uppercase tracking-wider mb-1.5">
+                    {bucket.label} · {bucket.count}
+                  </p>
+                  {bucket.appIds.length === 0 ? (
+                    <p className="text-sm text-dss-muted">No app IDs on these notes.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {bucket.appIds.map(appId => (
+                        <button
+                          key={`${bucket.key}-${appId}`}
+                          type="button"
+                          onClick={() => onOpenApp?.(appId)}
+                          className="px-2 py-1 rounded-dss-sm border border-dss-navy-soft bg-dss-accent-soft/40 text-xs font-semibold text-dss-accent hover:bg-dss-accent-soft"
+                        >
+                          {appId}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
             <h3 className="text-sm font-semibold text-dss-danger mb-2">Why are we losing — and how are they beating us?</h3>
-            <p className="text-sm text-dss-ink leading-relaxed whitespace-pre-line">{insights.lossSummary}</p>
+            <LinkifiedText
+              text={insights.lossSummary}
+              appIds={knownAppIds}
+              onOpenApp={onOpenApp}
+              className="text-sm text-dss-ink leading-relaxed whitespace-pre-line"
+            />
           </div>
 
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
@@ -627,7 +741,12 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                         mentioned ~{row.mentionCount}×
                       </span>
                     </div>
-                    <p className="text-sm text-dss-ink/80 leading-relaxed">{row.howTheyBeatUs}</p>
+                    <LinkifiedText
+                      text={row.howTheyBeatUs}
+                      appIds={knownAppIds}
+                      onOpenApp={onOpenApp}
+                      className="text-sm text-dss-ink/80 leading-relaxed"
+                    />
                   </div>
                 ))}
               </div>
@@ -720,7 +839,17 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               >
                 <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                   <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="text-sm font-semibold text-dss-accent">{note.appId || '—'}</span>
+                    {note.appId && onOpenApp ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenApp(note.appId)}
+                        className="text-sm font-semibold text-dss-accent hover:underline"
+                      >
+                        {note.appId}
+                      </button>
+                    ) : (
+                      <span className="text-sm font-semibold text-dss-accent">{note.appId || '—'}</span>
+                    )}
                     <span className="text-sm text-dss-ink">{note.dealerName || '—'}</span>
                     {note.customerName && (
                       <span className="text-sm text-dss-muted">{note.customerName}</span>

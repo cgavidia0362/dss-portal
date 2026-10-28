@@ -128,6 +128,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const [activeTab, setActiveTab] = useState('calls');
+  const [callsSearchSeed, setCallsSearchSeed] = useState<string | null>(null);
   const [calls, setCalls] = useState<Call[]>([]);
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [notes, setNotes] = useState<CallNote[]>([]);
@@ -723,6 +724,8 @@ function App() {
                 users={users}
                 dealerAlerts={dealerAlerts}
                 setDealerAlerts={setDealerAlerts}
+                searchSeed={callsSearchSeed}
+                onSearchSeedConsumed={() => setCallsSearchSeed(null)}
               />
             )}
 
@@ -801,6 +804,10 @@ function App() {
               <NotesTab
                 currentUser={currentUser}
                 users={users}
+                onOpenApp={(appId) => {
+                  setCallsSearchSeed(appId);
+                  setActiveTab('calls');
+                }}
               />
             )}
 

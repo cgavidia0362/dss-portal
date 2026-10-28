@@ -99,6 +99,8 @@ interface CallsTabProps {
   users?: User[];
   dealerAlerts?: DealerAlert[];
   setDealerAlerts?: React.Dispatch<React.SetStateAction<DealerAlert[]>>;
+  searchSeed?: string | null;
+  onSearchSeedConsumed?: () => void;
 }
 
 type SortField = 'applicationId' | 'dealerName' | 'state' | 'submittedDate' | 'fuStatus' | 'buyerFinal' | 'statusLast' | 'customerName' | 'updatedAt';
@@ -234,6 +236,7 @@ export default function CallsTab({
   currentUserId, currentUserRole, calls, setCalls, notes, setNotes,
   dailyGoal, teamGoal, currentUser, onUpdateCurrentUser, todayDailyDeals, users,
   dealerAlerts = [], setDealerAlerts,
+  searchSeed = null, onSearchSeedConsumed,
 }: CallsTabProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -305,6 +308,13 @@ export default function CallsTab({
     if (currentUser?.allowedStatuses?.length) return currentUser.allowedStatuses;
     return users?.find(u => u.id === currentUserId)?.allowedStatuses || [];
   }, [currentUser?.allowedStatuses, users, currentUserId]);
+
+  useEffect(() => {
+    if (!searchSeed) return;
+    setSearchQuery(searchSeed);
+    setShowCompleted(true);
+    onSearchSeedConsumed?.();
+  }, [searchSeed, onSearchSeedConsumed]);
 
   useEffect(() => {
     if (!isRep || !currentUserId) return;

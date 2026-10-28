@@ -68,7 +68,7 @@ describe('Calls and Notes Excel exports', () => {
     expect(table[2][10]).toBe('');
   });
 
-  it('puts each note in the Notes tab spreadsheet', () => {
+  it('puts each note in the Notes tab spreadsheet with loss-reason flags', () => {
     const rows = [
       {
         'App ID': 'DTBFJ6821678',
@@ -76,15 +76,21 @@ describe('Calls and Notes Excel exports', () => {
         Customer: 'Luis Rodriguez Ruiz',
         Source: 'Calls',
         Status: 'No Deal',
-        Notes: 'Customer went with another lender on rate',
+        APR: 1,
+        Fees: '',
+        Stips: '',
+        Other: '',
+        'No reason': '',
+        Detail: '11% APR at another dealer',
         By: 'Stephan',
         Date: '10/21/2026, 2:31:00 PM',
       },
     ];
 
     const wb = buildExcelWorkbook(rows, 'Notes');
-    const json = XLSX.utils.sheet_to_json<Record<string, string>>(wb.Sheets.Notes);
-    expect(json[0].Notes).toBe('Customer went with another lender on rate');
+    const json = XLSX.utils.sheet_to_json<Record<string, string | number>>(wb.Sheets.Notes);
+    expect(json[0].APR).toBe(1);
+    expect(json[0].Detail).toBe('11% APR at another dealer');
     expect(json[0].By).toBe('Stephan');
     expect(json[0].Source).toBe('Calls');
   });

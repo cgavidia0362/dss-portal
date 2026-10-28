@@ -29,6 +29,12 @@ interface InsightsResult {
   dateRangeLabel: string;
 }
 
+interface LossReasonBreakdownRow {
+  category: string;
+  count: number;
+  appIds: string[];
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -53,6 +59,7 @@ Reps leave notes when deals are lost. Your job is to extract competitive intelli
 Answer these questions based ONLY on the notes provided:
 1. Why are we losing deals AND how are competitors beating us? Cover both in one combined summary (themes: co-signer requirements, pricing, approval strength, more money / higher advance, better net check, lower fees, lower rate, better terms, faster funding, process friction, abandonment, etc.).
 2. Who are we losing deals to? List EVERY bank / lender / finance company named as the competing FUNDING source (e.g. Westlake, Credit Acceptance, Capital One, Exeter, DriveTime lender, CAC, Strike, Santander). Do not skip uncommon lender names. Do not merge different lenders unless they are clearly the same company (e.g. "Cap One" and "Capital One").
+3. Break down losses by reason category: APR (rate / interest), Fees, Stips (stipulations / extra conditions), Other specific reasons, and No reason listed. Use the pre-counted buckets when provided. When you cite an example, include the App ID from that note (e.g. App DTBFJ123) so a manager can open it.
 
 CRITICAL — dealers are not lenders:
 - The rooftop on each note (Dealer: ...) is a car dealer, never a competitor lender.
@@ -66,7 +73,7 @@ Respond with ONLY valid JSON — no markdown, no code fences.
 
 Schema:
 {
-  "lossSummary": "<2-4 paragraphs combining WHY we lose and HOW competitor lenders beat us into one cohesive summary. Do not split into separate why/how sections. Be specific and cite patterns from the notes.>",
+  "lossSummary": "<2-4 paragraphs combining WHY we lose and HOW competitor lenders beat us into one cohesive summary. Cover APR vs Fees vs Stips vs Other vs No reason when those show up. Do not split into separate why/how sections. Be specific, cite patterns, and include App IDs when referencing a specific deal.>",
   "whoLosingTo": [
     {
       "competitor": "<bank or lender name — use the clearest common spelling>",
@@ -120,7 +127,39 @@ function excludeKnownDealers(
   return rows.filter((row) => !isKnownDealerName(row.competitor, dealerNames));
 }
 
-function buildUserPrompt(notes: NoteInput[], dateRangeLabel: string, dealerNames: string[]): string {
+function parseLossReasonBreakdown(raw: unknown): LossReasonBreakdownRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const r = row as Record<string, unknown>;
+    const category = typeof r.category === "string" ? r.category.trim() : "";
+    if (!category) return [];
+    const count = Number(r.count) || 0;
+    const appIds = Array.isArray(r.appIds)
+      ? r.appIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+      : [];
+    return [{ category, count, appIds }];
+  });
+}
+
+function formatLossReasonBreakdown(rows: LossReasonBreakdownRow[]): string {
+  if (rows.length === 0) return "";
+  const lines = rows.map((row) => {
+    const apps = row.appIds.length > 0 ? row.appIds.join(", ") : "none";
+    return `- ${row.category}: ${row.count} note(s). App IDs: ${apps}`;
+  });
+  return `Pre-counted loss-reason buckets (use these counts; cite App IDs when giving examples):
+${lines.join("\n")}
+
+`;
+}
+
+function buildUserPrompt(
+  notes: NoteInput[],
+  dateRangeLabel: string,
+  dealerNames: string[],
+  lossReasonBreakdown: LossReasonBreakdownRow[] = [],
+): string {
   const lines = notes.map((n, i) => {
     const meta = [
       n.createdByName || "Unknown rep",
@@ -140,7 +179,7 @@ function buildUserPrompt(notes: NoteInput[], dateRangeLabel: string, dealerNames
 
 Total notes: ${notes.length}
 
-Known dealers (NEVER list these in whoLosingTo — they are rooftops, not lenders):
+${formatLossReasonBreakdown(lossReasonBreakdown)}Known dealers (NEVER list these in whoLosingTo — they are rooftops, not lenders):
 ${dealerList}
 
 ${lines.join("\n\n")}`;
@@ -279,6 +318,7 @@ Deno.serve(async (req) => {
     const dateRangeLabel = typeof body?.dateRangeLabel === "string"
       ? body.dateRangeLabel
       : "Selected range";
+    const lossReasonBreakdown = parseLossReasonBreakdown(body?.lossReasonBreakdown);
 
     const usable = notes.filter((n) =>
       n && typeof n.noteText === "string" && n.noteText.trim().length > 0
@@ -292,7 +332,7 @@ Deno.serve(async (req) => {
     const ranked = [...usable].sort((a, b) => (b.noteText?.length || 0) - (a.noteText?.length || 0));
     const capped = ranked.slice(0, 300);
     const dealerNames = uniqueDealerNames(capped);
-    const ai = await callOpenAI(buildUserPrompt(capped, dateRangeLabel, dealerNames));
+    const ai = await callOpenAI(buildUserPrompt(capped, dateRangeLabel, dealerNames, lossReasonBreakdown));
     ai.whoLosingTo = excludeKnownDealers(ai.whoLosingTo, dealerNames);
 
     const result: InsightsResult = {
