@@ -250,6 +250,42 @@ Score the WHOLE package: mileage, year, engine reliability, make/model reputatio
 Return the simplified JSON report now.`;
 }
 
+function isGpt5Model(model: string): boolean {
+  return /gpt-5/i.test(model);
+}
+
+function openAIErrorMessage(status: number, errorBody: string): string {
+  try {
+    const parsed = JSON.parse(errorBody) as { error?: { message?: string } };
+    if (typeof parsed?.error?.message === "string" && parsed.error.message.trim()) {
+      return parsed.error.message.trim();
+    }
+  } catch {
+    // Fall through to the status-only message.
+  }
+  return `OpenAI API request failed (${status})`;
+}
+
+function openAIChatBody(params: {
+  model: string;
+  messages: unknown[];
+  maxOutputTokens: number;
+  temperature?: number;
+}) {
+  const body: Record<string, unknown> = {
+    model: params.model,
+    response_format: { type: "json_object" },
+    messages: params.messages,
+  };
+  if (isGpt5Model(params.model)) {
+    body.max_completion_tokens = params.maxOutputTokens;
+  } else {
+    body.max_tokens = params.maxOutputTokens;
+    if (typeof params.temperature === "number") body.temperature = params.temperature;
+  }
+  return body;
+}
+
 async function callOpenAIVision(
   imageBase64: string,
   mediaType: ExtractRequestBody["mediaType"],
@@ -259,17 +295,20 @@ async function callOpenAIVision(
     throw new Error("OPENAI_API_KEY is not configured");
   }
 
+  const model = Deno.env.get("OPENAI_VISION_MODEL")
+    || Deno.env.get("OPENAI_MODEL")
+    || "gpt-5.4-mini";
+
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: "gpt-4.1-mini",
-      max_tokens: 256,
+    body: JSON.stringify(openAIChatBody({
+      model,
+      maxOutputTokens: 256,
       temperature: 0,
-      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: EXTRACT_SYSTEM_PROMPT },
         {
@@ -288,13 +327,13 @@ async function callOpenAIVision(
           ],
         },
       ],
-    }),
+    })),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
     console.error("OpenAI vision API error:", response.status, errorBody);
-    throw new Error(`OpenAI API request failed (${response.status})`);
+    throw new Error(openAIErrorMessage(response.status, errorBody));
   }
 
   const result = await response.json();
@@ -318,28 +357,31 @@ async function callOpenAI(userPrompt: string): Promise<VehicleRiskReport> {
     throw new Error("OPENAI_API_KEY is not configured");
   }
 
+  const model = Deno.env.get("OPENAI_CLASSIFICATION_MODEL")
+    || Deno.env.get("OPENAI_MODEL")
+    || "gpt-5.4-mini";
+
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: "gpt-4.1",
-      max_tokens: 2048,
+    body: JSON.stringify(openAIChatBody({
+      model,
+      maxOutputTokens: 2048,
       temperature: 0.2,
-      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
-    }),
+    })),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
     console.error("OpenAI API error:", response.status, errorBody);
-    throw new Error(`OpenAI API request failed (${response.status})`);
+    throw new Error(openAIErrorMessage(response.status, errorBody));
   }
 
   const result = await response.json();

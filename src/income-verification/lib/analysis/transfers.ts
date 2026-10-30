@@ -17,6 +17,9 @@ function hasTransferHint(tx: Transaction): boolean {
 }
 
 function differentAccounts(a: Transaction, b: Transaction): boolean {
+  if (a.sourceAccountLabel && b.sourceAccountLabel && a.sourceAccountLabel !== b.sourceAccountLabel) {
+    return true;
+  }
   if (a.sourceAccount && b.sourceAccount && a.sourceAccount !== b.sourceAccount) {
     return true;
   }

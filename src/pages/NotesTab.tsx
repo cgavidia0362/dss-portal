@@ -1,6 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X } from 'lucide-react';
+import { excludeKnownDealersFromLenders, uniqueDealerNames } from '../lib/notesInsights';
+import {
+  classifyLossReasons,
+  excelFlag,
+  ensureOtherBankRow,
+  groupNotesByLossReason,
+  splitTextByAppIds,
+  uniqueAppIds,
+} from '../lib/lossReasons';
+import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X, Download } from 'lucide-react';
+import { exportRowsToExcel } from '../lib/exportExcel';
 
 interface CombinedNote {
   id: string;
@@ -24,6 +34,7 @@ interface User {
 interface NotesTabProps {
   currentUser: User;
   users: User[];
+  onOpenApp?: (appId: string) => void;
 }
 
 interface LossInsights {
@@ -73,7 +84,39 @@ const formatDateLabel = (from: string, to: string) => {
   return `${fDate} — ${tDate}`;
 };
 
-export default function NotesTab({ currentUser, users }: NotesTabProps) {
+function LinkifiedText({
+  text,
+  appIds,
+  onOpenApp,
+  className,
+}: {
+  text: string;
+  appIds: string[];
+  onOpenApp?: (appId: string) => void;
+  className?: string;
+}) {
+  const parts = splitTextByAppIds(text, appIds);
+  return (
+    <p className={className}>
+      {parts.map((part, i) =>
+        part.type === 'app' && onOpenApp ? (
+          <button
+            key={`${part.value}-${i}`}
+            type="button"
+            onClick={() => onOpenApp(part.value)}
+            className="font-semibold text-dss-accent hover:underline"
+          >
+            {part.value}
+          </button>
+        ) : (
+          <span key={i}>{part.value}</span>
+        )
+      )}
+    </p>
+  );
+}
+
+export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProps) {
   const today = getTodayString();
   const isAdminOrManager = currentUser.role === 'admin' || currentUser.role === 'manager';
 
@@ -241,6 +284,11 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
         return;
       }
 
+      const lossReasonBreakdown = groupNotesByLossReason(notesForAi).map(bucket => ({
+        category: bucket.label,
+        count: bucket.count,
+      }));
+
       const { data, error } = await supabase.functions.invoke('notes-insights', {
         body: {
           dateRangeLabel: formatDateLabel(dateFrom, dateTo),
@@ -253,6 +301,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             createdAt: n.createdAt,
             source: n.source,
           })),
+          lossReasonBreakdown,
         },
       });
 
@@ -260,7 +309,15 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       if (data?.error) throw new Error(data.error);
       if (!data?.lossSummary) throw new Error('Unexpected AI response');
 
-      setInsights(data as LossInsights);
+      const dealerNames = uniqueDealerNames(notesForAi.map(n => n.dealerName));
+      const insightsData = data as LossInsights;
+      setInsights({
+        ...insightsData,
+        whoLosingTo: ensureOtherBankRow(
+          excludeKnownDealersFromLenders(insightsData.whoLosingTo || [], dealerNames),
+          notesForAi,
+        ),
+      });
       setViewingSavedId(null);
       setSaveMessage('');
     } catch (err: any) {
@@ -337,6 +394,47 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
     if (filterSource && n.source !== filterSource) return false;
     return true;
   });
+
+  const exportFilteredNotes = () => {
+    if (filteredNotes.length === 0) return;
+    const filename = dateFrom === dateTo
+      ? `notes-${dateFrom}.xlsx`
+      : `notes-${dateFrom}-to-${dateTo}.xlsx`;
+    exportRowsToExcel(
+      filteredNotes.map(note => {
+        const flags = classifyLossReasons(note.noteText);
+        return {
+          'App ID': note.appId || '',
+          Dealer: note.dealerName || '',
+          Customer: note.customerName || '',
+          Source: note.source === 'calls' ? 'Calls' : 'Daily Deals',
+          Status: note.fuStatus || 'No Deal',
+          APR: excelFlag(flags.apr),
+          Fees: excelFlag(flags.fees),
+          Stips: excelFlag(flags.stips),
+          'No reason': excelFlag(flags.noReason),
+          Detail: (note.noteText || '').trim(),
+          By: note.createdByName || '',
+          Date: new Date(note.createdAt).toLocaleString('en-US'),
+        };
+      }),
+      'Notes',
+      filename,
+    );
+  };
+
+  const knownAppIds = useMemo(
+    () => uniqueAppIds(filteredNotes.map(note => note.appId)),
+    [filteredNotes],
+  );
+  const lossReasonBuckets = useMemo(
+    () => groupNotesByLossReason(filteredNotes),
+    [filteredNotes],
+  );
+  const rankedLenders = useMemo(
+    () => ensureOtherBankRow(insights?.whoLosingTo || [], filteredNotes),
+    [insights, filteredNotes],
+  );
 
   const totalPages = Math.max(1, Math.ceil(filteredNotes.length / NOTES_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
@@ -502,7 +600,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             </span>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           {callsCount > 0 && (
             <span className="text-xs px-2.5 py-1 bg-dss-accent-soft bg-opacity-40 text-dss-accent rounded-full border border-dss-navy-soft">
               {callsCount} from Calls
@@ -513,6 +611,15 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               {dealCount} from Daily Deals
             </span>
           )}
+          <button
+            type="button"
+            onClick={exportFilteredNotes}
+            disabled={filteredNotes.length === 0 || loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
+          </button>
         </div>
       </div>
 
@@ -546,8 +653,8 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               <div className="flex items-center gap-3">
                 <span className="text-xs text-dss-muted">
                   Analyzed {insights.noteCountAnalyzed} note{insights.noteCountAnalyzed !== 1 ? 's' : ''}
-                  {insights.whoLosingTo?.length > 0 && (
-                    <> · {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''}</>
+                  {rankedLenders.length > 0 && (
+                    <> · {rankedLenders.length} bank{rankedLenders.length !== 1 ? 's' : ''}</>
                   )}
                 </span>
                 {!viewingSavedId && (
@@ -561,36 +668,68 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                 )}
               </div>
             </div>
-            <p className="text-sm text-dss-ink leading-relaxed whitespace-pre-line">{insights.overallSummary}</p>
+            <LinkifiedText
+              text={insights.overallSummary}
+              appIds={knownAppIds}
+              onOpenApp={onOpenApp}
+              className="text-sm text-dss-ink leading-relaxed whitespace-pre-line"
+            />
+          </div>
+
+          <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
+            <h3 className="text-sm font-semibold text-dss-ink mb-3">Why we lost</h3>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              {lossReasonBuckets.map(bucket => (
+                <div
+                  key={bucket.key}
+                  className="rounded-dss-sm border border-dss-border bg-dss-canvas px-3 py-2 text-center"
+                >
+                  <p className="text-lg font-bold text-dss-ink">{bucket.count}</p>
+                  <p className="text-xs text-dss-muted">{bucket.label}</p>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
             <h3 className="text-sm font-semibold text-dss-danger mb-2">Why are we losing — and how are they beating us?</h3>
-            <p className="text-sm text-dss-ink leading-relaxed whitespace-pre-line">{insights.lossSummary}</p>
+            <LinkifiedText
+              text={insights.lossSummary}
+              appIds={knownAppIds}
+              onOpenApp={onOpenApp}
+              className="text-sm text-dss-ink leading-relaxed whitespace-pre-line"
+            />
           </div>
 
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
             <h3 className="text-sm font-semibold text-amber-800 mb-3">
               Who are we losing to?
-              {insights.whoLosingTo.length > 0 && (
+              {rankedLenders.length > 0 && (
                 <span className="ml-2 text-xs font-normal text-dss-muted">
-                  {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''} named in notes
+                  most notes first
                 </span>
               )}
             </h3>
-            {insights.whoLosingTo.length === 0 ? (
-              <p className="text-sm text-dss-muted">No specific banks or finance companies were named in these notes.</p>
+            {rankedLenders.length === 0 ? (
+              <p className="text-sm text-dss-muted">No banks named, and no unnamed send-outs in these notes.</p>
             ) : (
               <div className="space-y-3">
-                {insights.whoLosingTo.map((row, idx) => (
+                {rankedLenders.map((row, idx) => (
                   <div key={`${row.competitor}-${idx}`} className="border border-dss-border rounded-dss-sm p-4 bg-dss-canvas">
                     <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                      <p className="text-sm font-semibold text-dss-accent">{row.competitor}</p>
+                      <p className="text-sm font-semibold text-dss-accent">
+                        {idx + 1}. {row.competitor}
+                      </p>
                       <span className="text-xs text-dss-muted">
-                        mentioned ~{row.mentionCount}×
+                        {row.mentionCount} note{row.mentionCount === 1 ? '' : 's'}
                       </span>
                     </div>
-                    <p className="text-sm text-dss-ink/80 leading-relaxed">{row.howTheyBeatUs}</p>
+                    <LinkifiedText
+                      text={row.howTheyBeatUs}
+                      appIds={knownAppIds}
+                      onOpenApp={onOpenApp}
+                      className="text-sm text-dss-ink/80 leading-relaxed"
+                    />
                   </div>
                 ))}
               </div>
@@ -683,7 +822,17 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               >
                 <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                   <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="text-sm font-semibold text-dss-accent">{note.appId || '—'}</span>
+                    {note.appId && onOpenApp ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenApp(note.appId)}
+                        className="text-sm font-semibold text-dss-accent hover:underline"
+                      >
+                        {note.appId}
+                      </button>
+                    ) : (
+                      <span className="text-sm font-semibold text-dss-accent">{note.appId || '—'}</span>
+                    )}
                     <span className="text-sm text-dss-ink">{note.dealerName || '—'}</span>
                     {note.customerName && (
                       <span className="text-sm text-dss-muted">{note.customerName}</span>

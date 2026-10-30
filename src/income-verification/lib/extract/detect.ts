@@ -1,5 +1,6 @@
 import type { DocumentType } from '../analysis/types';
 import { isChaseStatement } from './chase';
+import { isFirstBankStatement } from './firstBank';
 import { isLakeForestStyleStatement } from './lakeForest';
 import { isNavyFederalStatement } from './navyFederal';
 import type { InstitutionId } from './documentModel';
@@ -55,6 +56,7 @@ export function detectInstitution(fileName: string, text: string): InstitutionId
 
   const haystack = `${fileName}\n${text.slice(0, 8000)}`;
   if (isChaseStatement(text) || /jpmorgan|chase\.com/i.test(haystack)) return 'chase';
+  if (isFirstBankStatement(text) || /015-cuenta todo/i.test(haystack)) return 'first_bank';
   if (isNavyFederalStatement(text) || /navy federal|\bnfcu\b/i.test(haystack)) return 'navy_federal';
   if (isWellsFargoStatement(text) || /wells fargo/i.test(haystack)) return 'wells_fargo';
   if (isLakeForestStyleStatement(text) || /lake forest bank/i.test(haystack)) return 'lake_forest';
@@ -80,6 +82,8 @@ export function parserLabel(institution: InstitutionId): string {
       return 'Navy Federal parser';
     case 'chase':
       return 'Chase parser';
+    case 'first_bank':
+      return 'FirstBank parser';
     case 'wells_fargo':
       return 'Wells Fargo parser';
     case 'lake_forest':

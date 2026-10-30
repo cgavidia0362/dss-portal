@@ -34,6 +34,7 @@ type ReconTransaction = {
   direction: MoneyDirection;
   amount: number;
   sourceAccount?: string | null;
+  sourceAccountLabel?: string | null;
 };
 
 function centsOrNull(value: number | null | undefined): number | null {
@@ -144,11 +145,25 @@ export function reconcileAgainstControls(
 
   const results = controls.map((control) => {
     const scoped =
-      control.accountLast4 == null
+      control.accountLast4 == null && control.accountLabel == null
         ? transactions
-        : transactions.filter(
-            (tx) => !tx.sourceAccount || tx.sourceAccount === control.accountLast4
-          );
+        : transactions.filter((tx) => {
+            if (
+              control.accountLast4 &&
+              tx.sourceAccount &&
+              tx.sourceAccount !== control.accountLast4
+            ) {
+              return false;
+            }
+            if (
+              control.accountLabel &&
+              tx.sourceAccountLabel &&
+              tx.sourceAccountLabel !== control.accountLabel
+            ) {
+              return false;
+            }
+            return true;
+          });
     return reconcileTransactions({
       transactions: scoped,
       expectedCreditTotal: control.creditTotal,
