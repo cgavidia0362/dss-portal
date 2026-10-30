@@ -412,8 +412,6 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
           APR: excelFlag(flags.apr),
           Fees: excelFlag(flags.fees),
           Stips: excelFlag(flags.stips),
-          Counter: excelFlag(flags.counter),
-          Cobuyer: excelFlag(flags.cobuyer),
           'No reason': excelFlag(flags.noReason),
           Detail: (note.noteText || '').trim(),
           By: note.createdByName || '',
@@ -680,7 +678,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
 
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
             <h3 className="text-sm font-semibold text-dss-ink mb-3">Why we lost</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
               {lossReasonBuckets.map(bucket => (
                 <div
                   key={bucket.key}

@@ -1,11 +1,9 @@
-export type LossReasonKey = 'apr' | 'fees' | 'stips' | 'counter' | 'cobuyer' | 'noReason';
+export type LossReasonKey = 'apr' | 'fees' | 'stips' | 'noReason';
 
 export type LossReasonFlags = {
   apr: boolean;
   fees: boolean;
   stips: boolean;
-  counter: boolean;
-  cobuyer: boolean;
   noReason: boolean;
 };
 
@@ -13,8 +11,6 @@ export const LOSS_REASON_ORDER: LossReasonKey[] = [
   'apr',
   'fees',
   'stips',
-  'counter',
-  'cobuyer',
   'noReason',
 ];
 
@@ -22,8 +18,6 @@ export const LOSS_REASON_LABELS: Record<LossReasonKey, string> = {
   apr: 'APR',
   fees: 'Fees',
   stips: 'Stips',
-  counter: 'Counter',
-  cobuyer: 'Cobuyer',
   noReason: 'No reason',
 };
 
@@ -31,9 +25,7 @@ export const OTHER_BANK_LABEL = 'Other bank';
 
 const APR_RE = /\bapr\b|\binterest(?:\s+rate)?\b|\bbuy[-\s]?rate\b|\b(?:lower|higher|better|high|low)\s+rate\b|\b\d+(?:\.\d+)?\s*%/;
 const FEES_RE = /\bfees?\b/;
-const STIPS_RE = /\bstips?\b|\bstipulation(?:s)?\b|\btoo many\s+(?:stips?|docs?|documents?)\b|\bextra\s+(?:conditions?|docs?|documents?|paperwork|stips?)\b|\badditional\s+(?:conditions?|docs?|documents?|paperwork|stips?)\b/;
-const COUNTER_RE = /\bfull(?:\s+the)?\s+(?:amount|call)\b|\bfull call\b|\bcalled the full(?:\s+(?:amount|call|deal))?\b|\bcalled full(?:\s+(?:amount|call))?\b|\bcounter(?:ed|s|ing)?\b|\bmore money\b|\bhigher advance\b|\bmore advance\b|\bbetter advance\b|\bgot the (?:full )?money\b|\bcalled more\b/;
-const COBUYER_RE = /\bco[-\s]?buyers?\b|\bco[-\s]?signers?\b|\bco[-\s]?sign(?:ing|ed)?\b|\bcobuy\b/;
+const STIPS_RE = /\bstips?\b|\bstipulation(?:s)?\b|\btoo many\s+(?:stips?|docs?|documents?)\b|\bextra\s+(?:conditions?|docs?|documents?|paperwork|stips?)\b|\badditional\s+(?:conditions?|docs?|documents?|paperwork|stips?)\b|\bco[-\s]?buyers?\b|\bco[-\s]?signers?\b|\bco[-\s]?sign(?:ing|ed)?\b|\bcobuy\b|\bfull(?:\s+the)?\s+(?:amount|call)\b|\bfull call\b|\bcalled the full(?:\s+(?:amount|call|deal))?\b|\bcalled full(?:\s+(?:amount|call))?\b|\bcounter(?:ed|s|ing)?\b|\bmore money\b|\bhigher advance\b|\bmore advance\b|\bbetter advance\b|\bgot the (?:full )?money\b|\bcalled more\b|\bcut(?:\s+\w+){0,3}\s+back\b/;
 const NO_REASON_RE = /\bno\s+reason(?:\s+listed)?\b|\bsent(?:\s+it)?\s+(?:elsewhere|out)\b|\bwent\s+elsewhere\b|\banother\s+(?:bank|lender)\b|\bclosed(?:\s+it)?\s+out\b|\bnone(?:\s+listed)?\b/;
 const UNNAMED_SEND_OUT_RE = /\bsent(?:\s+it)?\s+(?:elsewhere|out|to another)\b|\bwent\s+elsewhere\b|\banother\s+(?:bank|lender)\b|\bclosed(?:\s+it)?\s+out\b|\bno\s+reason(?:\s+listed)?\b/;
 const NAMED_LENDER_RE = /\bwent with (?!another\b)[a-z0-9]/i;
@@ -43,8 +35,6 @@ function emptyFlags(): LossReasonFlags {
     apr: false,
     fees: false,
     stips: false,
-    counter: false,
-    cobuyer: false,
     noReason: false,
   };
 }
@@ -57,16 +47,12 @@ export function classifyLossReasons(noteText: string): LossReasonFlags {
   const apr = APR_RE.test(lower);
   const fees = FEES_RE.test(lower);
   const stips = STIPS_RE.test(lower);
-  const counter = COUNTER_RE.test(lower);
-  const cobuyer = COBUYER_RE.test(lower);
-  const structured = apr || fees || stips || counter || cobuyer;
+  const structured = apr || fees || stips;
 
   return {
     apr,
     fees,
     stips,
-    counter,
-    cobuyer,
     noReason: !structured && NO_REASON_RE.test(lower),
   };
 }

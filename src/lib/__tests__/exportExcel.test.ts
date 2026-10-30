@@ -79,8 +79,6 @@ describe('Calls and Notes Excel exports', () => {
         APR: 1,
         Fees: '',
         Stips: '',
-        Counter: '',
-        Cobuyer: '',
         'No reason': '',
         Detail: '11% APR at another dealer',
         By: 'Stephan',
@@ -89,8 +87,16 @@ describe('Calls and Notes Excel exports', () => {
     ];
 
     const wb = buildExcelWorkbook(rows, 'Notes');
+    const table = XLSX.utils.sheet_to_json<(string | number)[]>(wb.Sheets.Notes, { header: 1 });
+    expect(table[0]).toEqual([
+      'App ID', 'Dealer', 'Customer', 'Source', 'Status',
+      'APR', 'Fees', 'Stips', 'No reason', 'Detail', 'By', 'Date',
+    ]);
     const json = XLSX.utils.sheet_to_json<Record<string, string | number>>(wb.Sheets.Notes);
     expect(json[0].APR).toBe(1);
+    expect(json[0].Stips).toBe('');
+    expect(json[0].Counter).toBeUndefined();
+    expect(json[0].Cobuyer).toBeUndefined();
     expect(json[0].Detail).toBe('11% APR at another dealer');
     expect(json[0].By).toBe('Stephan');
     expect(json[0].Source).toBe('Calls');

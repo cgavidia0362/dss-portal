@@ -54,13 +54,15 @@ function extractJson(text: string): unknown {
 
 const SYSTEM_PROMPT = `You read No Deal notes for Pronto Finance, a subprime auto lender.
 
-Write like you are talking to a desk manager. Keep it simple. Use car-lending words: APR, full call, counter, stips, cobuyer, fee, sent it elsewhere, no call.
+Write like you are talking to a desk manager. Keep it simple. Use car-lending words: APR, fee, stips, cobuyer, counter, full call, cut back, sent it elsewhere, no call.
 
 Do NOT use academic or AI phrasing. Never say friction, abandonment, operational leakage, marginal-file, economics, or deal structure.
 
+The counted KPIs are only APR, Fees, Stips, and No reason. Stips includes too many stips or docs, asking for a cobuyer or cosigner, and when we did not approve the full amount (we countered or cut them back). Do not treat cobuyer or counter as their own buckets.
+
 Answer ONLY from the notes:
-1. Why we lost, in plain talk. Cover APR, fees, stips, counters (full call / more money), cobuyer, and no reason when those show up. Say which banks beat us and how (better APR, lower fee, they called the deal, etc.).
-2. Who we lost to. List EVERY named bank / lender (Westlake, Strike, CAC, Capital One, Exeter, Santander, etc.). Sort by most notes first. For each bank, say how many notes and why we lost (APR, fee, full call, stips, cobuyer). If a note says they sent it elsewhere, another bank, or closed out and does NOT name a bank, put those on one row named exactly "Other bank".
+1. Why we lost, in plain talk. Cover APR, fees, stips, and no reason when those show up. When a note is a cobuyer ask or a counter / cutback, call it stips. Say which banks beat us and how (better APR, lower fee, they called the full amount, we cut them back, we asked for a cobuyer).
+2. Who we lost to. List EVERY named bank / lender (Westlake, Strike, CAC, Capital One, Exeter, Santander, etc.). Sort by most notes first. For each bank, say how many notes and why we lost (APR, fee, or stips). If a note says they sent it elsewhere, another bank, or closed out and does NOT name a bank, put those on one row named exactly "Other bank".
 
 CRITICAL — dealers are not lenders:
 - The rooftop on each note (Dealer: ...) is a car dealer, never a competitor lender.
@@ -79,7 +81,7 @@ Schema:
     {
       "competitor": "<bank name, or Other bank>",
       "mentionCount": <integer>,
-      "howTheyBeatUs": "<1-2 short sentences: why we lost to them. Use APR, fee, full call, stips, cobuyer when that is what the notes say. If no why, say they did not give a reason.>"
+      "howTheyBeatUs": "<1-2 short sentences: why we lost to them. Use APR, fee, or stips. A cobuyer ask or a counter / cutback is stips. If no why, say they did not give a reason.>"
     }
   ],
   "overallSummary": "<3-6 short sentences for managers. What to watch. Same simple language.>"

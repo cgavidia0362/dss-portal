@@ -11,8 +11,6 @@ const blank = {
   apr: false,
   fees: false,
   stips: false,
-  counter: false,
-  cobuyer: false,
   noReason: false,
 };
 
@@ -38,21 +36,30 @@ describe('classifyLossReasons', () => {
     });
   });
 
-  it('flags a full call / more money as Counter', () => {
-    expect(classifyLossReasons('Westlake called the full amount, we countered')).toMatchObject({
-      counter: true,
+  it('counts a counter or cutback as Stips', () => {
+    expect(classifyLossReasons('Westlake called the full amount, we countered')).toEqual({
+      ...blank,
+      stips: true,
     });
-    expect(classifyLossReasons('They got more money and a higher advance')).toMatchObject({
-      counter: true,
+    expect(classifyLossReasons('They got more money and a higher advance')).toEqual({
+      ...blank,
+      stips: true,
+    });
+    expect(classifyLossReasons('We did not approve the full amount, we cut them back')).toEqual({
+      ...blank,
+      stips: true,
     });
   });
 
-  it('flags cobuyer / cosigner requests', () => {
+  it('counts a cobuyer or cosigner ask as Stips', () => {
     expect(classifyLossReasons('Need a cobuyer to get this done')).toEqual({
       ...blank,
-      cobuyer: true,
+      stips: true,
     });
-    expect(classifyLossReasons('Asked for a co-signer')).toMatchObject({ cobuyer: true });
+    expect(classifyLossReasons('Asked for a co-signer')).toEqual({
+      ...blank,
+      stips: true,
+    });
   });
 
   it('flags sent elsewhere with no why as No reason', () => {
