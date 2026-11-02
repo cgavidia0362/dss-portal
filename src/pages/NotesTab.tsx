@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { excludeKnownDealersFromLenders, uniqueDealerNames } from '../lib/notesInsights';
+import { excludeKnownDealersFromLenders, latestNotePerApplication, uniqueDealerNames } from '../lib/notesInsights';
 import {
   classifyLossReasons,
   excelFlag,
@@ -260,10 +260,9 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
           fuStatus: n.daily_deals?.fu_status || undefined,
         })),
       ]
-        .filter(n => n.fuStatus === NO_DEAL_STATUS)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        .filter(n => n.fuStatus === NO_DEAL_STATUS);
 
-      setNotes(combined);
+      setNotes(latestNotePerApplication(combined));
     } catch (err) {
       console.error('Error fetching notes:', err);
     } finally {

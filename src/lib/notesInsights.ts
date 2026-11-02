@@ -38,3 +38,27 @@ export function excludeKnownDealersFromLenders<T extends LenderCompetitor>(
   if (dealerNames.length === 0) return rows;
   return rows.filter((row) => !isKnownDealerName(row.competitor, dealerNames));
 }
+
+function noteTime(value?: string | null): number {
+  const time = new Date(value || '').getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function latestNotePerApplication<T extends { appId?: string | null; createdAt?: string | null }>(
+  notes: T[],
+): T[] {
+  const sorted = [...notes].sort((a, b) => noteTime(b.createdAt) - noteTime(a.createdAt));
+  const seen = new Set<string>();
+  const latest: T[] = [];
+  for (const note of sorted) {
+    const key = (note.appId || '').trim().toLowerCase();
+    if (!key) {
+      latest.push(note);
+      continue;
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    latest.push(note);
+  }
+  return latest;
+}
