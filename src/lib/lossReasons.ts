@@ -37,22 +37,40 @@ function isClosedDenial(statusLast?: string | null): boolean {
   return value.includes('denial') || value.includes('declined');
 }
 
-export function countNoStatusApplications(
-  rows: Array<{ appId?: string | null; fuStatus?: string | null; statusLast?: string | null }>,
-): number {
+export function listNoStatusApplications<T extends { appId?: string | null; fuStatus?: string | null; statusLast?: string | null }>(
+  rows: T[],
+): T[] {
   const seen = new Set<string>();
-  let withoutAppId = 0;
+  const kept: T[] = [];
   for (const row of rows) {
     if (!isNoStatusFu(row.fuStatus)) continue;
     if ((row.fuStatus || '').trim().toLowerCase() === 'closed' && isClosedDenial(row.statusLast)) continue;
     const key = (row.appId || '').trim().toLowerCase();
     if (!key) {
-      withoutAppId += 1;
+      kept.push(row);
       continue;
     }
+    if (seen.has(key)) continue;
     seen.add(key);
+    kept.push(row);
   }
-  return seen.size + withoutAppId;
+  return kept;
+}
+
+export function countNoStatusApplications(
+  rows: Array<{ appId?: string | null; fuStatus?: string | null; statusLast?: string | null }>,
+): number {
+  return listNoStatusApplications(rows).length;
+}
+
+export function sortKpiApps<T extends { appId?: string | null }>(
+  rows: T[],
+  direction: 'asc' | 'desc',
+): T[] {
+  const sorted = [...rows].sort((a, b) =>
+    (a.appId || '').localeCompare(b.appId || '', undefined, { numeric: true, sensitivity: 'base' }),
+  );
+  return direction === 'asc' ? sorted : sorted.reverse();
 }
 
 const APR_RE = /\bapr\b|\binterest(?:\s+rate)?\b|\bbuy[-\s]?rate\b|\b(?:lower|higher|better|high|low)\s+rate\b|\b\d+(?:\.\d+)?\s*%/;

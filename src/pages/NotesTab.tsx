@@ -3,17 +3,35 @@ import { supabase } from '../lib/supabase';
 import { excludeKnownDealersFromLenders, latestNotePerApplication, uniqueDealerNames } from '../lib/notesInsights';
 import {
   classifyLossReasons,
-  countNoStatusApplications,
   excelFlag,
   ensureOtherBankRow,
   groupNotesByLossReason,
+  listNoStatusApplications,
   NO_STATUS_FU_STATUSES,
   NO_STATUS_LABEL,
+  sortKpiApps,
   splitTextByAppIds,
   uniqueAppIds,
 } from '../lib/lossReasons';
 import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X, Download } from 'lucide-react';
 import { exportRowsToExcel } from '../lib/exportExcel';
+
+interface NoStatusApp {
+  appId: string;
+  dealerName: string;
+  customerName: string;
+  fuStatus: string;
+  statusLast: string;
+  createdAt: string;
+}
+
+interface KpiPopupRow {
+  appId: string;
+  dealerName: string;
+  customerName: string;
+  detail: string;
+  createdAt: string;
+}
 
 interface CombinedNote {
   id: string;
@@ -101,6 +119,14 @@ const formatDateLabel = (from: string, to: string) => {
   return `${fDate} — ${tDate}`;
 };
 
+const formatKpiDate = (value: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString('en-US') : '';
+};
+
+const kpiTileClass = 'rounded-dss-sm border border-dss-border bg-dss-canvas px-3 py-2 text-center hover:border-dss-accent hover:bg-dss-accent-soft/40 transition';
+
 function LinkifiedText({
   text,
   appIds,
@@ -138,7 +164,9 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
   const isAdminOrManager = currentUser.role === 'admin' || currentUser.role === 'manager';
 
   const [notes, setNotes] = useState<CombinedNote[]>([]);
-  const [noStatusCount, setNoStatusCount] = useState(0);
+  const [noStatusApps, setNoStatusApps] = useState<NoStatusApp[]>([]);
+  const [openKpi, setOpenKpi] = useState<{ label: string; detailHeader: string; rows: KpiPopupRow[] } | null>(null);
+  const [kpiSort, setKpiSort] = useState<'asc' | 'desc'>('asc');
   const [loading, setLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -170,6 +198,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
     setInsightsError('');
     setViewingSavedId(null);
     setSaveMessage('');
+    setOpenKpi(null);
   }, [dateFrom, dateTo, selectedRepId, filterSource]);
 
   useEffect(() => {
@@ -202,7 +231,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
 
   const fetchNotes = async () => {
     setLoading(true);
-    setNoStatusCount(0);
+    setNoStatusApps([]);
     try {
       const fromTs = `${dateFrom}T00:00:00`;
       const toTs = `${dateTo}T23:59:59.999`;
@@ -289,11 +318,18 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
         return query;
       };
       const [statusCalls, statusDeals] = await Promise.all([
-        fetchEveryPage<{ application_id?: string; fu_status?: string; status_last?: string }>((from, to) =>
+        fetchEveryPage<{
+          application_id?: string;
+          fu_status?: string;
+          status_last?: string;
+          dealer_name?: string;
+          customer_full_name?: string;
+          fu_status_at?: string;
+        }>((from, to) =>
           restrictRep(
             supabase
               .from('calls')
-              .select('application_id, fu_status, status_last')
+              .select('application_id, fu_status, status_last, dealer_name, customer_full_name, fu_status_at')
               .in('fu_status', [...NO_STATUS_FU_STATUSES])
               .gte('fu_status_at', fromTs)
               .lte('fu_status_at', toTs)
@@ -301,11 +337,17 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
             'assigned_to',
           ),
         ),
-        fetchEveryPage<{ app_id?: string; fu_status?: string }>((from, to) =>
+        fetchEveryPage<{
+          app_id?: string;
+          fu_status?: string;
+          dealer_name?: string;
+          customer_name?: string;
+          created_at?: string;
+        }>((from, to) =>
           restrictRep(
             supabase
               .from('daily_deals')
-              .select('app_id, fu_status')
+              .select('app_id, fu_status, dealer_name, customer_name, created_at')
               .in('fu_status', [...NO_STATUS_FU_STATUSES])
               .gte('created_at', fromTs)
               .lte('created_at', toTs)
@@ -314,15 +356,22 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
           ),
         ),
       ]);
-      setNoStatusCount(countNoStatusApplications([
+      setNoStatusApps(listNoStatusApplications([
         ...statusCalls.map((row) => ({
-          appId: row.application_id,
-          fuStatus: row.fu_status,
-          statusLast: row.status_last,
+          appId: row.application_id || '',
+          dealerName: row.dealer_name || '',
+          customerName: row.customer_full_name || '',
+          fuStatus: row.fu_status || '',
+          statusLast: row.status_last || '',
+          createdAt: row.fu_status_at || '',
         })),
         ...statusDeals.map((row) => ({
-          appId: row.app_id,
-          fuStatus: row.fu_status,
+          appId: row.app_id || '',
+          dealerName: row.dealer_name || '',
+          customerName: row.customer_name || '',
+          fuStatus: row.fu_status || '',
+          statusLast: '',
+          createdAt: row.created_at || '',
         })),
       ]));
     } catch (err) {
@@ -350,7 +399,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
           category: bucket.label,
           count: bucket.count,
         })),
-        { category: NO_STATUS_LABEL, count: noStatusCount },
+        { category: NO_STATUS_LABEL, count: noStatusApps.length },
       ];
 
       const { data, error } = await supabase.functions.invoke('notes-insights', {
@@ -499,6 +548,40 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
     () => ensureOtherBankRow(insights?.whoLosingTo || [], filteredNotes),
     [insights, filteredNotes],
   );
+  const sortedKpiRows = useMemo(
+    () => sortKpiApps(openKpi?.rows || [], kpiSort),
+    [openKpi, kpiSort],
+  );
+
+  const openKpiList = (label: string, detailHeader: string, rows: KpiPopupRow[]) => {
+    setKpiSort('asc');
+    setOpenKpi({ label, detailHeader, rows });
+  };
+
+  const exportKpiRows = () => {
+    if (!openKpi || sortedKpiRows.length === 0) return;
+    const slug = openKpi.label.toLowerCase().replace(/\s+/g, '-');
+    exportRowsToExcel(
+      sortedKpiRows.map(row => ({
+        'App ID': row.appId,
+        Dealer: row.dealerName,
+        Customer: row.customerName,
+        [openKpi.detailHeader]: row.detail,
+        Date: formatKpiDate(row.createdAt),
+      })),
+      openKpi.label,
+      `notes-${slug}-${dateFrom}-to-${dateTo}.xlsx`,
+    );
+  };
+
+  useEffect(() => {
+    if (!openKpi) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenKpi(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openKpi]);
 
   const totalPages = Math.max(1, Math.ceil(filteredNotes.length / NOTES_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
@@ -744,18 +827,36 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
             <h3 className="text-sm font-semibold text-dss-ink mb-3">Why we lost</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
               {lossReasonBuckets.map(bucket => (
-                <div
+                <button
                   key={bucket.key}
-                  className="rounded-dss-sm border border-dss-border bg-dss-canvas px-3 py-2 text-center"
+                  type="button"
+                  onClick={() => openKpiList(bucket.label, 'Detail', bucket.notes.map(note => ({
+                    appId: note.appId || '',
+                    dealerName: note.dealerName || '',
+                    customerName: note.customerName || '',
+                    detail: (note.noteText || '').trim(),
+                    createdAt: note.createdAt || '',
+                  })))}
+                  className={kpiTileClass}
                 >
                   <p className="text-lg font-bold text-dss-ink">{bucket.count}</p>
                   <p className="text-xs text-dss-muted">{bucket.label}</p>
-                </div>
+                </button>
               ))}
-              <div className="rounded-dss-sm border border-dss-border bg-dss-canvas px-3 py-2 text-center">
-                <p className="text-lg font-bold text-dss-ink">{noStatusCount}</p>
+              <button
+                type="button"
+                onClick={() => openKpiList(NO_STATUS_LABEL, 'Status', noStatusApps.map(app => ({
+                  appId: app.appId,
+                  dealerName: app.dealerName,
+                  customerName: app.customerName,
+                  detail: app.fuStatus,
+                  createdAt: app.createdAt,
+                })))}
+                className={kpiTileClass}
+              >
+                <p className="text-lg font-bold text-dss-ink">{noStatusApps.length}</p>
                 <p className="text-xs text-dss-muted">{NO_STATUS_LABEL}</p>
-              </div>
+              </button>
             </div>
           </div>
 
@@ -802,6 +903,108 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {openKpi && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setOpenKpi(null)}
+        >
+          <div
+            className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-4xl max-h-[85vh] flex flex-col shadow-sm"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 p-5 border-b border-dss-border">
+              <div>
+                <h3 className="text-lg font-semibold text-dss-ink">{openKpi.label}</h3>
+                <p className="text-sm text-dss-muted">
+                  {sortedKpiRows.length} app{sortedKpiRows.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button
+                  type="button"
+                  onClick={() => setKpiSort('asc')}
+                  className={`px-3 py-1.5 rounded-dss-sm text-xs border transition ${
+                    kpiSort === 'asc'
+                      ? 'bg-dss-accent text-white border-dss-accent'
+                      : 'bg-dss-canvas text-dss-ink border-dss-border hover:bg-dss-accent-soft/40'
+                  }`}
+                >
+                  Ascending
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setKpiSort('desc')}
+                  className={`px-3 py-1.5 rounded-dss-sm text-xs border transition ${
+                    kpiSort === 'desc'
+                      ? 'bg-dss-accent text-white border-dss-accent'
+                      : 'bg-dss-canvas text-dss-ink border-dss-border hover:bg-dss-accent-soft/40'
+                  }`}
+                >
+                  Descending
+                </button>
+                <button
+                  type="button"
+                  onClick={exportKpiRows}
+                  disabled={sortedKpiRows.length === 0}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpenKpi(null)}
+                  className="text-dss-muted hover:text-dss-ink"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-dss-canvas text-left text-xs uppercase tracking-wider text-dss-muted">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">App ID</th>
+                    <th className="px-4 py-2 font-medium">Dealer</th>
+                    <th className="px-4 py-2 font-medium">Customer</th>
+                    <th className="px-4 py-2 font-medium">{openKpi.detailHeader}</th>
+                    <th className="px-4 py-2 font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedKpiRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-6 text-dss-muted">No apps in this KPI.</td>
+                    </tr>
+                  ) : sortedKpiRows.map((row, index) => (
+                    <tr key={`${row.appId}-${row.createdAt}-${index}`} className="border-t border-dss-border align-top">
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        {row.appId && onOpenApp ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenApp(row.appId)}
+                            className="font-semibold text-dss-accent hover:underline"
+                          >
+                            {row.appId}
+                          </button>
+                        ) : (
+                          <span className="font-semibold text-dss-ink">{row.appId || '—'}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">{row.dealerName || '—'}</td>
+                      <td className="px-4 py-2">{row.customerName || '—'}</td>
+                      <td className="px-4 py-2 max-w-xs break-words">{row.detail || '—'}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-dss-muted">{formatKpiDate(row.createdAt) || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

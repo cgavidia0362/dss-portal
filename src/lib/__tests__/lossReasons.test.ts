@@ -5,6 +5,7 @@ import {
   ensureOtherBankRow,
   excelFlag,
   isUnnamedSendOut,
+  sortKpiApps,
   splitTextByAppIds,
 } from '../lossReasons';
 
@@ -139,6 +140,15 @@ describe('countNoStatusApplications', () => {
       { appId: 'A10', fuStatus: 'Closed', statusLast: 'Declined - credit' },
       { appId: 'A11', fuStatus: 'Closed', statusLast: 'Cancelled' },
     ])).toBe(5);
+  });
+});
+
+describe('sortKpiApps', () => {
+  const rows = [{ appId: 'DTBFJ10' }, { appId: 'DTBFJ2' }, { appId: 'DTBFJ1' }];
+
+  it('sorts app ids ascending and descending', () => {
+    expect(sortKpiApps(rows, 'asc').map((row) => row.appId)).toEqual(['DTBFJ1', 'DTBFJ2', 'DTBFJ10']);
+    expect(sortKpiApps(rows, 'desc').map((row) => row.appId)).toEqual(['DTBFJ10', 'DTBFJ2', 'DTBFJ1']);
   });
 });
 
