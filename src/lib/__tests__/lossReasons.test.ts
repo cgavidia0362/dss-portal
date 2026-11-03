@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyLossReasons,
+  countNoStatusApplications,
   ensureOtherBankRow,
   excelFlag,
   isUnnamedSendOut,
@@ -119,6 +120,22 @@ describe('splitTextByAppIds', () => {
       { type: 'app', value: 'DTBFJ6821943' },
       { type: 'text', value: ' vs Westlake' },
     ]);
+  });
+});
+
+describe('countNoStatusApplications', () => {
+  it('counts Closed, Pending, No Answer, and Follow Up once per application', () => {
+    expect(countNoStatusApplications([
+      { appId: 'A1', fuStatus: 'Closed' },
+      { appId: 'a1', fuStatus: 'Closed' },
+      { appId: 'A2', fuStatus: 'Pending' },
+      { appId: 'A3', fuStatus: 'No Answer' },
+      { appId: 'A4', fuStatus: 'Follow Up' },
+      { appId: 'A5', fuStatus: 'No Deal' },
+      { appId: 'A6', fuStatus: 'Deal' },
+      { appId: 'A7', fuStatus: 'Confirmed Deal' },
+      { appId: 'A8', fuStatus: 'Duplicates' },
+    ])).toBe(4);
   });
 });
 

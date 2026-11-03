@@ -3,9 +3,12 @@ import { supabase } from '../lib/supabase';
 import { excludeKnownDealersFromLenders, latestNotePerApplication, uniqueDealerNames } from '../lib/notesInsights';
 import {
   classifyLossReasons,
+  countNoStatusApplications,
   excelFlag,
   ensureOtherBankRow,
   groupNotesByLossReason,
+  NO_STATUS_FU_STATUSES,
+  NO_STATUS_LABEL,
   splitTextByAppIds,
   uniqueAppIds,
 } from '../lib/lossReasons';
@@ -121,6 +124,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
   const isAdminOrManager = currentUser.role === 'admin' || currentUser.role === 'manager';
 
   const [notes, setNotes] = useState<CombinedNote[]>([]);
+  const [noStatusCount, setNoStatusCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -184,6 +188,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
 
   const fetchNotes = async () => {
     setLoading(true);
+    setNoStatusCount(0);
     try {
       const fromTs = `${dateFrom}T00:00:00`;
       const toTs = `${dateTo}T23:59:59.999`;
@@ -263,6 +268,40 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
         .filter(n => n.fuStatus === NO_DEAL_STATUS);
 
       setNotes(latestNotePerApplication(combined));
+
+      let callsStatusQuery = supabase
+        .from('calls')
+        .select('application_id, fu_status')
+        .in('fu_status', [...NO_STATUS_FU_STATUSES])
+        .gte('fu_status_at', fromTs)
+        .lte('fu_status_at', toTs);
+      let dealsStatusQuery = supabase
+        .from('daily_deals')
+        .select('app_id, fu_status')
+        .in('fu_status', [...NO_STATUS_FU_STATUSES])
+        .gte('created_at', fromTs)
+        .lte('created_at', toTs);
+      if (!isAdminOrManager) {
+        callsStatusQuery = callsStatusQuery.eq('assigned_to', currentUser.id);
+        dealsStatusQuery = dealsStatusQuery.eq('added_by', currentUser.id);
+      } else if (selectedRepId) {
+        callsStatusQuery = callsStatusQuery.eq('assigned_to', selectedRepId);
+        dealsStatusQuery = dealsStatusQuery.eq('added_by', selectedRepId);
+      }
+      const [{ data: statusCalls }, { data: statusDeals }] = await Promise.all([
+        callsStatusQuery,
+        dealsStatusQuery,
+      ]);
+      setNoStatusCount(countNoStatusApplications([
+        ...(statusCalls || []).map((row: { application_id?: string; fu_status?: string }) => ({
+          appId: row.application_id,
+          fuStatus: row.fu_status,
+        })),
+        ...(statusDeals || []).map((row: { app_id?: string; fu_status?: string }) => ({
+          appId: row.app_id,
+          fuStatus: row.fu_status,
+        })),
+      ]));
     } catch (err) {
       console.error('Error fetching notes:', err);
     } finally {
@@ -283,10 +322,13 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
         return;
       }
 
-      const lossReasonBreakdown = groupNotesByLossReason(notesForAi).map(bucket => ({
-        category: bucket.label,
-        count: bucket.count,
-      }));
+      const lossReasonBreakdown = [
+        ...groupNotesByLossReason(notesForAi).map(bucket => ({
+          category: bucket.label,
+          count: bucket.count,
+        })),
+        { category: NO_STATUS_LABEL, count: noStatusCount },
+      ];
 
       const { data, error } = await supabase.functions.invoke('notes-insights', {
         body: {
@@ -677,7 +719,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
 
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
             <h3 className="text-sm font-semibold text-dss-ink mb-3">Why we lost</h3>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
               {lossReasonBuckets.map(bucket => (
                 <div
                   key={bucket.key}
@@ -687,6 +729,10 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
                   <p className="text-xs text-dss-muted">{bucket.label}</p>
                 </div>
               ))}
+              <div className="rounded-dss-sm border border-dss-border bg-dss-canvas px-3 py-2 text-center">
+                <p className="text-lg font-bold text-dss-ink">{noStatusCount}</p>
+                <p className="text-xs text-dss-muted">{NO_STATUS_LABEL}</p>
+              </div>
             </div>
           </div>
 

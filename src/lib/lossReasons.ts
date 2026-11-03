@@ -23,6 +23,32 @@ export const LOSS_REASON_LABELS: Record<LossReasonKey, string> = {
 
 export const OTHER_BANK_LABEL = 'Other bank';
 
+export const NO_STATUS_LABEL = 'No Status';
+
+export const NO_STATUS_FU_STATUSES = ['Closed', 'Pending', 'No Answer', 'Follow Up'] as const;
+
+export function isNoStatusFu(status?: string | null): boolean {
+  const value = (status || '').trim().toLowerCase();
+  return NO_STATUS_FU_STATUSES.some((name) => name.toLowerCase() === value);
+}
+
+export function countNoStatusApplications(
+  rows: Array<{ appId?: string | null; fuStatus?: string | null }>,
+): number {
+  const seen = new Set<string>();
+  let withoutAppId = 0;
+  for (const row of rows) {
+    if (!isNoStatusFu(row.fuStatus)) continue;
+    const key = (row.appId || '').trim().toLowerCase();
+    if (!key) {
+      withoutAppId += 1;
+      continue;
+    }
+    seen.add(key);
+  }
+  return seen.size + withoutAppId;
+}
+
 const APR_RE = /\bapr\b|\binterest(?:\s+rate)?\b|\bbuy[-\s]?rate\b|\b(?:lower|higher|better|high|low)\s+rate\b|\b\d+(?:\.\d+)?\s*%/;
 const FEES_RE = /\bfees?\b/;
 const STIPS_RE = /\bstips?\b|\bstipulation(?:s)?\b|\btoo many\s+(?:stips?|docs?|documents?)\b|\bextra\s+(?:conditions?|docs?|documents?|paperwork|stips?)\b|\badditional\s+(?:conditions?|docs?|documents?|paperwork|stips?)\b|\bco[-\s]?buyers?\b|\bco[-\s]?signers?\b|\bco[-\s]?sign(?:ing|ed)?\b|\bcobuy\b|\bfull(?:\s+the)?\s+(?:amount|call)\b|\bfull call\b|\bcalled the full(?:\s+(?:amount|call|deal))?\b|\bcalled full(?:\s+(?:amount|call))?\b|\bcounter(?:ed|s|ing)?\b|\bmore money\b|\bhigher advance\b|\bmore advance\b|\bbetter advance\b|\bgot the (?:full )?money\b|\bcalled more\b|\bcut(?:\s+\w+){0,3}\s+back\b/;

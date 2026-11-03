@@ -58,7 +58,9 @@ Write like you are talking to a desk manager. Keep it simple. Use car-lending wo
 
 Do NOT use academic or AI phrasing. Never say friction, abandonment, operational leakage, marginal-file, economics, or deal structure.
 
-The counted KPIs are only APR, Fees, Stips, and No reason. Stips includes too many stips or docs, asking for a cobuyer or cosigner, and when we did not approve the full amount (we countered or cut them back). Do not treat cobuyer or counter as their own buckets.
+The counted loss KPIs are only APR, Fees, Stips, and No reason. Stips includes too many stips or docs, asking for a cobuyer or cosigner, and when we did not approve the full amount (we countered or cut them back). Do not treat cobuyer or counter as their own buckets.
+
+No Status is not a loss. It is the count of calls still in Closed, Pending, No Answer, or Follow Up. If that count is provided, mention it once. Do not explain those calls as why we lost.
 
 Answer ONLY from the notes:
 1. Why we lost, in plain talk. Cover APR, fees, stips, and no reason when those show up. When a note is a cobuyer ask or a counter / cutback, call it stips. Say which banks beat us and how (better APR, lower fee, they called the full amount, we cut them back, we asked for a cobuyer).
