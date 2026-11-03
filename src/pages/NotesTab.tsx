@@ -72,6 +72,20 @@ const getTodayString = () => {
 };
 
 const NOTES_PER_PAGE = 10;
+const STATUS_PAGE_SIZE = 1000;
+
+async function fetchEveryPage<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += STATUS_PAGE_SIZE) {
+    const { data, error } = await build(from, from + STATUS_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < STATUS_PAGE_SIZE) return rows;
+  }
+}
 const NO_DEAL_STATUS = 'No Deal';
 
 const formatDateLabel = (from: string, to: string) => {
@@ -269,35 +283,44 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
 
       setNotes(latestNotePerApplication(combined));
 
-      let callsStatusQuery = supabase
-        .from('calls')
-        .select('application_id, fu_status')
-        .in('fu_status', [...NO_STATUS_FU_STATUSES])
-        .gte('fu_status_at', fromTs)
-        .lte('fu_status_at', toTs);
-      let dealsStatusQuery = supabase
-        .from('daily_deals')
-        .select('app_id, fu_status')
-        .in('fu_status', [...NO_STATUS_FU_STATUSES])
-        .gte('created_at', fromTs)
-        .lte('created_at', toTs);
-      if (!isAdminOrManager) {
-        callsStatusQuery = callsStatusQuery.eq('assigned_to', currentUser.id);
-        dealsStatusQuery = dealsStatusQuery.eq('added_by', currentUser.id);
-      } else if (selectedRepId) {
-        callsStatusQuery = callsStatusQuery.eq('assigned_to', selectedRepId);
-        dealsStatusQuery = dealsStatusQuery.eq('added_by', selectedRepId);
-      }
-      const [{ data: statusCalls }, { data: statusDeals }] = await Promise.all([
-        callsStatusQuery,
-        dealsStatusQuery,
+      const restrictRep = <Q extends { eq: (column: string, value: string) => Q }>(query: Q, column: string) => {
+        if (!isAdminOrManager) return query.eq(column, currentUser.id);
+        if (selectedRepId) return query.eq(column, selectedRepId);
+        return query;
+      };
+      const [statusCalls, statusDeals] = await Promise.all([
+        fetchEveryPage<{ application_id?: string; fu_status?: string; status_last?: string }>((from, to) =>
+          restrictRep(
+            supabase
+              .from('calls')
+              .select('application_id, fu_status, status_last')
+              .in('fu_status', [...NO_STATUS_FU_STATUSES])
+              .gte('fu_status_at', fromTs)
+              .lte('fu_status_at', toTs)
+              .range(from, to),
+            'assigned_to',
+          ),
+        ),
+        fetchEveryPage<{ app_id?: string; fu_status?: string }>((from, to) =>
+          restrictRep(
+            supabase
+              .from('daily_deals')
+              .select('app_id, fu_status')
+              .in('fu_status', [...NO_STATUS_FU_STATUSES])
+              .gte('created_at', fromTs)
+              .lte('created_at', toTs)
+              .range(from, to),
+            'added_by',
+          ),
+        ),
       ]);
       setNoStatusCount(countNoStatusApplications([
-        ...(statusCalls || []).map((row: { application_id?: string; fu_status?: string }) => ({
+        ...statusCalls.map((row) => ({
           appId: row.application_id,
           fuStatus: row.fu_status,
+          statusLast: row.status_last,
         })),
-        ...(statusDeals || []).map((row: { app_id?: string; fu_status?: string }) => ({
+        ...statusDeals.map((row) => ({
           appId: row.app_id,
           fuStatus: row.fu_status,
         })),

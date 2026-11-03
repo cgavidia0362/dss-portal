@@ -135,7 +135,10 @@ describe('countNoStatusApplications', () => {
       { appId: 'A6', fuStatus: 'Deal' },
       { appId: 'A7', fuStatus: 'Confirmed Deal' },
       { appId: 'A8', fuStatus: 'Duplicates' },
-    ])).toBe(4);
+      { appId: 'A9', fuStatus: 'Closed', statusLast: 'Denial' },
+      { appId: 'A10', fuStatus: 'Closed', statusLast: 'Declined - credit' },
+      { appId: 'A11', fuStatus: 'Closed', statusLast: 'Cancelled' },
+    ])).toBe(5);
   });
 });
 

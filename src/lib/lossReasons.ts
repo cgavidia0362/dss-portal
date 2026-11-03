@@ -32,13 +32,19 @@ export function isNoStatusFu(status?: string | null): boolean {
   return NO_STATUS_FU_STATUSES.some((name) => name.toLowerCase() === value);
 }
 
+function isClosedDenial(statusLast?: string | null): boolean {
+  const value = (statusLast || '').trim().toLowerCase();
+  return value.includes('denial') || value.includes('declined');
+}
+
 export function countNoStatusApplications(
-  rows: Array<{ appId?: string | null; fuStatus?: string | null }>,
+  rows: Array<{ appId?: string | null; fuStatus?: string | null; statusLast?: string | null }>,
 ): number {
   const seen = new Set<string>();
   let withoutAppId = 0;
   for (const row of rows) {
     if (!isNoStatusFu(row.fuStatus)) continue;
+    if ((row.fuStatus || '').trim().toLowerCase() === 'closed' && isClosedDenial(row.statusLast)) continue;
     const key = (row.appId || '').trim().toLowerCase();
     if (!key) {
       withoutAppId += 1;
