@@ -16,6 +16,7 @@ export type InstitutionId =
   | 'chase'
   | 'wells_fargo'
   | 'lake_forest'
+  | 'first_bank'
   | 'generic_bank'
   | 'csv'
   | 'unknown';

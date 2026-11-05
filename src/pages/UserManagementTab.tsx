@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Edit2, Trash2, Link, Copy, Check, ChevronDown, Download } from 'lucide-react';
-import { GRANTABLE_TABS, isTabIncludedWithRole } from '../lib/tabAccess';
+import { GRANTABLE_TABS, defaultGrantableTabsForRole, isTabIncludedWithRole } from '../lib/tabAccess';
 
 interface User {
   id: string;
@@ -465,7 +465,16 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               <div>
                 <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">Role</label>
                 <select value={editForm.role}
-                  onChange={e => setEditForm({ ...editForm, role: e.target.value as EditForm['role'] })}
+                  onChange={e => {
+                    const role = e.target.value as EditForm['role'];
+                    setEditForm({
+                      ...editForm,
+                      role,
+                      allowedTabs: role === 'manager' && editForm.allowedTabs.length === 0
+                        ? defaultGrantableTabsForRole(role)
+                        : editForm.allowedTabs,
+                    });
+                  }}
                   className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
                   <option value="rep">Rep</option>
                   <option value="buying_assistant">Buying Assistant</option>
@@ -654,7 +663,16 @@ export default function UserManagementTab({ currentUserId, currentUserRole }: Us
               <div>
                 <label className="block text-xs font-medium text-dss-muted uppercase tracking-wider mb-2">Role</label>
                 <select value={createForm.role}
-                  onChange={e => setCreateForm({ ...createForm, role: e.target.value as 'admin' | 'manager' | 'rep' | 'buying_assistant' })}
+                  onChange={e => {
+                    const role = e.target.value as 'admin' | 'manager' | 'rep' | 'buying_assistant';
+                    setCreateForm({
+                      ...createForm,
+                      role,
+                      allowedTabs: role === 'manager' && createForm.allowedTabs.length === 0
+                        ? defaultGrantableTabsForRole(role)
+                        : createForm.allowedTabs,
+                    });
+                  }}
                   className="w-full px-3 py-2 bg-dss-canvas border border-dss-border rounded-dss-sm text-dss-ink text-sm focus:outline-none focus:ring-1 focus:ring-dss-accent/30">
                   <option value="rep">Rep</option>
                   <option value="buying_assistant">Buying Assistant</option>

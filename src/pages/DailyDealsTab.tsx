@@ -1,12 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, forceDealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName, isProntoRep } from '../lib/systemReps';
 import { findCallsByAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
+import { activityDbFields, activityLocalFields, fuStatusAtDbFields, fuStatusAtLocalFields, resolveSavedFollowUpAt } from '../lib/callActivity';
+import { updateCallById } from '../lib/callWrite';
 import { ChevronRight, ChevronDown, MessageSquare, Trash2, Users, Edit2, Check, X, Trophy, DollarSign, ClipboardList, PlusCircle, Target, Download } from 'lucide-react';
 import DealerNameInput from '../components/DealerNameInput';
 import NoteItem from '../components/NoteItem';
+import FollowUpPickerModal from '../components/FollowUpPickerModal';
 import { exportRowsToExcel } from '../lib/exportExcel';
 
 interface DailyDeal {
@@ -50,6 +53,11 @@ interface Call {
   dealByName?: string;
   customerName?: string;
   isDuplicate?: boolean;
+  lastActivityAt?: Date;
+  lastActivityBy?: string;
+  lastActivityByName?: string;
+  fuStatusAt?: Date;
+  followUpAt?: Date;
 }
 
 interface DailyDealSummary {
@@ -79,6 +87,7 @@ interface DailyDealsTabProps {
   goals: Goals;
   onRefresh: () => void;
   calls?: Call[];
+  setCalls?: Dispatch<SetStateAction<any[]>>;
   todayDailyDeals?: DailyDealSummary[];
   users?: User[];
 }
@@ -100,8 +109,8 @@ interface CombinedEntry {
 const FU_STATUSES = ['Deal', 'Confirmed Deal', 'Pending', 'No Answer', 'No Deal', 'Follow Up'];
 
 const STATUS_LAST_OPTIONS = [
-  'Accepted', 'Approved', 'Approval', 'Counter', 'Denial', 'Declined',
-  'Pending Approval', 'Document Received', 'Funded', 'Funding Pending',
+  'Accepted', 'Approved', 'Approval', 'Counter', 'Denial',
+  'Pending Approval', 'Documents Received', 'Funded', 'Funding Pending',
   'New Application', 'Incomplete', 'Withdrawn', 'Cancelled',
 ];
 
@@ -162,7 +171,7 @@ const toLocalDateString = (dateStr: string): string => {
 
 export default function DailyDealsTab({
   currentUser, goals, onRefresh,
-  calls = [], users = [],
+  calls = [], setCalls, users = [],
 }: DailyDealsTabProps) {
   const today = getTodayString();
 
@@ -204,6 +213,8 @@ export default function DailyDealsTab({
     creditId: string;
   } | null>(null);
   const canForceCredit = currentUser.role === 'admin' || currentUser.role === 'manager';
+  const [followUpModal, setFollowUpModal] = useState<{ callId: string } | null>(null);
+  const [followUpSaving, setFollowUpSaving] = useState(false);
 
   // Dealer popup state
   const [dealerPopup, setDealerPopup] = useState<string | null>(null);
@@ -411,7 +422,55 @@ export default function DailyDealsTab({
     setShowAllPopupStatuses(false);
   };
 
+  const patchCall = (callId: string, patch: Partial<Call>) => {
+    setCalls?.(prev => prev.map(c => c.id === callId ? { ...c, ...patch } : c));
+  };
+
+  const persistPopupFuStatus = async (callId: string, newStatus: string, extras?: { followUpAt?: Date | null; creditId?: string; creditName?: string }) => {
+    const existing = calls.find(c => c.id === callId);
+    const actorUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
+    const creditUser = extras?.creditId
+      ? { id: extras.creditId, name: extras.creditName || 'Unknown' }
+      : actorUser;
+    const stampedAt = new Date();
+    const followUpAt = newStatus === 'Follow Up' ? resolveSavedFollowUpAt(extras?.followUpAt) : null;
+    const fields = extras?.creditId
+      ? forceDealCreditDbFields(newStatus, creditUser, existing?.dealDate)
+      : dealCreditDbFields(newStatus, {
+        dealBy: existing?.dealBy,
+        dealByName: existing?.dealByName,
+        dealDate: existing?.dealDate,
+      }, { id: creditUser.id, name: creditUser.name });
+    const { error: err } = await updateCallById(callId, {
+      ...fields,
+      ...activityDbFields({ id: actorUser.id, name: actorUser.name }, stampedAt),
+      ...fuStatusAtDbFields(stampedAt),
+      follow_up_at: followUpAt ? followUpAt.toISOString() : null,
+    });
+    if (err) {
+      setError(`Could not save status: ${err.message}`);
+      return false;
+    }
+    setError('');
+    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
+    patchCall(callId, {
+      fuStatus: newStatus,
+      followUpAt: followUpAt || undefined,
+      dealDate: fields.deal_date ? new Date(fields.deal_date) : undefined,
+      dealBy: fields.deal_by || undefined,
+      dealByName: fields.deal_by_name || undefined,
+      ...activityLocalFields({ id: actorUser.id, name: actorUser.name }, stampedAt),
+      ...fuStatusAtLocalFields(stampedAt),
+    });
+    onRefresh();
+    return true;
+  };
+
   const handlePopupFuStatus = async (callId: string, newStatus: string) => {
+    if (newStatus === 'Follow Up') {
+      setFollowUpModal({ callId });
+      return;
+    }
     const existing = calls.find(c => c.id === callId);
     if (canForceCredit && isDealLikeStatus(newStatus)) {
       setCreditModal({
@@ -421,35 +480,19 @@ export default function DailyDealsTab({
       });
       return;
     }
-    const creditUser = allUsers.find(u => u.id === selectedUser) || users.find(u => u.id === selectedUser) || currentUser;
-    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
-    await supabase.from('calls').update({
-      ...dealCreditDbFields(newStatus, {
-        dealBy: existing?.dealBy,
-        dealByName: existing?.dealByName,
-        dealDate: existing?.dealDate,
-      }, { id: creditUser.id, name: creditUser.name }),
-      updated_at: new Date().toISOString(),
-    }).eq('id', callId);
-    onRefresh();
+    await persistPopupFuStatus(callId, newStatus);
   };
 
   const applyPopupCreditModal = async () => {
     if (!creditModal) return;
     const { callId, newStatus, creditId } = creditModal;
-    const existing = calls.find(c => c.id === callId);
     const opts = getDealCreditOptions(
       [...allUsers, ...users, currentUser].map(u => ({ id: u.id, name: u.name, role: u.role })),
       currentUser.role,
     );
     const creditName = resolveCreditName(creditId, opts);
-    setPopupFuOverrides(prev => ({ ...prev, [callId]: newStatus }));
-    await supabase.from('calls').update({
-      ...forceDealCreditDbFields(newStatus, { id: creditId, name: creditName }, existing?.dealDate),
-      updated_at: new Date().toISOString(),
-    }).eq('id', callId);
-    setCreditModal(null);
-    onRefresh();
+    const saved = await persistPopupFuStatus(callId, newStatus, { creditId, creditName });
+    if (saved) setCreditModal(null);
   };
 
   const handlePopupSaveStatusLast = async (callId: string) => {
@@ -488,6 +531,18 @@ export default function DailyDealsTab({
     if (!error && data) {
       setPopupNotes(prev => ({ ...prev, [callId]: [...(prev[callId] || []), data] }));
       setPopupNewNoteText(prev => ({ ...prev, [callId]: '' }));
+      const stampedAt = new Date();
+      const { error: stampError } = await updateCallById(
+        callId,
+        activityDbFields({ id: noteAuthorId, name: creditUser.name }, stampedAt)
+      );
+      if (stampError) {
+        setError(`Note saved, but Activity did not update: ${stampError.message}`);
+      } else {
+        patchCall(callId, activityLocalFields({ id: noteAuthorId, name: creditUser.name }, stampedAt));
+      }
+    } else if (error) {
+      setError(`Could not save note: ${error.message}`);
     }
   };
 
@@ -1775,100 +1830,131 @@ export default function DailyDealsTab({
 
       {/* HISTORY MODAL */}
       {showHistory && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-start justify-center pt-16 z-50 px-4"
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4"
           onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}>
-          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
+          <div className="bg-dss-surface rounded-dss border border-dss-border w-full max-w-6xl h-[min(44rem,calc(100vh-2rem))] flex flex-col overflow-hidden"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-dss-border shrink-0">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-dss-border shrink-0">
               <h3 className="text-lg font-semibold text-dss-ink">Deal History</h3>
               <button onClick={() => { setShowHistory(false); setSelectedDate(null); setSelectedDateDeals([]); }}
                 className="text-dss-muted hover:text-dss-ink text-2xl font-light">&times;</button>
             </div>
-            <div className="p-6 overflow-y-auto flex-1 min-h-0">
-              <div className="flex items-center justify-between mb-4">
-                <button onClick={() => { if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); } else setCalendarMonth(m => m - 1); }}
-                  className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">‹</button>
-                <span className="text-base font-medium text-dss-ink">{monthNames[calendarMonth]} {calendarYear}</span>
-                <button onClick={() => { if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); } else setCalendarMonth(m => m + 1); }}
-                  className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">›</button>
-              </div>
-              <div className="grid grid-cols-7 gap-1 mb-2">
-                {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="text-center text-xs text-dss-muted py-1">{d}</div>)}
-              </div>
-              <div className="grid grid-cols-7 gap-1 mb-4">
-                {calendarDays.map((day, i) => {
-                  if (!day) return <div key={i} />;
-                  const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const isTodayDate = dateStr === today;
-                  const isFuture = dateStr > today;
-                  const hasDeals = datesWithDeals.has(dateStr);
-                  const isSelected = selectedDate === dateStr;
-                  let cls = 'relative text-center text-sm py-2 rounded-dss-sm transition font-normal ';
-                  if (isTodayDate) cls += 'bg-dss-navy-soft text-white font-medium';
-                  else if (isFuture) cls += 'text-dss-muted';
-                  else if (isSelected) cls += 'bg-dss-accent-soft border border-dss-accent text-dss-accent cursor-pointer';
-                  else if (hasDeals) cls += 'bg-emerald-50 text-dss-success hover:bg-green-800 cursor-pointer font-medium';
-                  else cls += 'text-dss-muted';
-                  return (
+            <div className="p-5 flex-1 min-h-0 flex flex-col lg:flex-row gap-5">
+              <div className="shrink-0 lg:w-[17.5rem]">
+                <div className="flex items-center justify-between mb-3">
+                  <button onClick={() => { if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); } else setCalendarMonth(m => m - 1); }}
+                    className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">‹</button>
+                  <span className="text-base font-medium text-dss-ink">{monthNames[calendarMonth]} {calendarYear}</span>
+                  <button onClick={() => { if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); } else setCalendarMonth(m => m + 1); }}
+                    className="px-3 py-1.5 bg-dss-canvas hover:bg-dss-accent-soft text-dss-ink/80 rounded-dss-sm text-sm transition">›</button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 mb-1">
+                  {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d} className="text-center text-xs text-dss-muted py-1">{d}</div>)}
+                </div>
+                <div className="grid grid-cols-7 gap-1 mb-3">
+                  {calendarDays.map((day, i) => {
+                    if (!day) return <div key={i} />;
+                    const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const isTodayDate = dateStr === today;
+                    const isFuture = dateStr > today;
+                    const hasDeals = datesWithDeals.has(dateStr);
+                    const isSelected = selectedDate === dateStr;
+                    let cls = 'relative text-center text-sm py-1.5 rounded-dss-sm transition font-normal ';
+                    if (isTodayDate) cls += 'bg-dss-navy-soft text-white font-medium';
+                    else if (isFuture) cls += 'text-dss-muted';
+                    else if (isSelected) cls += 'bg-dss-accent-soft border border-dss-accent text-dss-accent cursor-pointer';
+                    else if (hasDeals) cls += 'bg-emerald-50 text-dss-success hover:bg-green-800 cursor-pointer font-medium';
+                    else cls += 'text-dss-muted';
+                    return (
                     <div key={i} className={cls} onClick={() => handleCalendarClick(day)}>
                       {day}
                       {hasDeals && !isTodayDate && !isSelected && <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-green-400 block" />}
                     </div>
-                  );
-                })}
-              </div>
-              <div className="flex gap-5 mb-4 pb-4 border-b border-dss-border">
-                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-400" /><span className="text-xs text-dss-muted">Has entries</span></div>
-                <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-dss-navy" /><span className="text-xs text-dss-muted">Today</span></div>
-              </div>
-              {selectedDate && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold text-dss-ink">{formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}</p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={exportHistoryDeals}
-                        disabled={selectedDateDeals.length === 0}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        Export
-                      </button>
-                      <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-dss-muted hover:text-dss-ink">clear</button>
-                    </div>
-                  </div>
-                  <div className="rounded-dss-sm border border-dss-border overflow-hidden max-h-[45vh] overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-dss-canvas sticky top-0 z-10">
-                        <tr>{['App ID','Dealer','Customer','Amount','State','Status','By'].map(h => (
-                          <th key={h} className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider">{h}</th>
-                        ))}</tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-700 bg-dss-surface">
-                        {selectedDateDeals.map(deal => (
-                          <tr key={deal.id} className="hover:bg-dss-canvas">
-                            <td className="px-3 py-2.5 text-dss-accent font-medium">
-                              {deal.appId}
-                              {deal.id.startsWith('call-') && (
-                                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-dss-accent-soft/40 text-dss-accent border border-dss-navy-soft">Calls</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5 text-dss-ink">{deal.dealerName}</td>
-                            <td className="px-3 py-2.5 text-dss-ink">{deal.customerName}</td>
-                            <td className="px-3 py-2.5 font-medium text-dss-ink">{formatCurrency(parseAmount(deal.amount))}</td>
-                            <td className="px-3 py-2.5"><span className="px-2 py-0.5 bg-dss-canvas text-dss-ink/80 text-xs rounded border border-dss-border">{deal.state}</span></td>
-                            <td className="px-3 py-2.5"><span className={`px-2 py-0.5 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>{deal.fuStatus}</span></td>
-                            <td className="px-3 py-2.5 text-dss-muted">{deal.addedByName}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                    );
+                  })}
                 </div>
-              )}
+                <div className="flex gap-4">
+                  <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-green-400" /><span className="text-xs text-dss-muted">Has entries</span></div>
+                  <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-dss-navy" /><span className="text-xs text-dss-muted">Today</span></div>
+                </div>
+              </div>
+              <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+                {selectedDate ? (
+                  <>
+                    <div className="flex items-center justify-between mb-3 shrink-0 gap-3">
+                      <p className="text-sm font-semibold text-dss-ink">{formatDateLabel(selectedDate)} — {selectedDateDeals.length} deal{selectedDateDeals.length !== 1 ? 's' : ''}</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={exportHistoryDeals}
+                          disabled={selectedDateDeals.length === 0}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Export
+                        </button>
+                        <button onClick={() => { setSelectedDate(null); setSelectedDateDeals([]); }} className="text-xs text-dss-muted hover:text-dss-ink">clear</button>
+                      </div>
+                    </div>
+                    <div className="rounded-dss-sm border border-dss-border overflow-auto flex-1 min-h-0">
+                      <table className="w-full text-sm">
+                        <thead className="bg-dss-canvas sticky top-0 z-10">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">App ID</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Dealer</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Customer</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Amount</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">State</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">Status</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-dss-muted uppercase tracking-wider whitespace-nowrap">By</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-dss-border bg-dss-surface">
+                          {selectedDateDeals.map(deal => (
+                            <tr key={deal.id} className="hover:bg-dss-canvas">
+                              <td className="px-3 py-2 text-dss-accent font-medium whitespace-nowrap">
+                                {deal.appId}
+                                {deal.id.startsWith('call-') && (
+                                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-dss-accent-soft/40 text-dss-accent border border-dss-navy-soft">Calls</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-dss-ink">{deal.dealerName}</td>
+                              <td className="px-3 py-2 text-dss-ink">{deal.customerName}</td>
+                              <td className="px-3 py-2 font-medium text-dss-ink whitespace-nowrap">{formatCurrency(parseAmount(deal.amount))}</td>
+                              <td className="px-3 py-2"><span className="px-2 py-0.5 bg-dss-canvas text-dss-ink/80 text-xs rounded border border-dss-border">{deal.state}</span></td>
+                              <td className="px-3 py-2 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs border ${getFuStatusStyle(deal.fuStatus)}`}>{deal.fuStatus}</span></td>
+                              <td className="px-3 py-2 text-dss-muted whitespace-nowrap">{deal.addedByName}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center rounded-dss-sm border border-dashed border-dss-border text-sm text-dss-muted">
+                    Select a date to view deals
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {followUpModal && (
+        <FollowUpPickerModal
+          open
+          saving={followUpSaving}
+          onClose={() => setFollowUpModal(null)}
+          onConfirm={async (at) => {
+            setFollowUpSaving(true);
+            try {
+              const saved = await persistPopupFuStatus(followUpModal.callId, 'Follow Up', { followUpAt: at });
+              if (saved) setFollowUpModal(null);
+            } finally {
+              setFollowUpSaving(false);
+            }
+          }}
+        />
       )}
 
       {creditModal && (
