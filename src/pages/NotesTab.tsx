@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { excludeKnownDealersFromLenders, latestNotePerApplication, uniqueDealerNames } from '../lib/notesInsights';
 import {
@@ -13,8 +13,9 @@ import {
   splitTextByAppIds,
   uniqueAppIds,
 } from '../lib/lossReasons';
-import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X, Download } from 'lucide-react';
+import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X, Download, MessageSquare } from 'lucide-react';
 import { exportRowsToExcel } from '../lib/exportExcel';
+import NoteItem from '../components/NoteItem';
 
 interface NoStatusApp {
   appId: string;
@@ -30,6 +31,13 @@ interface KpiPopupRow {
   dealerName: string;
   customerName: string;
   detail: string;
+  createdAt: string;
+}
+
+interface KpiAppNote {
+  id: string;
+  noteText: string;
+  createdByName: string;
   createdAt: string;
 }
 
@@ -125,6 +133,65 @@ const formatKpiDate = (value: string) => {
   return Number.isFinite(date.getTime()) ? date.toLocaleString('en-US') : '';
 };
 
+const noopNoteChange = async () => {};
+
+function ilikeExact(value: string) {
+  return value.replace(/[%_]/g, (char) => `\\${char}`);
+}
+
+function kpiRowKey(row: KpiPopupRow, index: number) {
+  const appKey = row.appId.trim().toLowerCase();
+  return appKey || `blank-${index}-${row.createdAt}-${row.dealerName}`;
+}
+
+async function fetchNotesForApplication(appId: string): Promise<KpiAppNote[]> {
+  const trimmed = appId.trim();
+  if (!trimmed) return [];
+  const pattern = ilikeExact(trimmed);
+  const toNote = (row: { id: string; note_text?: string; created_by_name?: string; created_at?: string }): KpiAppNote => ({
+    id: row.id,
+    noteText: row.note_text || '',
+    createdByName: row.created_by_name || '',
+    createdAt: row.created_at || '',
+  });
+
+  const [{ data: callRows, error: callErr }, { data: calls, error: callsErr }, { data: deals, error: dealsErr }] = await Promise.all([
+    supabase.from('call_notes').select('id, note_text, created_by_name, created_at').ilike('application_id', pattern),
+    supabase.from('calls').select('id').ilike('application_id', pattern),
+    supabase.from('daily_deals').select('id').ilike('app_id', pattern),
+  ]);
+  if (callErr) throw callErr;
+  if (callsErr) throw callsErr;
+  if (dealsErr) throw dealsErr;
+
+  const byId = new Map<string, KpiAppNote>();
+  for (const row of callRows || []) byId.set(row.id, toNote(row));
+
+  const callIds = (calls || []).map((row: { id: string }) => row.id).filter(Boolean);
+  for (let i = 0; i < callIds.length; i += 100) {
+    const { data, error } = await supabase
+      .from('call_notes')
+      .select('id, note_text, created_by_name, created_at')
+      .in('call_id', callIds.slice(i, i + 100));
+    if (error) throw error;
+    for (const row of data || []) byId.set(row.id, toNote(row));
+  }
+
+  const dealIds = (deals || []).map((row: { id: string }) => row.id).filter(Boolean);
+  for (let i = 0; i < dealIds.length; i += 100) {
+    const { data, error } = await supabase
+      .from('daily_deal_notes')
+      .select('id, note_text, created_by_name, created_at')
+      .in('deal_id', dealIds.slice(i, i + 100));
+    if (error) throw error;
+    for (const row of data || []) byId.set(row.id, toNote(row));
+  }
+
+  return [...byId.values()].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
 const kpiTileClass = 'rounded-dss-sm border border-dss-border bg-dss-canvas px-3 py-2 text-center hover:border-dss-accent hover:bg-dss-accent-soft/40 transition';
 
 function LinkifiedText({
@@ -167,6 +234,11 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
   const [noStatusApps, setNoStatusApps] = useState<NoStatusApp[]>([]);
   const [openKpi, setOpenKpi] = useState<{ label: string; detailHeader: string; rows: KpiPopupRow[] } | null>(null);
   const [kpiSort, setKpiSort] = useState<'asc' | 'desc'>('asc');
+  const [expandedKpiRows, setExpandedKpiRows] = useState<Set<string>>(new Set());
+  const [kpiAppNotes, setKpiAppNotes] = useState<Record<string, KpiAppNote[]>>({});
+  const [kpiNotesLoading, setKpiNotesLoading] = useState<Set<string>>(new Set());
+  const [kpiNotesError, setKpiNotesError] = useState<Record<string, string>>({});
+  const kpiNotesInflight = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -199,6 +271,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
     setViewingSavedId(null);
     setSaveMessage('');
     setOpenKpi(null);
+    setExpandedKpiRows(new Set());
   }, [dateFrom, dateTo, selectedRepId, filterSource]);
 
   useEffect(() => {
@@ -555,7 +628,55 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
 
   const openKpiList = (label: string, detailHeader: string, rows: KpiPopupRow[]) => {
     setKpiSort('asc');
+    setExpandedKpiRows(new Set());
     setOpenKpi({ label, detailHeader, rows });
+  };
+
+  const closeKpiList = () => {
+    setOpenKpi(null);
+    setExpandedKpiRows(new Set());
+  };
+
+  const loadKpiAppNotes = async (appId: string) => {
+    const key = appId.trim().toLowerCase();
+    if (!key || kpiNotesInflight.current.has(key)) return;
+    kpiNotesInflight.current.add(key);
+    setKpiNotesLoading(prev => new Set(prev).add(key));
+    setKpiNotesError(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    try {
+      const loaded = await fetchNotesForApplication(appId);
+      setKpiAppNotes(prev => ({ ...prev, [key]: loaded }));
+    } catch (err) {
+      const message = err instanceof Error
+        ? err.message
+        : err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+          ? err.message
+          : 'Could not load notes.';
+      setKpiNotesError(prev => ({ ...prev, [key]: message }));
+    } finally {
+      kpiNotesInflight.current.delete(key);
+      setKpiNotesLoading(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+
+  const toggleKpiNotes = (rowKey: string, appId: string) => {
+    const opening = !expandedKpiRows.has(rowKey);
+    setExpandedKpiRows(prev => {
+      const next = new Set(prev);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
+      return next;
+    });
+    if (opening) void loadKpiAppNotes(appId);
   };
 
   const exportKpiRows = () => {
@@ -577,7 +698,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
   useEffect(() => {
     if (!openKpi) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpenKpi(null);
+      if (event.key === 'Escape') closeKpiList();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -910,7 +1031,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
       {openKpi && (
         <div
           className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-          onClick={() => setOpenKpi(null)}
+          onClick={closeKpiList}
         >
           <div
             className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-4xl max-h-[85vh] flex flex-col shadow-sm"
@@ -957,7 +1078,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
                 </button>
                 <button
                   type="button"
-                  onClick={() => setOpenKpi(null)}
+                  onClick={closeKpiList}
                   className="text-dss-muted hover:text-dss-ink"
                   aria-label="Close"
                 >
@@ -974,34 +1095,110 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
                     <th className="px-4 py-2 font-medium">Customer</th>
                     <th className="px-4 py-2 font-medium">{openKpi.detailHeader}</th>
                     <th className="px-4 py-2 font-medium">Date</th>
+                    <th className="px-2 py-2 font-medium text-center">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedKpiRows.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-dss-muted">No apps in this KPI.</td>
+                      <td colSpan={6} className="px-4 py-6 text-dss-muted">No apps in this KPI.</td>
                     </tr>
-                  ) : sortedKpiRows.map((row, index) => (
-                    <tr key={`${row.appId}-${row.createdAt}-${index}`} className="border-t border-dss-border align-top">
-                      <td className="px-4 py-2 whitespace-nowrap">
-                        {row.appId && onOpenApp ? (
-                          <button
-                            type="button"
-                            onClick={() => onOpenApp(row.appId)}
-                            className="font-semibold text-dss-accent hover:underline"
-                          >
-                            {row.appId}
-                          </button>
-                        ) : (
-                          <span className="font-semibold text-dss-ink">{row.appId || '—'}</span>
+                  ) : sortedKpiRows.map((row, index) => {
+                    const rowKey = kpiRowKey(row, index);
+                    const appKey = row.appId.trim().toLowerCase();
+                    const expanded = expandedKpiRows.has(rowKey);
+                    const appNotes = appKey ? kpiAppNotes[appKey] : [];
+                    const notesLoading = appKey ? kpiNotesLoading.has(appKey) : false;
+                    const notesError = appKey ? kpiNotesError[appKey] : '';
+                    return (
+                      <Fragment key={rowKey}>
+                        <tr
+                          className="border-t border-dss-border align-top cursor-pointer hover:bg-dss-canvas/60"
+                          onClick={() => toggleKpiNotes(rowKey, row.appId)}
+                        >
+                          <td className="px-4 py-2 whitespace-nowrap">
+                            {row.appId && onOpenApp ? (
+                              <button
+                                type="button"
+                                onClick={event => {
+                                  event.stopPropagation();
+                                  onOpenApp(row.appId);
+                                }}
+                                className="font-semibold text-dss-accent hover:underline"
+                              >
+                                {row.appId}
+                              </button>
+                            ) : (
+                              <span className="font-semibold text-dss-ink">{row.appId || '—'}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2">{row.dealerName || '—'}</td>
+                          <td className="px-4 py-2">{row.customerName || '—'}</td>
+                          <td className="px-4 py-2 max-w-xs break-words">{row.detail || '—'}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-dss-muted">{formatKpiDate(row.createdAt) || '—'}</td>
+                          <td className="px-2 py-2 text-center">
+                            <button
+                              type="button"
+                              onClick={event => {
+                                event.stopPropagation();
+                                toggleKpiNotes(rowKey, row.appId);
+                              }}
+                              title="Notes"
+                              aria-expanded={expanded}
+                              className={`relative inline-flex items-center justify-center w-6 h-6 rounded transition ${
+                                appNotes && appNotes.length > 0
+                                  ? 'bg-dss-navy-soft text-white hover:bg-dss-navy'
+                                  : 'bg-violet-50 text-violet-800 hover:bg-violet-100'
+                              }`}
+                            >
+                              <MessageSquare className="w-3 h-3" />
+                              {appNotes && appNotes.length > 0 && (
+                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center leading-none">
+                                  {appNotes.length}
+                                </span>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                        {expanded && (
+                          <tr className="border-t border-dss-border">
+                            <td colSpan={6} className="px-3 py-2 pl-8 pr-8 bg-dss-canvas">
+                              <div className="space-y-2">
+                                <p className="text-xs font-medium text-dss-muted uppercase tracking-wider">
+                                  {notesLoading && !appNotes ? 'Notes' : `Notes (${appNotes?.length || 0})`}
+                                </p>
+                                {notesLoading && !appNotes && (
+                                  <p className="text-sm text-dss-muted">Loading notes…</p>
+                                )}
+                                {notesError && (
+                                  <p className="text-sm text-dss-danger">{notesError}</p>
+                                )}
+                                {!notesLoading && !notesError && (appNotes?.length || 0) === 0 && (
+                                  <p className="text-sm text-dss-muted italic">No notes yet.</p>
+                                )}
+                                {appNotes && appNotes.length > 0 && (
+                                  <div className="space-y-2">
+                                    {appNotes.map(note => (
+                                      <NoteItem
+                                        key={note.id}
+                                        id={note.id}
+                                        noteText={note.noteText}
+                                        createdByName={note.createdByName}
+                                        createdAt={note.createdAt}
+                                        canEdit={false}
+                                        onUpdate={noopNoteChange}
+                                        onDelete={noopNoteChange}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="px-4 py-2">{row.dealerName || '—'}</td>
-                      <td className="px-4 py-2">{row.customerName || '—'}</td>
-                      <td className="px-4 py-2 max-w-xs break-words">{row.detail || '—'}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-dss-muted">{formatKpiDate(row.createdAt) || '—'}</td>
-                    </tr>
-                  ))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
