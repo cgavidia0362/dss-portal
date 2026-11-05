@@ -14,7 +14,7 @@ import {
   uniqueAppIds,
 } from '../lib/lossReasons';
 import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X, Download, MessageSquare } from 'lucide-react';
-import { exportRowsToExcel } from '../lib/exportExcel';
+import { exportRowsToExcel, joinNotesForExcel } from '../lib/exportExcel';
 import NoteItem from '../components/NoteItem';
 
 interface NoStatusApp {
@@ -144,52 +144,140 @@ function kpiRowKey(row: KpiPopupRow, index: number) {
   return appKey || `blank-${index}-${row.createdAt}-${row.dealerName}`;
 }
 
-async function fetchNotesForApplication(appId: string): Promise<KpiAppNote[]> {
-  const trimmed = appId.trim();
-  if (!trimmed) return [];
-  const pattern = ilikeExact(trimmed);
-  const toNote = (row: { id: string; note_text?: string; created_by_name?: string; created_at?: string }): KpiAppNote => ({
+type KpiNoteSourceRow = {
+  id: string;
+  note_text?: string | null;
+  created_by_name?: string | null;
+  created_at?: string | null;
+  application_id?: string | null;
+  call_id?: string | null;
+  deal_id?: string | null;
+};
+
+function toKpiNote(row: KpiNoteSourceRow): KpiAppNote {
+  return {
     id: row.id,
     noteText: row.note_text || '',
     createdByName: row.created_by_name || '',
     createdAt: row.created_at || '',
-  });
+  };
+}
 
-  const [{ data: callRows, error: callErr }, { data: calls, error: callsErr }, { data: deals, error: dealsErr }] = await Promise.all([
-    supabase.from('call_notes').select('id, note_text, created_by_name, created_at').ilike('application_id', pattern),
-    supabase.from('calls').select('id').ilike('application_id', pattern),
-    supabase.from('daily_deals').select('id').ilike('app_id', pattern),
-  ]);
-  if (callErr) throw callErr;
-  if (callsErr) throw callsErr;
-  if (dealsErr) throw dealsErr;
+function chunkList<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
 
-  const byId = new Map<string, KpiAppNote>();
-  for (const row of callRows || []) byId.set(row.id, toNote(row));
+function orIlike(column: string, values: string[]) {
+  return values.map(value => {
+    const pattern = ilikeExact(value);
+    return /^[a-zA-Z0-9]+$/.test(value)
+      ? `${column}.ilike.${pattern}`
+      : `${column}.ilike."${pattern.replace(/"/g, '')}"`;
+  }).join(',');
+}
 
-  const callIds = (calls || []).map((row: { id: string }) => row.id).filter(Boolean);
-  for (let i = 0; i < callIds.length; i += 100) {
-    const { data, error } = await supabase
-      .from('call_notes')
-      .select('id, note_text, created_by_name, created_at')
-      .in('call_id', callIds.slice(i, i + 100));
-    if (error) throw error;
-    for (const row of data || []) byId.set(row.id, toNote(row));
+function kpiNotesForExcel(notes: KpiAppNote[]) {
+  return joinNotesForExcel(notes.map(note => ({
+    noteText: formatKpiDate(note.createdAt)
+      ? `${note.noteText} (${formatKpiDate(note.createdAt)})`
+      : note.noteText,
+    createdByName: note.createdByName,
+  })));
+}
+
+function errorMessage(err: unknown) {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') return err.message;
+  return 'Could not load notes.';
+}
+
+async function fetchNotesForApplications(appIds: string[]): Promise<Record<string, KpiAppNote[]>> {
+  const unique = [...new Map(
+    appIds
+      .map(id => id.trim())
+      .filter(Boolean)
+      .map(id => [id.toLowerCase(), id] as const),
+  ).values()];
+  const grouped = new Map<string, Map<string, KpiAppNote>>();
+  for (const id of unique) grouped.set(id.toLowerCase(), new Map());
+  if (unique.length === 0) return {};
+
+  const callIdToApp = new Map<string, string>();
+  const dealIdToApp = new Map<string, string>();
+
+  await Promise.all(chunkList(unique, 30).map(async (ids) => {
+    const appFilter = orIlike('application_id', ids);
+    const dealFilter = orIlike('app_id', ids);
+    const [calls, deals, notesByApp] = await Promise.all([
+      fetchEveryPage<{ id: string; application_id?: string | null }>((from, to) =>
+        supabase.from('calls').select('id, application_id').or(appFilter).order('id').range(from, to),
+      ),
+      fetchEveryPage<{ id: string; app_id?: string | null }>((from, to) =>
+        supabase.from('daily_deals').select('id, app_id').or(dealFilter).order('id').range(from, to),
+      ),
+      fetchEveryPage<KpiNoteSourceRow>((from, to) =>
+        supabase
+          .from('call_notes')
+          .select('id, note_text, created_by_name, created_at, application_id, call_id')
+          .or(appFilter)
+          .order('id')
+          .range(from, to),
+      ),
+    ]);
+    for (const call of calls) {
+      const key = (call.application_id || '').trim().toLowerCase();
+      if (grouped.has(key)) callIdToApp.set(call.id, key);
+    }
+    for (const deal of deals) {
+      const key = (deal.app_id || '').trim().toLowerCase();
+      if (grouped.has(key)) dealIdToApp.set(deal.id, key);
+    }
+    for (const row of notesByApp) {
+      const key = (row.application_id || '').trim().toLowerCase();
+      grouped.get(key)?.set(row.id, toKpiNote(row));
+    }
+  }));
+
+  await Promise.all(chunkList([...callIdToApp.keys()], 100).map(async (ids) => {
+    const rows = await fetchEveryPage<KpiNoteSourceRow>((from, to) =>
+      supabase
+        .from('call_notes')
+        .select('id, note_text, created_by_name, created_at, application_id, call_id')
+        .in('call_id', ids)
+        .order('id')
+        .range(from, to),
+    );
+    for (const row of rows) {
+      const byNote = (row.application_id || '').trim().toLowerCase();
+      const key = grouped.has(byNote) ? byNote : callIdToApp.get(row.call_id || '');
+      if (key) grouped.get(key)?.set(row.id, toKpiNote(row));
+    }
+  }));
+
+  await Promise.all(chunkList([...dealIdToApp.keys()], 100).map(async (ids) => {
+    const rows = await fetchEveryPage<KpiNoteSourceRow>((from, to) =>
+      supabase
+        .from('daily_deal_notes')
+        .select('id, note_text, created_by_name, created_at, deal_id')
+        .in('deal_id', ids)
+        .order('id')
+        .range(from, to),
+    );
+    for (const row of rows) {
+      const key = dealIdToApp.get(row.deal_id || '');
+      if (key) grouped.get(key)?.set(row.id, toKpiNote(row));
+    }
+  }));
+
+  const result: Record<string, KpiAppNote[]> = {};
+  for (const [key, notes] of grouped) {
+    result[key] = [...notes.values()].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
   }
-
-  const dealIds = (deals || []).map((row: { id: string }) => row.id).filter(Boolean);
-  for (let i = 0; i < dealIds.length; i += 100) {
-    const { data, error } = await supabase
-      .from('daily_deal_notes')
-      .select('id, note_text, created_by_name, created_at')
-      .in('deal_id', dealIds.slice(i, i + 100));
-    if (error) throw error;
-    for (const row of data || []) byId.set(row.id, toNote(row));
-  }
-
-  return [...byId.values()].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  );
+  return result;
 }
 
 const kpiTileClass = 'rounded-dss-sm border border-dss-border bg-dss-canvas px-3 py-2 text-center hover:border-dss-accent hover:bg-dss-accent-soft/40 transition';
@@ -238,7 +326,11 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
   const [kpiAppNotes, setKpiAppNotes] = useState<Record<string, KpiAppNote[]>>({});
   const [kpiNotesLoading, setKpiNotesLoading] = useState<Set<string>>(new Set());
   const [kpiNotesError, setKpiNotesError] = useState<Record<string, string>>({});
+  const [kpiNotesPrefetchError, setKpiNotesPrefetchError] = useState('');
+  const [kpiExporting, setKpiExporting] = useState(false);
   const kpiNotesInflight = useRef<Set<string>>(new Set());
+  const kpiAppNotesRef = useRef<Record<string, KpiAppNote[]>>({});
+  const kpiPrefetchPromise = useRef<Promise<void> | null>(null);
   const [loading, setLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -272,6 +364,9 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
     setSaveMessage('');
     setOpenKpi(null);
     setExpandedKpiRows(new Set());
+    setKpiNotesPrefetchError('');
+    kpiAppNotesRef.current = {};
+    setKpiAppNotes({});
   }, [dateFrom, dateTo, selectedRepId, filterSource]);
 
   useEffect(() => {
@@ -629,6 +724,7 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
   const openKpiList = (label: string, detailHeader: string, rows: KpiPopupRow[]) => {
     setKpiSort('asc');
     setExpandedKpiRows(new Set());
+    setKpiNotesPrefetchError('');
     setOpenKpi({ label, detailHeader, rows });
   };
 
@@ -637,35 +733,57 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
     setExpandedKpiRows(new Set());
   };
 
-  const loadKpiAppNotes = async (appId: string) => {
-    const key = appId.trim().toLowerCase();
-    if (!key || kpiNotesInflight.current.has(key)) return;
-    kpiNotesInflight.current.add(key);
-    setKpiNotesLoading(prev => new Set(prev).add(key));
-    setKpiNotesError(prev => {
-      if (!prev[key]) return prev;
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-    try {
-      const loaded = await fetchNotesForApplication(appId);
-      setKpiAppNotes(prev => ({ ...prev, [key]: loaded }));
-    } catch (err) {
-      const message = err instanceof Error
-        ? err.message
-        : err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
-          ? err.message
-          : 'Could not load notes.';
-      setKpiNotesError(prev => ({ ...prev, [key]: message }));
-    } finally {
-      kpiNotesInflight.current.delete(key);
+  const rememberKpiNotes = (loaded: Record<string, KpiAppNote[]>) => {
+    kpiAppNotesRef.current = { ...kpiAppNotesRef.current, ...loaded };
+    setKpiAppNotes(kpiAppNotesRef.current);
+  };
+
+  const prefetchKpiNotes = async (appIds: string[]) => {
+    while (kpiPrefetchPromise.current) await kpiPrefetchPromise.current;
+    const keys = [...new Set(appIds.map(id => id.trim().toLowerCase()).filter(Boolean))];
+    const missing = keys.filter(key => !(key in kpiAppNotesRef.current));
+    if (missing.length === 0) return kpiAppNotesRef.current;
+
+    const task = (async () => {
+      for (const key of missing) kpiNotesInflight.current.add(key);
       setKpiNotesLoading(prev => {
         const next = new Set(prev);
-        next.delete(key);
+        for (const key of missing) next.add(key);
         return next;
       });
+      setKpiNotesError(prev => {
+        const next = { ...prev };
+        for (const key of missing) delete next[key];
+        return next;
+      });
+      try {
+        rememberKpiNotes(await fetchNotesForApplications(missing));
+        setKpiNotesPrefetchError('');
+      } catch (err) {
+        const message = errorMessage(err);
+        setKpiNotesPrefetchError(message);
+        setKpiNotesError(prev => {
+          const next = { ...prev };
+          for (const key of missing) next[key] = message;
+          return next;
+        });
+      } finally {
+        for (const key of missing) kpiNotesInflight.current.delete(key);
+        setKpiNotesLoading(prev => {
+          const next = new Set(prev);
+          for (const key of missing) next.delete(key);
+          return next;
+        });
+      }
+    })();
+
+    kpiPrefetchPromise.current = task;
+    try {
+      await task;
+    } finally {
+      if (kpiPrefetchPromise.current === task) kpiPrefetchPromise.current = null;
     }
+    return kpiAppNotesRef.current;
   };
 
   const toggleKpiNotes = (rowKey: string, appId: string) => {
@@ -676,23 +794,33 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
       else next.add(rowKey);
       return next;
     });
-    if (opening) void loadKpiAppNotes(appId);
+    if (opening) void prefetchKpiNotes([appId]);
   };
 
-  const exportKpiRows = () => {
-    if (!openKpi || sortedKpiRows.length === 0) return;
-    const slug = openKpi.label.toLowerCase().replace(/\s+/g, '-');
-    exportRowsToExcel(
-      sortedKpiRows.map(row => ({
-        'App ID': row.appId,
-        Dealer: row.dealerName,
-        Customer: row.customerName,
-        [openKpi.detailHeader]: row.detail,
-        Date: formatKpiDate(row.createdAt),
-      })),
-      openKpi.label,
-      `notes-${slug}-${dateFrom}-to-${dateTo}.xlsx`,
-    );
+  const exportKpiRows = async () => {
+    if (!openKpi || sortedKpiRows.length === 0 || kpiExporting) return;
+    setKpiExporting(true);
+    try {
+      const notesByApp = await prefetchKpiNotes(sortedKpiRows.map(row => row.appId));
+      const slug = openKpi.label.toLowerCase().replace(/\s+/g, '-');
+      exportRowsToExcel(
+        sortedKpiRows.map(row => {
+          const key = row.appId.trim().toLowerCase();
+          return {
+            'App ID': row.appId,
+            Dealer: row.dealerName,
+            Customer: row.customerName,
+            [openKpi.detailHeader]: row.detail,
+            Date: formatKpiDate(row.createdAt),
+            Notes: kpiNotesForExcel(key ? notesByApp[key] || [] : []),
+          };
+        }),
+        openKpi.label,
+        `notes-${slug}-${dateFrom}-to-${dateTo}.xlsx`,
+      );
+    } finally {
+      setKpiExporting(false);
+    }
   };
 
   useEffect(() => {
@@ -702,6 +830,11 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, [openKpi]);
+
+  useEffect(() => {
+    if (!openKpi) return;
+    void prefetchKpiNotes(openKpi.rows.map(row => row.appId));
   }, [openKpi]);
 
   const totalPages = Math.max(1, Math.ceil(filteredNotes.length / NOTES_PER_PAGE));
@@ -1043,6 +1176,9 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
                 <p className="text-sm text-dss-muted">
                   {sortedKpiRows.length} app{sortedKpiRows.length === 1 ? '' : 's'}
                 </p>
+                {kpiNotesPrefetchError && (
+                  <p className="text-sm text-dss-danger mt-1">{kpiNotesPrefetchError}</p>
+                )}
               </div>
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
@@ -1069,12 +1205,12 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
                 </button>
                 <button
                   type="button"
-                  onClick={exportKpiRows}
-                  disabled={sortedKpiRows.length === 0}
+                  onClick={() => { void exportKpiRows(); }}
+                  disabled={sortedKpiRows.length === 0 || kpiExporting}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  Export
+                  {kpiExporting ? 'Exporting…' : 'Export'}
                 </button>
                 <button
                   type="button"
@@ -1107,7 +1243,9 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
                     const rowKey = kpiRowKey(row, index);
                     const appKey = row.appId.trim().toLowerCase();
                     const expanded = expandedKpiRows.has(rowKey);
+                    const notesKnown = !appKey || Object.prototype.hasOwnProperty.call(kpiAppNotes, appKey) || Boolean(kpiNotesError[appKey]);
                     const appNotes = appKey ? kpiAppNotes[appKey] : [];
+                    const noteCount = appNotes?.length || 0;
                     const notesLoading = appKey ? kpiNotesLoading.has(appKey) : false;
                     const notesError = appKey ? kpiNotesError[appKey] : '';
                     return (
@@ -1146,15 +1284,15 @@ export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProp
                               title="Notes"
                               aria-expanded={expanded}
                               className={`relative inline-flex items-center justify-center w-6 h-6 rounded transition ${
-                                appNotes && appNotes.length > 0
+                                notesKnown && noteCount > 0
                                   ? 'bg-dss-navy-soft text-white hover:bg-dss-navy'
                                   : 'bg-violet-50 text-violet-800 hover:bg-violet-100'
-                              }`}
+                              } ${!notesKnown ? 'animate-pulse' : ''}`}
                             >
                               <MessageSquare className="w-3 h-3" />
-                              {appNotes && appNotes.length > 0 && (
-                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center leading-none">
-                                  {appNotes.length}
+                              {notesKnown && noteCount > 0 && (
+                                <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 bg-red-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center leading-none">
+                                  {noteCount}
                                 </span>
                               )}
                             </button>
