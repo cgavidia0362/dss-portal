@@ -1,4 +1,5 @@
 import { createClient, type User } from '@supabase/supabase-js';
+import type { AuthError as SupabaseAuthError } from '@supabase/supabase-js';
 
 export class AuthError extends Error {
   status = 401;
@@ -23,9 +24,14 @@ function readBearer(request: Request): string | null {
   return match?.[1]?.trim() || null;
 }
 
+function supabaseEnv() {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+  return { url, anonKey };
+}
+
 function supabaseServerClient(accessToken: string) {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const { url, anonKey } = supabaseEnv();
   if (!url || !anonKey) {
     throw new Error('Supabase environment variables are not configured on the server.');
   }
@@ -42,8 +48,16 @@ function supabaseServerClient(accessToken: string) {
   });
 }
 
-/** Verify DSS Supabase JWT. All Income Verification APIs must call this first. */
-export async function requireDssUser(request: Request): Promise<User> {
+function throwIfInvalidUser(error: SupabaseAuthError | null, user: User | null): asserts user is User {
+  if (user) return;
+  const message = error?.message || '';
+  if (/fetch|network|enotfound|econn|eai_again|timeout/i.test(message)) {
+    throw new Error('Unable to verify your session with the authentication server. Retry Analyze, or restart the local Vite server.');
+  }
+  throw new AuthError('Invalid or expired session.');
+}
+
+async function userFromRequest(request: Request): Promise<{ user: User; supabase: ReturnType<typeof supabaseServerClient> }> {
   const token = readBearer(request);
   if (!token) {
     throw new AuthError('Authentication required.');
@@ -51,29 +65,24 @@ export async function requireDssUser(request: Request): Promise<User> {
 
   const supabase = supabaseServerClient(token);
   const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) {
-    throw new AuthError('Invalid or expired session.');
-  }
-  return data.user;
+  throwIfInvalidUser(error, data.user);
+  return { user: data.user, supabase };
+}
+
+/** Verify DSS Supabase JWT. All Income Verification APIs must call this first. */
+export async function requireDssUser(request: Request): Promise<User> {
+  const { user } = await userFromRequest(request);
+  return user;
 }
 
 /** Require authenticated admin/manager, or a profile granted Income Verification via allowed_tabs. */
 export async function requireDssAdminOrManager(request: Request): Promise<User> {
-  const token = readBearer(request);
-  if (!token) {
-    throw new AuthError('Authentication required.');
-  }
-
-  const supabase = supabaseServerClient(token);
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) {
-    throw new AuthError('Invalid or expired session.');
-  }
+  const { user, supabase } = await userFromRequest(request);
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('role, allowed_tabs')
-    .eq('id', data.user.id)
+    .eq('id', user.id)
     .maybeSingle();
 
   if (profileError) {
@@ -82,12 +91,12 @@ export async function requireDssAdminOrManager(request: Request): Promise<User> 
 
   const role = typeof profile?.role === 'string' ? profile.role : '';
   if (role === 'admin' || role === 'manager') {
-    return data.user;
+    return user;
   }
 
   const allowedTabs = Array.isArray(profile?.allowed_tabs) ? profile.allowed_tabs : [];
   if (allowedTabs.includes('income-verification')) {
-    return data.user;
+    return user;
   }
 
   throw new ForbiddenError(

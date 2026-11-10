@@ -74,6 +74,8 @@ export interface NormalizedTransaction {
   referenceId?: string | null;
   postedDate?: string | null;
   transactionDate?: string | null;
+  sourceAccountLabel?: string | null;
+  sourceRowIndex?: number | null;
   /** Confidence that this row was extracted correctly. Independent of classification confidence. */
   extractionConfidence?: number | null;
   extractionTrustState?: ExtractionTrustState;

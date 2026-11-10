@@ -18,10 +18,12 @@ import {
   stripAmountTokens,
   type StatementPeriod,
 } from './parse';
+import { extractControlTotalsFromText } from './periods';
 import { extractHomeState } from '../analysis/location';
 import type { ExtractedDocument } from './types';
 import { isNavyFederalStatement, parseNavyFederalLedger } from './navyFederal';
 import { isChaseStatement, parseChaseLedger } from './chase';
+import { isFirstBankStatement, parseFirstBankLedger } from './firstBank';
 import { isWellsFargoStatement, parseWellsFargoLedger } from './wellsFargo';
 import {
   isLakeForestStyleStatement,
@@ -382,13 +384,16 @@ export function parseBankStatementText(
   const accountLast4 = extractAccountLast4(text);
   const lines = text.split(/\r?\n/);
   const control = extractDepositControlTotal(text);
-
   const sectionMode = hasDepositSection(text);
   const chaseMode = isChaseStatement(text);
+  const firstBankMode = isFirstBankStatement(text);
   const wellsMode = isWellsFargoStatement(text);
   const lakeForestMode = isLakeForestStyleStatement(text);
+  const firstBankControls = firstBankMode ? extractControlTotalsFromText(text) : [];
   const transactions = chaseMode
     ? parseChaseLedger(text, fileName, headerPeriod, accountLast4, options?.pages)
+    : firstBankMode
+      ? parseFirstBankLedger(text, fileName, headerPeriod, accountLast4, options?.pages)
     : wellsMode
       ? parseWellsFargoLedger(text, fileName, headerPeriod, accountLast4)
       : lakeForestMode
@@ -408,7 +413,29 @@ export function parseBankStatementText(
   }
 
   const chaseControls = chaseMode ? extractChaseAccountDepositControls(text) : [];
-  if (chaseControls.length) {
+  if (firstBankControls.length) {
+    for (const accountControl of firstBankControls) {
+      const depositTxs = transactions.filter(
+        (tx) =>
+          tx.direction === 'in' &&
+          (accountControl.accountLabel == null ||
+            tx.sourceAccountLabel === accountControl.accountLabel)
+      );
+      const extractedTotal = roundMoney(
+        depositTxs.reduce((sum, tx) => sum + tx.amount, 0)
+      );
+      if (
+        accountControl.creditTotal != null &&
+        !amountsEqual(extractedTotal, accountControl.creditTotal)
+      ) {
+        warnings.push({
+          code: 'deposit_control_mismatch',
+          message: `Deposit control total mismatch in ${fileName} (${accountControl.accountLabel}): statement reports deposits totaling $${accountControl.creditTotal.toFixed(2)}, but extracted ${depositTxs.length} deposits totaling $${extractedTotal.toFixed(2)}.`,
+          documentName: fileName,
+        });
+      }
+    }
+  } else if (chaseControls.length) {
     for (const accountControl of chaseControls) {
       const depositTxs = transactions.filter(
         (tx) =>

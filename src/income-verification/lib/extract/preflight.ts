@@ -77,7 +77,7 @@ function buildAccounts(
   const accounts = controls
     .filter((control) => control.accountLast4 || control.accountLabel)
     .map((control, index) => ({
-      id: `${segmentId}:acct:${control.accountLast4 ?? index}`,
+      id: `${segmentId}:acct:${control.accountLast4 ?? index}:${control.accountLabel ?? index}`,
       accountLast4: control.accountLast4,
       accountLabel: control.accountLabel,
       pageStart,

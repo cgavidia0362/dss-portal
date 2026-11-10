@@ -35,31 +35,89 @@ export type DistributeResult = {
   callCount: number;
 };
 
+export function normalizeDealerCif(cif?: string | null): string {
+  return (cif || '').trim();
+}
+
+export function normalizeDealerName(name?: string | null): string {
+  return (name || '').trim().toLowerCase();
+}
+
 export function dealerKey(call: DealerIdentity): string {
-  const cif = (call.dealerCifNumber || '').trim();
+  const cif = normalizeDealerCif(call.dealerCifNumber);
   if (cif) return `cif:${cif}`;
-  const name = (call.dealerName || '').trim().toLowerCase();
+  const name = normalizeDealerName(call.dealerName);
   return name ? `name:${name}` : '';
 }
 
+function findRoot(parent: number[], index: number): number {
+  let current = index;
+  while (parent[current] !== current) {
+    parent[current] = parent[parent[current]];
+    current = parent[current];
+  }
+  return current;
+}
+
+function union(parent: number[], a: number, b: number) {
+  const rootA = findRoot(parent, a);
+  const rootB = findRoot(parent, b);
+  if (rootA !== rootB) parent[rootB] = rootA;
+}
+
+function groupKey(sortCif: string, sortName: string, fallbackCallId: string): string {
+  if (sortCif) return `cif:${sortCif}`;
+  if (sortName) return `name:${sortName}`;
+  return `call:${fallbackCallId}`;
+}
+
+/** Group apps that share a CIF or the same dealer name so one rooftop is never split. */
 export function groupCallsByDealer(calls: DistributableCall[]): DealerGroup[] {
-  const map = new Map<string, DealerGroup>();
-  for (const call of calls) {
-    let key = dealerKey(call);
-    if (!key) key = `call:${call.id}`;
-    const existing = map.get(key);
+  const parent = calls.map((_, index) => index);
+  const cifFirst = new Map<string, number>();
+  const nameFirst = new Map<string, number>();
+
+  calls.forEach((call, index) => {
+    const cif = normalizeDealerCif(call.dealerCifNumber);
+    const name = normalizeDealerName(call.dealerName);
+    if (cif) {
+      const existing = cifFirst.get(cif);
+      if (existing === undefined) cifFirst.set(cif, index);
+      else union(parent, existing, index);
+    }
+    if (name) {
+      const existing = nameFirst.get(name);
+      if (existing === undefined) nameFirst.set(name, index);
+      else union(parent, existing, index);
+    }
+  });
+
+  const groups = new Map<number, DealerGroup>();
+  calls.forEach((call, index) => {
+    const root = findRoot(parent, index);
+    const cif = normalizeDealerCif(call.dealerCifNumber);
+    const name = normalizeDealerName(call.dealerName);
+    const existing = groups.get(root);
     if (existing) {
       existing.callIds.push(call.id);
-      continue;
+      if (name && (!existing.sortName || name.localeCompare(existing.sortName) < 0)) {
+        existing.sortName = name;
+      }
+      if (cif && (!existing.sortCif || cif.localeCompare(existing.sortCif) < 0)) {
+        existing.sortCif = cif;
+      }
+      existing.key = groupKey(existing.sortCif, existing.sortName, existing.callIds[0]);
+      return;
     }
-    map.set(key, {
-      key,
-      sortName: (call.dealerName || '').trim().toLowerCase(),
-      sortCif: (call.dealerCifNumber || '').trim(),
+    groups.set(root, {
+      key: groupKey(cif, name, call.id),
+      sortName: name,
+      sortCif: cif,
       callIds: [call.id],
     });
-  }
-  return Array.from(map.values()).sort((a, b) => {
+  });
+
+  return Array.from(groups.values()).sort((a, b) => {
     const byName = a.sortName.localeCompare(b.sortName);
     if (byName !== 0) return byName;
     const byCif = a.sortCif.localeCompare(b.sortCif);

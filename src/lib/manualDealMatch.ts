@@ -72,8 +72,7 @@ export function buildManualCreditByApp(manuals: DealMatchManual[]): Map<string, 
 
 /**
  * True when a call already represents this manual entry.
- * Same App ID + deal-like status + dealDate in range is enough to dedupe —
- * even if the call is still missing stored deal_by (credit will come from the call after resolve).
+ * Same App ID is one deal, even when the call and the Daily Deal name different reps.
  */
 export function manualDealMatchedByCall(
   manual: DealMatchManual,
@@ -91,9 +90,6 @@ export function manualDealMatchedByCall(
       const d = c.dealDate instanceof Date ? c.dealDate : new Date(c.dealDate);
       if (Number.isNaN(d.getTime()) || !isInBounds(d)) return false;
     }
-    const stored = getCallDealCreditId(c);
-    // If the call already has a different credit rep, don't treat as the same deal for this manual.
-    if (stored && manual.addedBy && stored !== manual.addedBy) return false;
     return true;
   });
 }
@@ -101,6 +97,7 @@ export function manualDealMatchedByCall(
 /**
  * Sticky / conversion dedupe: match Manual to a Call that was booked
  * (has deal_date), even if FU status later left Deal/Confirmed.
+ * A different rep on the Daily Deal does not make a second deal.
  */
 export function manualDealMatchedByBookedCall(
   manual: DealMatchManual,
@@ -117,8 +114,35 @@ export function manualDealMatchedByBookedCall(
       const d = c.dealDate instanceof Date ? c.dealDate : new Date(c.dealDate);
       if (Number.isNaN(d.getTime()) || !isInBounds(d)) return false;
     }
-    const stored = getCallDealCreditId(c);
-    if (stored && manual.addedBy && stored !== manual.addedBy) return false;
     return true;
   });
+}
+
+export function duplicateDailyDealMessage(hit: {
+  addedByName?: string | null;
+  dealDate?: string | null;
+  fuStatus?: string | null;
+}): string {
+  const who = (hit.addedByName || '').trim() || 'another rep';
+  const detail = [(hit.dealDate || '').trim(), (hit.fuStatus || '').trim()].filter(Boolean).join(', ');
+  return detail
+    ? `This App ID is already a deal for ${who} (${detail}). A second deal was not added.`
+    : `This App ID is already a deal for ${who}. A second deal was not added.`;
+}
+
+/** Keep the earliest Daily Deal when the same App ID was entered more than once. */
+export function oneManualPerAppId<T extends { appId?: string | null; dealDate?: string | null; createdAt?: string | null }>(deals: T[]): T[] {
+  const kept = new Map<string, T>();
+  const blank: T[] = [];
+  const rank = (row: T) => row.dealDate || row.createdAt || '9999';
+  for (const deal of deals) {
+    const key = normalizeAppId(deal.appId);
+    if (!key) {
+      blank.push(deal);
+      continue;
+    }
+    const current = kept.get(key);
+    if (!current || rank(deal) < rank(current)) kept.set(key, deal);
+  }
+  return [...kept.values(), ...blank];
 }

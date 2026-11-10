@@ -119,13 +119,16 @@ export function descriptionsLikelySameRow(left: string, right: string): boolean 
 function identityParts(tx: NormalizedTransaction) {
   return {
     segment: tx.statementSegmentId ?? '',
+    document: tx.sourceDocument ?? '',
     account: tx.sourceAccount ?? '',
+    label: tx.sourceAccountLabel ?? '',
     date: tx.date,
     description: normalizeCandidateDescription(tx.description),
     direction: tx.direction,
     amount: toCents(tx.amount),
     reference: tx.referenceId || extractReferenceId(`${tx.description} ${tx.rawDescription}`),
     page: tx.page ?? null,
+    row: tx.sourceRowIndex ?? null,
     runningBalance: tx.runningBalance ?? null,
   };
 }
@@ -194,6 +197,8 @@ function strongPhysicalIdentity(left: NormalizedTransaction, right: NormalizedTr
   const a = identityParts(left);
   const b = identityParts(right);
   if (a.account && b.account && a.account !== b.account) return false;
+  if (a.label && b.label && a.label !== b.label) return false;
+  if (a.document && b.document && a.document !== b.document) return false;
   if (a.segment && b.segment && a.segment !== b.segment) return false;
   if (a.page != null && b.page != null && a.page !== b.page) return false;
   if (!descriptionsLikelySameRow(left.description, right.description)) return false;
@@ -257,8 +262,18 @@ export function candidatesMatch(
   const a = identityParts(left);
   const b = identityParts(right);
   if (a.segment && b.segment && a.segment !== b.segment) return false;
+  if (a.document && b.document && a.document !== b.document) return false;
   if (a.account && b.account && a.account !== b.account) return false;
+  if (a.label && b.label && a.label !== b.label) return false;
   if (a.direction !== b.direction) return false;
+  if (
+    !differentProvenance(left, right) &&
+    a.row != null &&
+    b.row != null &&
+    (a.row !== b.row || (a.page ?? null) !== (b.page ?? null))
+  ) {
+    return false;
+  }
   if (includeAmount && a.amount !== b.amount) return false;
   if (!datesCompatible(left, right, includeAmount)) return false;
   if (a.reference && b.reference) {
@@ -289,6 +304,10 @@ export function candidatesMatch(
 
 function candidateIdentityKey(tx: NormalizedTransaction, includeAmount: boolean): string {
   const parts = identityParts(tx);
+  if (parts.row != null && parts.page != null) {
+    const phys = `phys:${parts.segment}:${parts.document}:${parts.account}:${parts.label}:${parts.page}:${parts.row}:${parts.direction}`;
+    return includeAmount ? `${phys}:${parts.amount}` : phys;
+  }
   if (parts.reference) {
     return includeAmount
       ? `ref:${parts.segment}:${parts.account}:${parts.date}:${parts.reference}:${parts.amount}:${parts.direction}`
@@ -374,6 +393,9 @@ function chooseCanonical(
           extractReferenceId(`${incoming.description} ${incoming.rawDescription}`),
         runningBalance: existing.runningBalance ?? incoming.runningBalance,
         page: existing.page ?? incoming.page,
+        sourceRowIndex: existing.sourceRowIndex ?? incoming.sourceRowIndex,
+        sourceAccountLabel: existing.sourceAccountLabel ?? incoming.sourceAccountLabel,
+        statementSegmentId: existing.statementSegmentId ?? incoming.statementSegmentId,
         amountSource: winner.amountSource ?? loser.amountSource,
       },
       conflict: false,

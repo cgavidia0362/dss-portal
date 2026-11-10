@@ -36,3 +36,4 @@ supabase/.temp/
 scripts/_tmp*
 **/_tmp-iv*
 attachments/
+.vercel

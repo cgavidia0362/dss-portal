@@ -1,6 +1,45 @@
-import { useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X } from 'lucide-react';
+import { excludeKnownDealersFromLenders, latestNotePerApplication, uniqueDealerNames } from '../lib/notesInsights';
+import {
+  classifyLossReasons,
+  excelFlag,
+  ensureOtherBankRow,
+  groupNotesByLossReason,
+  listNoStatusApplications,
+  NO_STATUS_FU_STATUSES,
+  NO_STATUS_LABEL,
+  sortKpiApps,
+  splitTextByAppIds,
+  uniqueAppIds,
+} from '../lib/lossReasons';
+import { StickyNote, Sparkles, ChevronLeft, ChevronRight, Save, Bookmark, Trash2, X, Download, MessageSquare } from 'lucide-react';
+import { exportRowsToExcel, joinNotesForExcel } from '../lib/exportExcel';
+import NoteItem from '../components/NoteItem';
+
+interface NoStatusApp {
+  appId: string;
+  dealerName: string;
+  customerName: string;
+  fuStatus: string;
+  statusLast: string;
+  createdAt: string;
+}
+
+interface KpiPopupRow {
+  appId: string;
+  dealerName: string;
+  customerName: string;
+  detail: string;
+  createdAt: string;
+}
+
+interface KpiAppNote {
+  id: string;
+  noteText: string;
+  createdByName: string;
+  createdAt: string;
+}
 
 interface CombinedNote {
   id: string;
@@ -24,6 +63,7 @@ interface User {
 interface NotesTabProps {
   currentUser: User;
   users: User[];
+  onOpenApp?: (appId: string) => void;
 }
 
 interface LossInsights {
@@ -58,6 +98,20 @@ const getTodayString = () => {
 };
 
 const NOTES_PER_PAGE = 10;
+const STATUS_PAGE_SIZE = 1000;
+
+async function fetchEveryPage<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += STATUS_PAGE_SIZE) {
+    const { data, error } = await build(from, from + STATUS_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < STATUS_PAGE_SIZE) return rows;
+  }
+}
 const NO_DEAL_STATUS = 'No Deal';
 
 const formatDateLabel = (from: string, to: string) => {
@@ -73,11 +127,210 @@ const formatDateLabel = (from: string, to: string) => {
   return `${fDate} — ${tDate}`;
 };
 
-export default function NotesTab({ currentUser, users }: NotesTabProps) {
+const formatKpiDate = (value: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString('en-US') : '';
+};
+
+const noopNoteChange = async () => {};
+
+function ilikeExact(value: string) {
+  return value.replace(/[%_]/g, (char) => `\\${char}`);
+}
+
+function kpiRowKey(row: KpiPopupRow, index: number) {
+  const appKey = row.appId.trim().toLowerCase();
+  return appKey || `blank-${index}-${row.createdAt}-${row.dealerName}`;
+}
+
+type KpiNoteSourceRow = {
+  id: string;
+  note_text?: string | null;
+  created_by_name?: string | null;
+  created_at?: string | null;
+  application_id?: string | null;
+  call_id?: string | null;
+  deal_id?: string | null;
+};
+
+function toKpiNote(row: KpiNoteSourceRow): KpiAppNote {
+  return {
+    id: row.id,
+    noteText: row.note_text || '',
+    createdByName: row.created_by_name || '',
+    createdAt: row.created_at || '',
+  };
+}
+
+function chunkList<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
+function orIlike(column: string, values: string[]) {
+  return values.map(value => {
+    const pattern = ilikeExact(value);
+    return /^[a-zA-Z0-9]+$/.test(value)
+      ? `${column}.ilike.${pattern}`
+      : `${column}.ilike."${pattern.replace(/"/g, '')}"`;
+  }).join(',');
+}
+
+function kpiNotesForExcel(notes: KpiAppNote[]) {
+  return joinNotesForExcel(notes.map(note => ({
+    noteText: formatKpiDate(note.createdAt)
+      ? `${note.noteText} (${formatKpiDate(note.createdAt)})`
+      : note.noteText,
+    createdByName: note.createdByName,
+  })));
+}
+
+function errorMessage(err: unknown) {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') return err.message;
+  return 'Could not load notes.';
+}
+
+async function fetchNotesForApplications(appIds: string[]): Promise<Record<string, KpiAppNote[]>> {
+  const unique = [...new Map(
+    appIds
+      .map(id => id.trim())
+      .filter(Boolean)
+      .map(id => [id.toLowerCase(), id] as const),
+  ).values()];
+  const grouped = new Map<string, Map<string, KpiAppNote>>();
+  for (const id of unique) grouped.set(id.toLowerCase(), new Map());
+  if (unique.length === 0) return {};
+
+  const callIdToApp = new Map<string, string>();
+  const dealIdToApp = new Map<string, string>();
+
+  await Promise.all(chunkList(unique, 30).map(async (ids) => {
+    const appFilter = orIlike('application_id', ids);
+    const dealFilter = orIlike('app_id', ids);
+    const [calls, deals, notesByApp] = await Promise.all([
+      fetchEveryPage<{ id: string; application_id?: string | null }>((from, to) =>
+        supabase.from('calls').select('id, application_id').or(appFilter).order('id').range(from, to),
+      ),
+      fetchEveryPage<{ id: string; app_id?: string | null }>((from, to) =>
+        supabase.from('daily_deals').select('id, app_id').or(dealFilter).order('id').range(from, to),
+      ),
+      fetchEveryPage<KpiNoteSourceRow>((from, to) =>
+        supabase
+          .from('call_notes')
+          .select('id, note_text, created_by_name, created_at, application_id, call_id')
+          .or(appFilter)
+          .order('id')
+          .range(from, to),
+      ),
+    ]);
+    for (const call of calls) {
+      const key = (call.application_id || '').trim().toLowerCase();
+      if (grouped.has(key)) callIdToApp.set(call.id, key);
+    }
+    for (const deal of deals) {
+      const key = (deal.app_id || '').trim().toLowerCase();
+      if (grouped.has(key)) dealIdToApp.set(deal.id, key);
+    }
+    for (const row of notesByApp) {
+      const key = (row.application_id || '').trim().toLowerCase();
+      grouped.get(key)?.set(row.id, toKpiNote(row));
+    }
+  }));
+
+  await Promise.all(chunkList([...callIdToApp.keys()], 100).map(async (ids) => {
+    const rows = await fetchEveryPage<KpiNoteSourceRow>((from, to) =>
+      supabase
+        .from('call_notes')
+        .select('id, note_text, created_by_name, created_at, application_id, call_id')
+        .in('call_id', ids)
+        .order('id')
+        .range(from, to),
+    );
+    for (const row of rows) {
+      const byNote = (row.application_id || '').trim().toLowerCase();
+      const key = grouped.has(byNote) ? byNote : callIdToApp.get(row.call_id || '');
+      if (key) grouped.get(key)?.set(row.id, toKpiNote(row));
+    }
+  }));
+
+  await Promise.all(chunkList([...dealIdToApp.keys()], 100).map(async (ids) => {
+    const rows = await fetchEveryPage<KpiNoteSourceRow>((from, to) =>
+      supabase
+        .from('daily_deal_notes')
+        .select('id, note_text, created_by_name, created_at, deal_id')
+        .in('deal_id', ids)
+        .order('id')
+        .range(from, to),
+    );
+    for (const row of rows) {
+      const key = dealIdToApp.get(row.deal_id || '');
+      if (key) grouped.get(key)?.set(row.id, toKpiNote(row));
+    }
+  }));
+
+  const result: Record<string, KpiAppNote[]> = {};
+  for (const [key, notes] of grouped) {
+    result[key] = [...notes.values()].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+  }
+  return result;
+}
+
+const kpiTileClass = 'rounded-dss-sm border border-dss-border bg-dss-canvas px-3 py-2 text-center hover:border-dss-accent hover:bg-dss-accent-soft/40 transition';
+
+function LinkifiedText({
+  text,
+  appIds,
+  onOpenApp,
+  className,
+}: {
+  text: string;
+  appIds: string[];
+  onOpenApp?: (appId: string) => void;
+  className?: string;
+}) {
+  const parts = splitTextByAppIds(text, appIds);
+  return (
+    <p className={className}>
+      {parts.map((part, i) =>
+        part.type === 'app' && onOpenApp ? (
+          <button
+            key={`${part.value}-${i}`}
+            type="button"
+            onClick={() => onOpenApp(part.value)}
+            className="font-semibold text-dss-accent hover:underline"
+          >
+            {part.value}
+          </button>
+        ) : (
+          <span key={i}>{part.value}</span>
+        )
+      )}
+    </p>
+  );
+}
+
+export default function NotesTab({ currentUser, users, onOpenApp }: NotesTabProps) {
   const today = getTodayString();
   const isAdminOrManager = currentUser.role === 'admin' || currentUser.role === 'manager';
 
   const [notes, setNotes] = useState<CombinedNote[]>([]);
+  const [noStatusApps, setNoStatusApps] = useState<NoStatusApp[]>([]);
+  const [openKpi, setOpenKpi] = useState<{ label: string; detailHeader: string; rows: KpiPopupRow[] } | null>(null);
+  const [kpiSort, setKpiSort] = useState<'asc' | 'desc'>('asc');
+  const [expandedKpiRows, setExpandedKpiRows] = useState<Set<string>>(new Set());
+  const [kpiAppNotes, setKpiAppNotes] = useState<Record<string, KpiAppNote[]>>({});
+  const [kpiNotesLoading, setKpiNotesLoading] = useState<Set<string>>(new Set());
+  const [kpiNotesError, setKpiNotesError] = useState<Record<string, string>>({});
+  const [kpiNotesPrefetchError, setKpiNotesPrefetchError] = useState('');
+  const [kpiExporting, setKpiExporting] = useState(false);
+  const kpiNotesInflight = useRef<Set<string>>(new Set());
+  const kpiAppNotesRef = useRef<Record<string, KpiAppNote[]>>({});
+  const kpiPrefetchPromise = useRef<Promise<void> | null>(null);
   const [loading, setLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
@@ -109,6 +362,11 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
     setInsightsError('');
     setViewingSavedId(null);
     setSaveMessage('');
+    setOpenKpi(null);
+    setExpandedKpiRows(new Set());
+    setKpiNotesPrefetchError('');
+    kpiAppNotesRef.current = {};
+    setKpiAppNotes({});
   }, [dateFrom, dateTo, selectedRepId, filterSource]);
 
   useEffect(() => {
@@ -141,6 +399,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
 
   const fetchNotes = async () => {
     setLoading(true);
+    setNoStatusApps([]);
     try {
       const fromTs = `${dateFrom}T00:00:00`;
       const toTs = `${dateTo}T23:59:59.999`;
@@ -217,10 +476,72 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
           fuStatus: n.daily_deals?.fu_status || undefined,
         })),
       ]
-        .filter(n => n.fuStatus === NO_DEAL_STATUS)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        .filter(n => n.fuStatus === NO_DEAL_STATUS);
 
-      setNotes(combined);
+      setNotes(latestNotePerApplication(combined));
+
+      const restrictRep = <Q extends { eq: (column: string, value: string) => Q }>(query: Q, column: string) => {
+        if (!isAdminOrManager) return query.eq(column, currentUser.id);
+        if (selectedRepId) return query.eq(column, selectedRepId);
+        return query;
+      };
+      const [statusCalls, statusDeals] = await Promise.all([
+        fetchEveryPage<{
+          application_id?: string;
+          fu_status?: string;
+          status_last?: string;
+          dealer_name?: string;
+          customer_full_name?: string;
+          fu_status_at?: string;
+        }>((from, to) =>
+          restrictRep(
+            supabase
+              .from('calls')
+              .select('application_id, fu_status, status_last, dealer_name, customer_full_name, fu_status_at')
+              .in('fu_status', [...NO_STATUS_FU_STATUSES])
+              .gte('fu_status_at', fromTs)
+              .lte('fu_status_at', toTs)
+              .range(from, to),
+            'assigned_to',
+          ),
+        ),
+        fetchEveryPage<{
+          app_id?: string;
+          fu_status?: string;
+          dealer_name?: string;
+          customer_name?: string;
+          created_at?: string;
+        }>((from, to) =>
+          restrictRep(
+            supabase
+              .from('daily_deals')
+              .select('app_id, fu_status, dealer_name, customer_name, created_at')
+              .in('fu_status', [...NO_STATUS_FU_STATUSES])
+              .gte('created_at', fromTs)
+              .lte('created_at', toTs)
+              .range(from, to),
+            'added_by',
+          ),
+        ),
+      ]);
+      setNoStatusApps(listNoStatusApplications([
+        ...statusCalls.map((row) => ({
+          appId: row.application_id || '',
+          dealerName: row.dealer_name || '',
+          customerName: row.customer_full_name || '',
+          fuStatus: row.fu_status || '',
+          statusLast: row.status_last || '',
+          createdAt: row.fu_status_at || '',
+        })),
+        ...statusDeals.map((row) => ({
+          appId: row.app_id || '',
+          dealerName: row.dealer_name || '',
+          customerName: row.customer_name || '',
+          fuStatus: row.fu_status || '',
+          statusLast: '',
+          createdAt: row.created_at || '',
+        })),
+      ]));
     } catch (err) {
       console.error('Error fetching notes:', err);
     } finally {
@@ -241,6 +562,14 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
         return;
       }
 
+      const lossReasonBreakdown = [
+        ...groupNotesByLossReason(notesForAi).map(bucket => ({
+          category: bucket.label,
+          count: bucket.count,
+        })),
+        { category: NO_STATUS_LABEL, count: noStatusApps.length },
+      ];
+
       const { data, error } = await supabase.functions.invoke('notes-insights', {
         body: {
           dateRangeLabel: formatDateLabel(dateFrom, dateTo),
@@ -253,6 +582,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             createdAt: n.createdAt,
             source: n.source,
           })),
+          lossReasonBreakdown,
         },
       });
 
@@ -260,7 +590,15 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
       if (data?.error) throw new Error(data.error);
       if (!data?.lossSummary) throw new Error('Unexpected AI response');
 
-      setInsights(data as LossInsights);
+      const dealerNames = uniqueDealerNames(notesForAi.map(n => n.dealerName));
+      const insightsData = data as LossInsights;
+      setInsights({
+        ...insightsData,
+        whoLosingTo: ensureOtherBankRow(
+          excludeKnownDealersFromLenders(insightsData.whoLosingTo || [], dealerNames),
+          notesForAi,
+        ),
+      });
       setViewingSavedId(null);
       setSaveMessage('');
     } catch (err: any) {
@@ -337,6 +675,167 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
     if (filterSource && n.source !== filterSource) return false;
     return true;
   });
+
+  const exportFilteredNotes = () => {
+    if (filteredNotes.length === 0) return;
+    const filename = dateFrom === dateTo
+      ? `notes-${dateFrom}.xlsx`
+      : `notes-${dateFrom}-to-${dateTo}.xlsx`;
+    exportRowsToExcel(
+      filteredNotes.map(note => {
+        const flags = classifyLossReasons(note.noteText);
+        return {
+          'App ID': note.appId || '',
+          Dealer: note.dealerName || '',
+          Customer: note.customerName || '',
+          Source: note.source === 'calls' ? 'Calls' : 'Daily Deals',
+          Status: note.fuStatus || 'No Deal',
+          APR: excelFlag(flags.apr),
+          Fees: excelFlag(flags.fees),
+          Stips: excelFlag(flags.stips),
+          'No reason': excelFlag(flags.noReason),
+          Detail: (note.noteText || '').trim(),
+          By: note.createdByName || '',
+          Date: new Date(note.createdAt).toLocaleString('en-US'),
+        };
+      }),
+      'Notes',
+      filename,
+    );
+  };
+
+  const knownAppIds = useMemo(
+    () => uniqueAppIds(filteredNotes.map(note => note.appId)),
+    [filteredNotes],
+  );
+  const lossReasonBuckets = useMemo(
+    () => groupNotesByLossReason(filteredNotes),
+    [filteredNotes],
+  );
+  const rankedLenders = useMemo(
+    () => ensureOtherBankRow(insights?.whoLosingTo || [], filteredNotes),
+    [insights, filteredNotes],
+  );
+  const sortedKpiRows = useMemo(
+    () => sortKpiApps(openKpi?.rows || [], kpiSort),
+    [openKpi, kpiSort],
+  );
+
+  const openKpiList = (label: string, detailHeader: string, rows: KpiPopupRow[]) => {
+    setKpiSort('asc');
+    setExpandedKpiRows(new Set());
+    setKpiNotesPrefetchError('');
+    setOpenKpi({ label, detailHeader, rows });
+  };
+
+  const closeKpiList = () => {
+    setOpenKpi(null);
+    setExpandedKpiRows(new Set());
+  };
+
+  const rememberKpiNotes = (loaded: Record<string, KpiAppNote[]>) => {
+    kpiAppNotesRef.current = { ...kpiAppNotesRef.current, ...loaded };
+    setKpiAppNotes(kpiAppNotesRef.current);
+  };
+
+  const prefetchKpiNotes = async (appIds: string[]) => {
+    while (kpiPrefetchPromise.current) await kpiPrefetchPromise.current;
+    const keys = [...new Set(appIds.map(id => id.trim().toLowerCase()).filter(Boolean))];
+    const missing = keys.filter(key => !(key in kpiAppNotesRef.current));
+    if (missing.length === 0) return kpiAppNotesRef.current;
+
+    const task = (async () => {
+      for (const key of missing) kpiNotesInflight.current.add(key);
+      setKpiNotesLoading(prev => {
+        const next = new Set(prev);
+        for (const key of missing) next.add(key);
+        return next;
+      });
+      setKpiNotesError(prev => {
+        const next = { ...prev };
+        for (const key of missing) delete next[key];
+        return next;
+      });
+      try {
+        rememberKpiNotes(await fetchNotesForApplications(missing));
+        setKpiNotesPrefetchError('');
+      } catch (err) {
+        const message = errorMessage(err);
+        setKpiNotesPrefetchError(message);
+        setKpiNotesError(prev => {
+          const next = { ...prev };
+          for (const key of missing) next[key] = message;
+          return next;
+        });
+      } finally {
+        for (const key of missing) kpiNotesInflight.current.delete(key);
+        setKpiNotesLoading(prev => {
+          const next = new Set(prev);
+          for (const key of missing) next.delete(key);
+          return next;
+        });
+      }
+    })();
+
+    kpiPrefetchPromise.current = task;
+    try {
+      await task;
+    } finally {
+      if (kpiPrefetchPromise.current === task) kpiPrefetchPromise.current = null;
+    }
+    return kpiAppNotesRef.current;
+  };
+
+  const toggleKpiNotes = (rowKey: string, appId: string) => {
+    const opening = !expandedKpiRows.has(rowKey);
+    setExpandedKpiRows(prev => {
+      const next = new Set(prev);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
+      return next;
+    });
+    if (opening) void prefetchKpiNotes([appId]);
+  };
+
+  const exportKpiRows = async () => {
+    if (!openKpi || sortedKpiRows.length === 0 || kpiExporting) return;
+    setKpiExporting(true);
+    try {
+      const notesByApp = await prefetchKpiNotes(sortedKpiRows.map(row => row.appId));
+      const slug = openKpi.label.toLowerCase().replace(/\s+/g, '-');
+      exportRowsToExcel(
+        sortedKpiRows.map(row => {
+          const key = row.appId.trim().toLowerCase();
+          return {
+            'App ID': row.appId,
+            Dealer: row.dealerName,
+            Customer: row.customerName,
+            [openKpi.detailHeader]: row.detail,
+            Date: formatKpiDate(row.createdAt),
+            Notes: kpiNotesForExcel(key ? notesByApp[key] || [] : []),
+          };
+        }),
+        openKpi.label,
+        `notes-${slug}-${dateFrom}-to-${dateTo}.xlsx`,
+      );
+    } finally {
+      setKpiExporting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!openKpi) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeKpiList();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openKpi]);
+
+  useEffect(() => {
+    if (!openKpi) return;
+    void prefetchKpiNotes(openKpi.rows.map(row => row.appId));
+  }, [openKpi]);
 
   const totalPages = Math.max(1, Math.ceil(filteredNotes.length / NOTES_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
@@ -502,7 +1001,7 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
             </span>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           {callsCount > 0 && (
             <span className="text-xs px-2.5 py-1 bg-dss-accent-soft bg-opacity-40 text-dss-accent rounded-full border border-dss-navy-soft">
               {callsCount} from Calls
@@ -513,6 +1012,15 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               {dealCount} from Daily Deals
             </span>
           )}
+          <button
+            type="button"
+            onClick={exportFilteredNotes}
+            disabled={filteredNotes.length === 0 || loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
+          </button>
         </div>
       </div>
 
@@ -546,8 +1054,8 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               <div className="flex items-center gap-3">
                 <span className="text-xs text-dss-muted">
                   Analyzed {insights.noteCountAnalyzed} note{insights.noteCountAnalyzed !== 1 ? 's' : ''}
-                  {insights.whoLosingTo?.length > 0 && (
-                    <> · {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''}</>
+                  {rankedLenders.length > 0 && (
+                    <> · {rankedLenders.length} bank{rankedLenders.length !== 1 ? 's' : ''}</>
                   )}
                 </span>
                 {!viewingSavedId && (
@@ -561,40 +1069,277 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
                 )}
               </div>
             </div>
-            <p className="text-sm text-dss-ink leading-relaxed whitespace-pre-line">{insights.overallSummary}</p>
+            <LinkifiedText
+              text={insights.overallSummary}
+              appIds={knownAppIds}
+              onOpenApp={onOpenApp}
+              className="text-sm text-dss-ink leading-relaxed whitespace-pre-line"
+            />
+          </div>
+
+          <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
+            <h3 className="text-sm font-semibold text-dss-ink mb-3">Why we lost</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              {lossReasonBuckets.map(bucket => (
+                <button
+                  key={bucket.key}
+                  type="button"
+                  onClick={() => openKpiList(bucket.label, 'Detail', bucket.notes.map(note => ({
+                    appId: note.appId || '',
+                    dealerName: note.dealerName || '',
+                    customerName: note.customerName || '',
+                    detail: (note.noteText || '').trim(),
+                    createdAt: note.createdAt || '',
+                  })))}
+                  className={kpiTileClass}
+                >
+                  <p className="text-lg font-bold text-dss-ink">{bucket.count}</p>
+                  <p className="text-xs text-dss-muted">{bucket.label}</p>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => openKpiList(NO_STATUS_LABEL, 'Status', noStatusApps.map(app => ({
+                  appId: app.appId,
+                  dealerName: app.dealerName,
+                  customerName: app.customerName,
+                  detail: app.fuStatus,
+                  createdAt: app.createdAt,
+                })))}
+                className={kpiTileClass}
+              >
+                <p className="text-lg font-bold text-dss-ink">{noStatusApps.length}</p>
+                <p className="text-xs text-dss-muted">{NO_STATUS_LABEL}</p>
+              </button>
+            </div>
           </div>
 
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
             <h3 className="text-sm font-semibold text-dss-danger mb-2">Why are we losing — and how are they beating us?</h3>
-            <p className="text-sm text-dss-ink leading-relaxed whitespace-pre-line">{insights.lossSummary}</p>
+            <LinkifiedText
+              text={insights.lossSummary}
+              appIds={knownAppIds}
+              onOpenApp={onOpenApp}
+              className="text-sm text-dss-ink leading-relaxed whitespace-pre-line"
+            />
           </div>
 
           <div className="bg-dss-surface border border-dss-border rounded-dss-sm p-5">
             <h3 className="text-sm font-semibold text-amber-800 mb-3">
               Who are we losing to?
-              {insights.whoLosingTo.length > 0 && (
+              {rankedLenders.length > 0 && (
                 <span className="ml-2 text-xs font-normal text-dss-muted">
-                  {insights.whoLosingTo.length} lender{insights.whoLosingTo.length !== 1 ? 's' : ''} named in notes
+                  most notes first
                 </span>
               )}
             </h3>
-            {insights.whoLosingTo.length === 0 ? (
-              <p className="text-sm text-dss-muted">No specific banks or finance companies were named in these notes.</p>
+            {rankedLenders.length === 0 ? (
+              <p className="text-sm text-dss-muted">No banks named, and no unnamed send-outs in these notes.</p>
             ) : (
               <div className="space-y-3">
-                {insights.whoLosingTo.map((row, idx) => (
+                {rankedLenders.map((row, idx) => (
                   <div key={`${row.competitor}-${idx}`} className="border border-dss-border rounded-dss-sm p-4 bg-dss-canvas">
                     <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                      <p className="text-sm font-semibold text-dss-accent">{row.competitor}</p>
+                      <p className="text-sm font-semibold text-dss-accent">
+                        {idx + 1}. {row.competitor}
+                      </p>
                       <span className="text-xs text-dss-muted">
-                        mentioned ~{row.mentionCount}×
+                        {row.mentionCount} note{row.mentionCount === 1 ? '' : 's'}
                       </span>
                     </div>
-                    <p className="text-sm text-dss-ink/80 leading-relaxed">{row.howTheyBeatUs}</p>
+                    <LinkifiedText
+                      text={row.howTheyBeatUs}
+                      appIds={knownAppIds}
+                      onOpenApp={onOpenApp}
+                      className="text-sm text-dss-ink/80 leading-relaxed"
+                    />
                   </div>
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {openKpi && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={closeKpiList}
+        >
+          <div
+            className="bg-dss-surface border border-dss-border rounded-dss w-full max-w-4xl max-h-[85vh] flex flex-col shadow-sm"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 p-5 border-b border-dss-border">
+              <div>
+                <h3 className="text-lg font-semibold text-dss-ink">{openKpi.label}</h3>
+                <p className="text-sm text-dss-muted">
+                  {sortedKpiRows.length} app{sortedKpiRows.length === 1 ? '' : 's'}
+                </p>
+                {kpiNotesPrefetchError && (
+                  <p className="text-sm text-dss-danger mt-1">{kpiNotesPrefetchError}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button
+                  type="button"
+                  onClick={() => setKpiSort('asc')}
+                  className={`px-3 py-1.5 rounded-dss-sm text-xs border transition ${
+                    kpiSort === 'asc'
+                      ? 'bg-dss-accent text-white border-dss-accent'
+                      : 'bg-dss-canvas text-dss-ink border-dss-border hover:bg-dss-accent-soft/40'
+                  }`}
+                >
+                  Ascending
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setKpiSort('desc')}
+                  className={`px-3 py-1.5 rounded-dss-sm text-xs border transition ${
+                    kpiSort === 'desc'
+                      ? 'bg-dss-accent text-white border-dss-accent'
+                      : 'bg-dss-canvas text-dss-ink border-dss-border hover:bg-dss-accent-soft/40'
+                  }`}
+                >
+                  Descending
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void exportKpiRows(); }}
+                  disabled={sortedKpiRows.length === 0 || kpiExporting}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-dss-sm border border-dss-border bg-dss-canvas text-xs text-dss-ink hover:bg-dss-accent-soft disabled:opacity-40 transition"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {kpiExporting ? 'Exporting…' : 'Export'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeKpiList}
+                  className="text-dss-muted hover:text-dss-ink"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-dss-canvas text-left text-xs uppercase tracking-wider text-dss-muted">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">App ID</th>
+                    <th className="px-4 py-2 font-medium">Dealer</th>
+                    <th className="px-4 py-2 font-medium">Customer</th>
+                    <th className="px-4 py-2 font-medium">{openKpi.detailHeader}</th>
+                    <th className="px-4 py-2 font-medium">Date</th>
+                    <th className="px-2 py-2 font-medium text-center">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedKpiRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-6 text-dss-muted">No apps in this KPI.</td>
+                    </tr>
+                  ) : sortedKpiRows.map((row, index) => {
+                    const rowKey = kpiRowKey(row, index);
+                    const appKey = row.appId.trim().toLowerCase();
+                    const expanded = expandedKpiRows.has(rowKey);
+                    const notesKnown = !appKey || Object.prototype.hasOwnProperty.call(kpiAppNotes, appKey) || Boolean(kpiNotesError[appKey]);
+                    const appNotes = appKey ? kpiAppNotes[appKey] : [];
+                    const noteCount = appNotes?.length || 0;
+                    const notesLoading = appKey ? kpiNotesLoading.has(appKey) : false;
+                    const notesError = appKey ? kpiNotesError[appKey] : '';
+                    return (
+                      <Fragment key={rowKey}>
+                        <tr
+                          className="border-t border-dss-border align-top cursor-pointer hover:bg-dss-canvas/60"
+                          onClick={() => toggleKpiNotes(rowKey, row.appId)}
+                        >
+                          <td className="px-4 py-2 whitespace-nowrap">
+                            {row.appId && onOpenApp ? (
+                              <button
+                                type="button"
+                                onClick={event => {
+                                  event.stopPropagation();
+                                  onOpenApp(row.appId);
+                                }}
+                                className="font-semibold text-dss-accent hover:underline"
+                              >
+                                {row.appId}
+                              </button>
+                            ) : (
+                              <span className="font-semibold text-dss-ink">{row.appId || '—'}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2">{row.dealerName || '—'}</td>
+                          <td className="px-4 py-2">{row.customerName || '—'}</td>
+                          <td className="px-4 py-2 max-w-xs break-words">{row.detail || '—'}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-dss-muted">{formatKpiDate(row.createdAt) || '—'}</td>
+                          <td className="px-2 py-2 text-center">
+                            <button
+                              type="button"
+                              onClick={event => {
+                                event.stopPropagation();
+                                toggleKpiNotes(rowKey, row.appId);
+                              }}
+                              title="Notes"
+                              aria-expanded={expanded}
+                              className={`relative inline-flex items-center justify-center w-6 h-6 rounded transition ${
+                                notesKnown && noteCount > 0
+                                  ? 'bg-dss-navy-soft text-white hover:bg-dss-navy'
+                                  : 'bg-violet-50 text-violet-800 hover:bg-violet-100'
+                              } ${!notesKnown ? 'animate-pulse' : ''}`}
+                            >
+                              <MessageSquare className="w-3 h-3" />
+                              {notesKnown && noteCount > 0 && (
+                                <span className="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-0.5 bg-red-500 text-white text-[7px] font-bold rounded-full flex items-center justify-center leading-none">
+                                  {noteCount}
+                                </span>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                        {expanded && (
+                          <tr className="border-t border-dss-border">
+                            <td colSpan={6} className="px-3 py-2 pl-8 pr-8 bg-dss-canvas">
+                              <div className="space-y-2">
+                                <p className="text-xs font-medium text-dss-muted uppercase tracking-wider">
+                                  {notesLoading && !appNotes ? 'Notes' : `Notes (${appNotes?.length || 0})`}
+                                </p>
+                                {notesLoading && !appNotes && (
+                                  <p className="text-sm text-dss-muted">Loading notes…</p>
+                                )}
+                                {notesError && (
+                                  <p className="text-sm text-dss-danger">{notesError}</p>
+                                )}
+                                {!notesLoading && !notesError && (appNotes?.length || 0) === 0 && (
+                                  <p className="text-sm text-dss-muted italic">No notes yet.</p>
+                                )}
+                                {appNotes && appNotes.length > 0 && (
+                                  <div className="space-y-2">
+                                    {appNotes.map(note => (
+                                      <NoteItem
+                                        key={note.id}
+                                        id={note.id}
+                                        noteText={note.noteText}
+                                        createdByName={note.createdByName}
+                                        createdAt={note.createdAt}
+                                        canEdit={false}
+                                        onUpdate={noopNoteChange}
+                                        onDelete={noopNoteChange}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -683,7 +1428,17 @@ export default function NotesTab({ currentUser, users }: NotesTabProps) {
               >
                 <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                   <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="text-sm font-semibold text-dss-accent">{note.appId || '—'}</span>
+                    {note.appId && onOpenApp ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenApp(note.appId)}
+                        className="text-sm font-semibold text-dss-accent hover:underline"
+                      >
+                        {note.appId}
+                      </button>
+                    ) : (
+                      <span className="text-sm font-semibold text-dss-accent">{note.appId || '—'}</span>
+                    )}
                     <span className="text-sm text-dss-ink">{note.dealerName || '—'}</span>
                     {note.customerName && (
                       <span className="text-sm text-dss-muted">{note.customerName}</span>
