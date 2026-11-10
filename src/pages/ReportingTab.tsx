@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { exportRowsToExcel } from '../lib/exportExcel';
 import { dealCreditDbFields, resolveDealCredit, forceDealCreditDbFields, countsAsStickyBookedDeal, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName } from '../lib/systemReps';
-import { manualDealMatchedByCall, buildManualCreditByApp, resolveCallDealCredit, normalizeAppId, manualDealMatchedByBookedCall } from '../lib/manualDealMatch';
+import { manualDealMatchedByCall, buildManualCreditByApp, resolveCallDealCredit, normalizeAppId, manualDealMatchedByBookedCall, oneManualPerAppId } from '../lib/manualDealMatch';
 import { formatCallActivity, fuStatusAtDbFields, fuStatusAtLocalFields } from '../lib/callActivity';
 
 interface Call {
@@ -491,8 +491,14 @@ export default function ReportingTab({
   const calculateRepPerformance = (bounds: { start: Date; end: Date }): RepPerformanceRow[] => {
     const repMap = new Map<string, RepPerformanceRow>();
     // Sticky manuals: keep deal_date in range even after status leaves Deal/Confirmed
-    const stickyManuals = filterManualDealsByRange(bounds, { requireDealStatus: false });
-    const manualByApp = buildManualCreditByApp(stickyManuals);
+    const manualsInRange = filterManualDealsByRange(bounds, { requireDealStatus: false });
+    const manualByApp = buildManualCreditByApp(manualsInRange);
+    const stickyManuals = oneManualPerAppId(manualsInRange.filter(deal => {
+      if (!deal.addedBy) return false;
+      const lockStart = deal.createdAt || deal.dealDate;
+      if (!countsAsStickyBookedDeal(deal.fuStatus, lockStart)) return false;
+      return !manualDealMatchedByBookedCall(deal, calls, date => isInBounds(date, bounds));
+    }));
 
     const ensureRep = (id: string, name: string) => {
       if (!repMap.has(id)) {
@@ -528,10 +534,6 @@ export default function ReportingTab({
     });
 
     stickyManuals.forEach(deal => {
-      if (!deal.addedBy) return;
-      const lockStart = deal.createdAt || deal.dealDate;
-      if (!countsAsStickyBookedDeal(deal.fuStatus, lockStart)) return;
-      if (manualDealMatchedByBookedCall(deal, calls, date => isInBounds(date, bounds))) return;
       const row = ensureRep(deal.addedBy, deal.addedByName || 'Unknown');
       row.deals++;
       if (deal.fuStatus === 'Confirmed Deal') row.confirmedDeals++;
@@ -593,11 +595,11 @@ export default function ReportingTab({
     if (!c.dealDate || !isInBounds(new Date(c.dealDate), rangeBounds)) return false;
     return !!resolveCallDealCredit(c, stickyManualByApp);
   });
-  const uniqueStickyManual = stickyManuals.filter(d => {
+  const uniqueStickyManual = oneManualPerAppId(stickyManuals.filter(d => {
     const lockStart = d.createdAt || d.dealDate;
     if (!countsAsStickyBookedDeal(d.fuStatus, lockStart)) return false;
     return !manualDealMatchedByBookedCall(d, calls, date => isInBounds(date, rangeBounds));
-  });
+  }));
   const kpiAllDeals = stickyDealCalls.length + uniqueStickyManual.length;
   const allDealsAmount =
     stickyDealCalls.reduce((sum, c) => sum + getAmount(c), 0)
@@ -646,9 +648,9 @@ export default function ReportingTab({
     const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
     return isInBounds(date, monthBounds);
   });
-  const uniqueMonthManual = monthManualDeals.filter(d =>
+  const uniqueMonthManual = oneManualPerAppId(monthManualDeals.filter(d =>
     !manualDealMatchedByCall(d, calls, date => isInBounds(date, monthBounds)),
-  );
+  ));
   const monthTotalDeals = monthDealCalls.length + uniqueMonthManual.length;
 
   const todayBounds = getPeriodBounds('daily');
@@ -697,21 +699,19 @@ export default function ReportingTab({
       return true;
     });
 
-    const repManual = manualsInRange.filter(d => {
+    const uniqueManuals = oneManualPerAppId(manualsInRange.filter(d => {
       if (dealType === 'confirmed' && d.fuStatus !== 'Confirmed Deal') return false;
       if (dealType === 'deal') {
         const lockStart = d.createdAt || d.dealDate;
         if (!countsAsStickyBookedDeal(d.fuStatus, lockStart)) return false;
       }
-      if (repId && d.addedBy !== repId) return false;
       const matched = dealType === 'deal'
         ? manualDealMatchedByBookedCall(d, calls, date => isInBounds(date, bounds))
         : manualDealMatchedByCall(d, calls, date => isInBounds(date, bounds));
       if (matched) return false;
       return true;
-    });
-    const seenApps = new Set(repCalls.map(c => normalizeAppId(c.applicationId)));
-
+    }));
+    const repManual = uniqueManuals.filter(d => !repId || d.addedBy === repId);
     const callIds = repCalls.map(c => c.id);
     const manualIds = repManual.map(d => d.id);
     const notesMap: Record<string, string> = {};
@@ -753,9 +753,6 @@ export default function ReportingTab({
     });
 
     repManual.forEach(d => {
-      const appKey = d.appId.trim().toLowerCase();
-      if (appKey && seenApps.has(appKey)) return;
-      if (appKey) seenApps.add(appKey);
       const parts = d.dealDate.split('-');
       rows.push({
         key: `manual-${d.id}`,

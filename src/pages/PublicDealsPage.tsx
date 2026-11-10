@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
-import { findCallsByAppId } from '../lib/manualDealMatch';
+import { duplicateDailyDealMessage, findCallsByAppId, normalizeAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
 import { activityDbFields, fuStatusAtDbFields, resolveSavedFollowUpAt } from '../lib/callActivity';
 import { updateCallById } from '../lib/callWrite';
@@ -171,6 +171,8 @@ export default function PublicDealsPage() {
   const [searching, setSearching] = useState(false);
   const [appIdConflicts, setAppIdConflicts] = useState<any[]>([]);
   const [checkingAppId, setCheckingAppId] = useState(false);
+  const [existingDeals, setExistingDeals] = useState<Array<{ id: string; addedByName: string; dealDate: string; fuStatus: string; dealerName: string }>>([]);
+  const [checkingExistingDeal, setCheckingExistingDeal] = useState(false);
   const [softMatches, setSoftMatches] = useState<any[]>([]);
   const [checkingSoftMatch, setCheckingSoftMatch] = useState(false);
 
@@ -573,6 +575,39 @@ export default function PublicDealsPage() {
   }, [form.appId, linkedCall]);
 
   useEffect(() => {
+    const appId = form.appId.trim();
+    if (!appId) {
+      setExistingDeals([]);
+      setCheckingExistingDeal(false);
+      return;
+    }
+    let cancelled = false;
+    setCheckingExistingDeal(true);
+    const timer = window.setTimeout(async () => {
+      const { data } = await supabase.from('daily_deals')
+        .select('id, app_id, added_by_name, deal_date, fu_status, dealer_name')
+        .ilike('app_id', appId)
+        .limit(10);
+      if (cancelled) return;
+      const key = normalizeAppId(appId);
+      setExistingDeals((data || [])
+        .filter((row: { app_id?: string }) => normalizeAppId(row.app_id) === key)
+        .map((row: { id: string; added_by_name?: string; deal_date?: string; fu_status?: string; dealer_name?: string }) => ({
+          id: row.id,
+          addedByName: row.added_by_name || '',
+          dealDate: row.deal_date || '',
+          fuStatus: row.fu_status || '',
+          dealerName: row.dealer_name || '',
+        })));
+      setCheckingExistingDeal(false);
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.appId]);
+
+  useEffect(() => {
     if (linkedCall || appIdConflicts.length > 0) {
       setSoftMatches([]);
       setCheckingSoftMatch(false);
@@ -612,6 +647,25 @@ export default function PublicDealsPage() {
     if (!selectedUser) { setError('Please select your name.'); return; }
     if (!form.appId || !form.dealerName || !form.amount || !form.state) { setError('App ID, dealer, amount and state are required.'); return; }
     if (!linkedCall && !form.customerName) { setError('Customer name is required.'); return; }
+    if (existingDeals.length > 0) {
+      setError(duplicateDailyDealMessage(existingDeals[0]));
+      return;
+    }
+    const existingDealCheck = await supabase.from('daily_deals')
+      .select('id, app_id, added_by_name, deal_date, fu_status')
+      .ilike('app_id', form.appId.trim())
+      .limit(10);
+    const existingHit = (existingDealCheck.data || []).find((row: { app_id?: string }) =>
+      normalizeAppId(row.app_id) === normalizeAppId(form.appId),
+    ) as { added_by_name?: string; deal_date?: string; fu_status?: string } | undefined;
+    if (existingHit) {
+      setError(duplicateDailyDealMessage({
+        addedByName: existingHit.added_by_name,
+        dealDate: existingHit.deal_date,
+        fuStatus: existingHit.fu_status,
+      }));
+      return;
+    }
     if (!linkedCall) {
       const appId = form.appId.trim();
       const { data } = await supabase.from('calls')
@@ -1017,6 +1071,20 @@ export default function PublicDealsPage() {
                     </div>
                   </div>
                 )}
+                {existingDeals.length > 0 && (
+                  <div className="rounded-dss border border-amber-700/70 bg-amber-950/40 px-4 py-3">
+                    <p className="text-sm font-medium text-amber-200">
+                      {duplicateDailyDealMessage(existingDeals[0])}
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {existingDeals.map(deal => (
+                        <p key={deal.id} className="text-xs text-dss-ink/80">
+                          {deal.dealerName || 'Deal'} · {deal.addedByName || 'Unknown'} · {deal.dealDate || 'No date'} · {deal.fuStatus || 'Deal'}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {checkingAppId && !linkedCall && form.appId.trim() && (
                   <p className="text-xs text-dss-muted">Checking App ID against Calls…</p>
                 )}
@@ -1058,7 +1126,7 @@ export default function PublicDealsPage() {
                           </select>
                         </div>
                         <div className="flex items-end">
-                          <button onClick={handleSubmit} disabled={submitting}
+                          <button onClick={handleSubmit} disabled={submitting || existingDeals.length > 0 || checkingExistingDeal}
                             className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-dss-sm text-sm font-medium transition shadow-sm">
                             {submitting ? 'Saving…' : 'Log Deal'}
                           </button>
@@ -1140,7 +1208,7 @@ export default function PublicDealsPage() {
                         </select>
                       </div>
                       <div className="flex flex-col justify-end">
-                        <button onClick={handleSubmit} disabled={submitting || appIdConflicts.length > 0 || checkingAppId}
+                        <button onClick={handleSubmit} disabled={submitting || appIdConflicts.length > 0 || checkingAppId || existingDeals.length > 0 || checkingExistingDeal}
                           className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition shadow-sm">
                           {submitting ? 'Saving…' : 'Add Deal'}
                         </button>

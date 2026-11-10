@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, type Dispatch, type SetStateAction } from
 import { supabase } from '../lib/supabase';
 import { dealCreditDbFields, forceDealCreditDbFields, isDealCreditLocked, isDealLikeStatus } from '../lib/dealCredit';
 import { getDealCreditOptions, resolveCreditName, isProntoRep } from '../lib/systemReps';
-import { findCallsByAppId } from '../lib/manualDealMatch';
+import { duplicateDailyDealMessage, findCallsByAppId, normalizeAppId } from '../lib/manualDealMatch';
 import { findCallsByDealerCustomer } from '../lib/uploadDealMatch';
 import { activityDbFields, activityLocalFields, fuStatusAtDbFields, fuStatusAtLocalFields, resolveSavedFollowUpAt } from '../lib/callActivity';
 import { updateCallById } from '../lib/callWrite';
@@ -204,6 +204,8 @@ export default function DailyDealsTab({
   const [searchResults, setSearchResults] = useState<Call[]>([]);
   const [linkedCall, setLinkedCall] = useState<Call | null>(null);
   const [appIdConflicts, setAppIdConflicts] = useState<Array<Call | { id: string; applicationId: string; dealerName: string; state: string; customerName?: string; buyerFinal?: string }>>([]);
+  const [existingDeals, setExistingDeals] = useState<Array<{ id: string; addedByName: string; dealDate: string; fuStatus: string; dealerName: string }>>([]);
+  const [checkingExistingDeal, setCheckingExistingDeal] = useState(false);
   const [checkingAppId, setCheckingAppId] = useState(false);
   const [softMatches, setSoftMatches] = useState<Array<Call | { id: string; applicationId: string; dealerName: string; state: string; customerName?: string; buyerFinal?: string }>>([]);
   const [checkingSoftMatch, setCheckingSoftMatch] = useState(false);
@@ -657,6 +659,39 @@ export default function DailyDealsTab({
   }, [form.appId, linkedCall, calls]);
 
   useEffect(() => {
+    const appId = form.appId.trim();
+    if (!appId) {
+      setExistingDeals([]);
+      setCheckingExistingDeal(false);
+      return;
+    }
+    let cancelled = false;
+    setCheckingExistingDeal(true);
+    const timer = window.setTimeout(async () => {
+      const { data } = await supabase.from('daily_deals')
+        .select('id, app_id, added_by_name, deal_date, fu_status, dealer_name')
+        .ilike('app_id', appId)
+        .limit(10);
+      if (cancelled) return;
+      const key = normalizeAppId(appId);
+      setExistingDeals((data || [])
+        .filter((row: { app_id?: string }) => normalizeAppId(row.app_id) === key)
+        .map((row: { id: string; added_by_name?: string; deal_date?: string; fu_status?: string; dealer_name?: string }) => ({
+          id: row.id,
+          addedByName: row.added_by_name || '',
+          dealDate: row.deal_date || '',
+          fuStatus: row.fu_status || '',
+          dealerName: row.dealer_name || '',
+        })));
+      setCheckingExistingDeal(false);
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.appId]);
+
+  useEffect(() => {
     if (linkedCall || appIdConflicts.length > 0) {
       setSoftMatches([]);
       setCheckingSoftMatch(false);
@@ -720,6 +755,25 @@ export default function DailyDealsTab({
     }
     if (!linkedCall && !form.customerName) {
       setFormError('Customer name is required'); return;
+    }
+    if (existingDeals.length > 0) {
+      setFormError(duplicateDailyDealMessage(existingDeals[0]));
+      return;
+    }
+    const existingDealCheck = await supabase.from('daily_deals')
+      .select('id, app_id, added_by_name, deal_date, fu_status')
+      .ilike('app_id', form.appId.trim())
+      .limit(10);
+    const existingHit = (existingDealCheck.data || []).find((row: { app_id?: string }) =>
+      normalizeAppId(row.app_id) === normalizeAppId(form.appId),
+    ) as { added_by_name?: string; deal_date?: string; fu_status?: string } | undefined;
+    if (existingHit) {
+      setFormError(duplicateDailyDealMessage({
+        addedByName: existingHit.added_by_name,
+        dealDate: existingHit.deal_date,
+        fuStatus: existingHit.fu_status,
+      }));
+      return;
     }
     if (!linkedCall && findCallsByAppId(calls, form.appId).length > 0) {
       setFormError('This App ID already exists in Calls. Select the existing app above — Manual entry is blocked to prevent duplicates.');
@@ -788,6 +842,24 @@ export default function DailyDealsTab({
   const handleUpdateCombined = async (entry: CombinedEntry) => {
     try {
       if (entry.source === 'manual') {
+        const nextAppId = editAppId.trim();
+        if (nextAppId && normalizeAppId(nextAppId) !== normalizeAppId(entry.appId)) {
+          const { data } = await supabase.from('daily_deals')
+            .select('id, app_id, added_by_name, deal_date, fu_status')
+            .ilike('app_id', nextAppId)
+            .limit(10);
+          const hit = (data || []).find((row: { id: string; app_id?: string }) =>
+            row.id !== entry.id && normalizeAppId(row.app_id) === normalizeAppId(nextAppId),
+          ) as { added_by_name?: string; deal_date?: string; fu_status?: string } | undefined;
+          if (hit) {
+            setError(duplicateDailyDealMessage({
+              addedByName: hit.added_by_name,
+              dealDate: hit.deal_date,
+              fuStatus: hit.fu_status,
+            }));
+            return;
+          }
+        }
         const creditName = resolveCreditName(editCreditId, selectableUsers) || editCreditName;
         const manualRow = todayDeals.find(d => d.id === entry.id);
         const lockStart = manualRow?.createdAt || manualRow?.dealDate;
@@ -1238,6 +1310,20 @@ export default function DailyDealsTab({
                 {checkingAppId && !linkedCall && form.appId.trim() && (
                   <p className="text-xs text-dss-muted mb-4">Checking App ID against Calls…</p>
                 )}
+                {existingDeals.length > 0 && (
+                  <div className="mb-4 rounded-dss border border-amber-700/70 bg-amber-950/40 px-4 py-3">
+                    <p className="text-sm font-medium text-amber-200">
+                      {duplicateDailyDealMessage(existingDeals[0])}
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {existingDeals.map(deal => (
+                        <p key={deal.id} className="text-xs text-dss-ink/80">
+                          {deal.dealerName || 'Deal'} · {deal.addedByName || 'Unknown'} · {deal.dealDate || 'No date'} · {deal.fuStatus || 'Deal'}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="mb-4">
                   <label className="block text-xs text-dss-muted uppercase tracking-wider mb-1.5">
@@ -1280,7 +1366,8 @@ export default function DailyDealsTab({
                         </div>
                         <div className="flex items-end">
                           <button onClick={handleAddDeal}
-                            className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-dss-sm text-sm font-medium transition shadow-sm">
+                            disabled={existingDeals.length > 0 || checkingExistingDeal}
+                            className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 text-white rounded-dss-sm text-sm font-medium transition shadow-sm">
                             Log Deal
                           </button>
                         </div>
@@ -1362,7 +1449,7 @@ export default function DailyDealsTab({
                       </div>
                       <div className="flex items-end">
                         <button onClick={handleAddDeal}
-                          disabled={appIdConflicts.length > 0 || checkingAppId}
+                          disabled={appIdConflicts.length > 0 || checkingAppId || existingDeals.length > 0 || checkingExistingDeal}
                           className="w-full px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-dss-sm text-sm font-medium transition shadow-sm">
                           Add Deal
                         </button>
